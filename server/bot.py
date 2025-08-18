@@ -28,6 +28,8 @@ from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
 from pipecat.transports.network.webrtc_connection import IceServer, SmallWebRTCConnection
+from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
+
 
 load_dotenv(override=True)
 
@@ -93,7 +95,14 @@ async def run_bot(webrtc_connection):
             }
         ],
     )
-    context_aggregator = llm.create_context_aggregator(context)
+    context_aggregator = llm.create_context_aggregator(
+        context,
+        # Whisper local service isn't streaming, so it delivers the full text all at
+        # once, after the UserStoppedSpeaking frame. Set aggregation_timeout to a
+        # a de minimus value since we don't expect any transcript aggregation to be
+        # necessary.
+        user_params=LLMUserAggregatorParams(aggregation_timeout=0.05),
+    )
 
     #
     # RTVI events for Pipecat client UI
