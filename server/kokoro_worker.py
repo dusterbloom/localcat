@@ -9,7 +9,7 @@ Usage:
     python kokoro_worker.py
 
 Commands:
-    {"cmd": "init", "model": "prince-canuma/Kokoro-82M", "voice": "af_heart"}
+    {"cmd": "init", "model": "mlx-community/Kokoro-82M-bf16", "voice": "af_heart"}
     {"cmd": "generate", "text": "Hello world"}
 """
 

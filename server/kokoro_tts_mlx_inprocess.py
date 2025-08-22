@@ -1,5 +1,7 @@
 #
-# Kokoro TTS service for Pipecat using MLX Audio
+# Kokoro TTS service for Pipecat using MLX Audio (In-Process - UNSTABLE)
+# WARNING: This implementation causes Metal threading conflicts and is unreliable
+# Use kokoro_tts_mlx_isolated.py for production - this version needs fixes
 #
 
 import asyncio
@@ -23,18 +25,21 @@ from pipecat.services.tts_service import TTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
 
 
-class KokoroTTSService(TTSService):
-    """Kokoro TTS service implementation using MLX Audio.
+class KokoroTTSMLXInProcess(TTSService):
+    """Kokoro TTS service implementation using MLX Audio (In-Process).
 
-    Provides text-to-speech synthesis using Kokoro models running locally
+    Provides text-to-speech synthesis using Kokoro models running in-process
     on Apple Silicon through the mlx-audio library. Uses a separate thread
     for audio generation to avoid blocking the pipeline.
+    
+    Note: This in-process version may cause Metal threading conflicts.
+    Use KokoroTTSIsolated for production stability.
     """
 
     def __init__(
         self,
         *,
-        model: str = "prince-canuma/Kokoro-82M",
+        model: str = "mlx-community/Kokoro-82M-bf16",
         voice: str = "af_heart",
         device: Optional[str] = None,
         sample_rate: int = 24000,
@@ -44,7 +49,7 @@ class KokoroTTSService(TTSService):
         """Initialize the Kokoro TTS service.
 
         Args:
-            model: The Kokoro model to use (default: "prince-canuma/Kokoro-82M").
+            model: The Kokoro model to use (default: "mlx-community/Kokoro-82M-bf16").
             voice: The voice to use for synthesis (default: "af_heart").
             device: The device to run on (None for default MLX device).
             sample_rate: Output sample rate (default: 24000).
@@ -52,15 +57,18 @@ class KokoroTTSService(TTSService):
             **kwargs: Additional arguments passed to the parent TTSService.
         """
         super().__init__(sample_rate=sample_rate, **kwargs)
+        
+        # Explicitly set sample_rate (workaround for base class issue)
+        self._sample_rate = sample_rate
 
         self._model_name = model
         self._voice = voice
         self._device = device
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
 
-        # Initialize model in a separate thread to avoid blocking
+        # Initialize model lazily to avoid threading issues
         self._model = None
-        self._init_future = self._executor.submit(self._initialize_model)
+        self._init_future = None
 
         self._settings = {
             "model": model,
@@ -84,9 +92,8 @@ class KokoroTTSService(TTSService):
     def _generate_audio_sync(self, text: str) -> bytes:
         """Synchronously generate audio from text. This runs in a separate thread."""
         try:
-            if self._init_future:
-                self._init_future.result()  # Wait for initialization
-                self._init_future = None
+            if self._model is None:
+                self._initialize_model()  # Initialize synchronously in the worker thread
 
             logger.debug(f"Generating audio for: {text}")
 
