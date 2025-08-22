@@ -1,6 +1,6 @@
 #
-# Completely isolated Kokoro TTS using separate process
-# Final attempt to avoid Metal threading issues
+# Process-isolated Kokoro TTS service
+# Uses a separate process to avoid Metal threading conflicts on Apple Silicon
 #
 
 import asyncio
@@ -26,13 +26,13 @@ from pipecat.services.tts_service import TTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
 
 
-class KokoroTTSIsolated(TTSService):
+class KokoroTTSMLXIsolated(TTSService):
     """Completely isolated Kokoro TTS using subprocess to avoid Metal issues."""
 
     def __init__(
         self,
         *,
-        model: str = "prince-canuma/Kokoro-82M",
+        model: str = "mlx-community/Kokoro-82M-bf16",
         voice: str = "af_heart",
         device: Optional[str] = None,
         sample_rate: int = 24000,
@@ -66,7 +66,7 @@ class KokoroTTSIsolated(TTSService):
         if not worker_path.exists():
             raise FileNotFoundError(
                 f"Worker script not found at {worker_path}. "
-                "Make sure kokoro_worker.py is in the same directory as kokoro_tts_isolated.py"
+                "Make sure kokoro_worker.py is in the same directory as kokoro_tts_mlx_isolated.py"
             )
         
         return str(worker_path)
