@@ -22,8 +22,9 @@ from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.services.openai.llm import OpenAILLMService
-# from kokoro_tts import KokoroTTSService
-from kokoro_tts_isolated import KokoroTTSIsolated
+# Kokoro TTS implementations
+# from kokoro_tts_mlx_inprocess import KokoroTTSMLXInProcess  # Buggy - causes Metal threading issues
+from kokoro_tts_mlx_isolated import KokoroTTSMLXIsolated
 from pipecat.services.whisper.stt import WhisperSTTServiceMLX, MLXModel
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
@@ -74,13 +75,17 @@ async def run_bot(webrtc_connection):
 
     stt = WhisperSTTServiceMLX(model=MLXModel.LARGE_V3_TURBO_Q4)
 
-    # tts = KokoroTTSService(model="prince-canuma/Kokoro-82M", voice="af_heart", sample_rate=24000)
-    # Process-isolated version to avoid Metal assertion failures (now refactored to use standalone worker)
-    tts = KokoroTTSIsolated(model="prince-canuma/Kokoro-82M", voice="af_heart", sample_rate=24000)
+    # Kokoro TTS setup - using isolated process to avoid Metal threading conflicts
+    # For production use, always use the isolated version:
+    tts = KokoroTTSMLXIsolated(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
+    
+    # Alternative in-process version (NOT recommended for production - causes Metal assertion failures):
+    # tts = KokoroTTSMLXInProcess(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
 
     llm = OpenAILLMService(
         api_key="dummyKey",
-        model="google/gemma-3-12b",  # Medium-sized model. Uses ~8.5GB of RAM.
+        model="gemma-3n-e4b-it-text",  # Small model. Uses ~4GB of RAM.
+        # model="google/gemma-3-12b",  # Medium-sized model. Uses ~8.5GB of RAM.
         # model="mlx-community/Qwen3-235B-A22B-Instruct-2507-3bit-DWQ", # Large model. Uses ~110GB of RAM!
         base_url="http://127.0.0.1:1234/v1",
         max_tokens=4096,
