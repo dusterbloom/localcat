@@ -1,10 +1,10 @@
 python-dotenv
 fastapi[all]
 uvicorn
-opencv-python>=4.12.0.88
-mlx-lm==0.24.0
+opencv-python
+mlx-lm
 mlx-audio
-pipecat-ai[openai,deepgram,rime,silero,mlx-whisper]>=0.0.76
+pipecat-ai[openai,deepgram,rime,silero,mlx-whisper]>=0.0.80
 aiortc
 nltk
 

@@ -32,10 +32,22 @@ One easy, high-performance, way to run a local LLM server on macOS is [LM Studio
 
 The core voice agent code lives in a single file: [server/bot.py](server/bot.py). There's one custom service here that's not included in Pipecat core: we implemented a local Kokoro TTS frame processor on top of the excellent [mlx-audio library](https://github.com/Blaizzy/mlx-audio).
 
+Note that the first time you start the bot it will take some time to initialize the three models. It can be 30 seconds or more before the bot is fully ready to go. Subsequent startups will be much faster.
+
 ```shell
 cd server/
+```
 
-python -m venv venv
+If you're using uv
+
+```
+uv run bot.py
+```
+
+If you're using pip
+
+```
+python3.12 -m venv venv
 source venv/bin/activate
 
 pip install -r requirements.txt
