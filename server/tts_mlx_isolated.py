@@ -7,12 +7,10 @@ import asyncio
 import subprocess
 import json
 import base64
-import os
 import sys
 from typing import AsyncGenerator, Optional
 from pathlib import Path
 
-import numpy as np
 from loguru import logger
 
 from pipecat.frames.frames import (
@@ -26,7 +24,7 @@ from pipecat.services.tts_service import TTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
 
 
-class KokoroTTSMLXIsolated(TTSService):
+class TTSMLXIsolated(TTSService):
     """Completely isolated Kokoro TTS using subprocess to avoid Metal issues."""
 
     def __init__(
@@ -44,10 +42,10 @@ class KokoroTTSMLXIsolated(TTSService):
         self._model_name = model
         self._voice = voice
         self._device = device
-        
+
         self._process = None
         self._initialized = False
-        
+
         # Get path to worker script
         self._worker_script = self._get_worker_script_path()
 
@@ -61,16 +59,20 @@ class KokoroTTSMLXIsolated(TTSService):
         """Get the path to the standalone worker script."""
         # Look for kokoro_worker.py in the same directory as this file
         current_dir = Path(__file__).parent
-        worker_path = current_dir / "kokoro_worker.py"
-        
+        if self._model_name.startswith("Marvis-AI"):
+            worker_path = current_dir / "marvis_worker.py"
+        else:
+            worker_path = current_dir / "kokoro_worker.py"
+
+        logger.info(f"Using worker script: {worker_path}")
+
         if not worker_path.exists():
             raise FileNotFoundError(
                 f"Worker script not found at {worker_path}. "
-                "Make sure kokoro_worker.py is in the same directory as kokoro_tts_mlx_isolated.py"
+                "Make sure worker script is in the same directory as tts_mlx_isolated.py"
             )
-        
-        return str(worker_path)
 
+        return str(worker_path)
 
     def _start_worker(self):
         """Start the worker process."""
@@ -79,11 +81,11 @@ class KokoroTTSMLXIsolated(TTSService):
                 [sys.executable, self._worker_script],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                # stderr=subprocess.PIPE,
                 text=True,
-                bufsize=0
+                bufsize=0,
             )
-            logger.info(f"Started Kokoro worker process: {self._process.pid}")
+            logger.info(f"Started {self._model_name} worker process: {self._process.pid}")
             return True
         except Exception as e:
             logger.error(f"Failed to start worker: {e}")
@@ -98,15 +100,16 @@ class KokoroTTSMLXIsolated(TTSService):
                     return {"error": "Failed to start worker"}
 
             # Send command
-            cmd_json = json.dumps(command) + '\n'
+            cmd_json = json.dumps(command) + "\n"
             logger.debug(f"Sending command: {command}")
             self._process.stdin.write(cmd_json)
             self._process.stdin.flush()
 
             # Read response with timeout
             import select
+
             ready, _, _ = select.select([self._process.stdout], [], [], 10.0)  # 10 second timeout
-            
+
             if not ready:
                 return {"error": "Worker response timeout"}
 
@@ -121,7 +124,9 @@ class KokoroTTSMLXIsolated(TTSService):
             response_data = json.loads(response_line.strip())
             # Don't log the full response if it contains audio data (too verbose)
             if "audio" in response_data:
-                logger.debug(f"Worker response: success with {len(response_data.get('audio', ''))} chars of audio data")
+                logger.debug(
+                    f"Worker response: success with {len(response_data.get('audio', ''))} chars of audio data"
+                )
             else:
                 logger.debug(f"Worker response: {response_line.strip()}")
             return response_data
@@ -146,7 +151,7 @@ class KokoroTTSMLXIsolated(TTSService):
         result = await loop.run_in_executor(
             None,
             self._send_command,
-            {"cmd": "init", "model": self._model_name, "voice": self._voice}
+            {"cmd": "init", "model": self._model_name, "voice": self._voice},
         )
 
         if result.get("success"):
@@ -154,14 +159,14 @@ class KokoroTTSMLXIsolated(TTSService):
             logger.info("Kokoro worker initialized")
             return True
         else:
-            error_msg = result.get('error', 'Unknown error')
+            error_msg = result.get("error", "Unknown error")
             logger.error(f"Worker initialization failed: {error_msg}")
-            
+
             # Also check if process died
             if self._process and self._process.poll() is not None:
                 stderr_output = self._process.stderr.read() if self._process.stderr else ""
                 logger.error(f"Worker process stderr: {stderr_output}")
-            
+
             return False
 
     def can_generate_metrics(self) -> bool:
@@ -185,9 +190,7 @@ class KokoroTTSMLXIsolated(TTSService):
             # Generate audio
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
-                None,
-                self._send_command,
-                {"cmd": "generate", "text": text}
+                None, self._send_command, {"cmd": "generate", "text": text}
             )
 
             if not result.get("success"):

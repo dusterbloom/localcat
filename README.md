@@ -11,7 +11,7 @@ The [server/bot.py](server/bot.py) file uses these models:
   - Silero VAD
   - smart-turn v2
   - MLX Whisper
-  - Gemma3 12B
+  - Gemma3n 4B 
   - Kokoro TTS
 
 But you can swap any of them out for other models, or completely reconfigure the pipeline. It's easy to add tool calling, MCP server integrations, use parallel pipelines to do async inference alongside the voice conversations, add custom processing steps, configure interrupt handling to work differently, etc.
@@ -22,7 +22,7 @@ For a deep dive into voice AI, including network transport, optimizing for laten
 
 # Models and dependencies
 
-Silero VAD, MLX Whisper, and Kokoro all run inside the Pipecat process. When the agent code starts, it will need to download model weights that aren't already cached, so first startup can take some time.
+Silero VAD and MLX Whisper run inside the Pipecat process. When the agent code starts, it will need to download model weights that aren't already cached, so first startup can take some time.
 
 The LLM service in this bot uses the OpenAI-compatible chat completion HTTP API. So you will need to run a local OpenAI-compatible LLM server. 
 
@@ -30,9 +30,17 @@ One easy, high-performance, way to run a local LLM server on macOS is [LM Studio
 
 # Run the voice agent
 
-The core voice agent code lives in a single file: [server/bot.py](server/bot.py). There's one custom service here that's not included in Pipecat core: we implemented a local Kokoro TTS frame processor on top of the excellent [mlx-audio library](https://github.com/Blaizzy/mlx-audio).
+The core voice agent code lives in a single file: [server/bot.py](server/bot.py). There's one custom service here that's not included in Pipecat core: we implemented a local MLX-Audio frame processor on top of the excellent [mlx-audio library](https://github.com/Blaizzy/mlx-audio).
 
 Note that the first time you start the bot it will take some time to initialize the three models. It can be 30 seconds or more before the bot is fully ready to go. Subsequent startups will be much faster.
+
+It's not a bad idea to run a quick `mlx-audio.generate` process from the command line before you run the bot the first time, so you're not waiting for a relatively bug HuggingFace model download for the voice model.
+
+```shell
+mlx-audio.generate --model "Marvis-AI/marvis-tts-250m-v0.1" --text "Hello, I'm Pipecat!" --output "output.wav"
+# or
+mlx-audio.generate --model "mlx-community/Kokoro-82M-bf16" --text "Hello, I'm Pipecat!" --output "output.wav"
+```
 
 ```shell
 cd server/
@@ -53,6 +61,12 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 python bot.py
+```
+
+After you run the first time and have all the models cached, you can set the HF_HUB_OFFLINE environment variable to prevent the Hugging Face libraries from going to the network and checking for model updates. This makes the initial bot startup and first conversation turn a lot faster.
+
+```
+HF_HUB_OFFLINE=1 uv run bot.py
 ```
 
 # Start the web client

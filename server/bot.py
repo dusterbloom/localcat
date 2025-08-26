@@ -22,9 +22,7 @@ from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.services.openai.llm import OpenAILLMService
-# Kokoro TTS implementations
-# from kokoro_tts_mlx_inprocess import KokoroTTSMLXInProcess  # Buggy - causes Metal threading issues
-from kokoro_tts_mlx_isolated import KokoroTTSMLXIsolated
+
 from pipecat.services.whisper.stt import WhisperSTTServiceMLX, MLXModel
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
@@ -32,6 +30,7 @@ from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
 from pipecat.transports.network.webrtc_connection import IceServer, SmallWebRTCConnection
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 
+from tts_mlx_isolated import TTSMLXIsolated
 
 load_dotenv(override=True)
 
@@ -75,12 +74,8 @@ async def run_bot(webrtc_connection):
 
     stt = WhisperSTTServiceMLX(model=MLXModel.LARGE_V3_TURBO_Q4)
 
-    # Kokoro TTS setup - using isolated process to avoid Metal threading conflicts
-    # For production use, always use the isolated version:
-    tts = KokoroTTSMLXIsolated(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
-    
-    # Alternative in-process version (NOT recommended for production - causes Metal assertion failures):
-    # tts = KokoroTTSMLXInProcess(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
+    tts = TTSMLXIsolated(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
+    # tts = TTSMLXIsolated(model="Marvis-AI/marvis-tts-250m-v0.1", voice=None)
 
     llm = OpenAILLMService(
         api_key="dummyKey",
