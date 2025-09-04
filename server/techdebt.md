@@ -45,26 +45,37 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 
 ### 🧠 Memory System
 
-**Custom mem0 Service Complexity**
-- **Issue**: Custom wrapper needed for LM Studio/Ollama compatibility
-- **Impact**: Maintenance burden, potential breaking changes with mem0 updates
-- **Solution**: Contribute fixes upstream to mem0 project, or migrate to native solution
-- **Priority**: Low
-- **Effort**: 1-2 weeks
-
-**Dual Schema Handling**
-- **Issue**: Dynamic JSON schema detection based on prompt keywords
-- **Impact**: Brittle, may fail if prompts change, hard to debug
-- **Solution**: Explicit API calls instead of prompt analysis
-- **Priority**: Medium
-- **Effort**: 1 week
-
-**Fallback to infer=False**
-- **Issue**: Memory extraction disabled for local models due to JSON parsing issues
-- **Impact**: Reduced memory intelligence, stores raw conversations without fact extraction
-- **Solution**: Fix JSON parsing or implement alternative fact extraction
+**LM Studio Context Accumulation (NEW - 2025-09-05)**
+- **Issue**: LM Studio accumulates context across mem0 operations, causing severe slowdowns
+- **Impact**: Memory operations become progressively slower until context limit reached
+- **Root Cause**: No context reset mechanism between isolated memory operations
+- **Solution**: Implement session_id rotation or context clearing for mem0 operations
 - **Priority**: High
-- **Effort**: 1-2 weeks
+- **Effort**: 1-2 days
+- **Status**: Blocking memory performance, needs immediate attention
+
+**Simplified Memory Service Works But Slow**
+- **Issue**: Current Mem0ServiceV2 follows correct mem0 design but performance degrades over time
+- **Impact**: Memory system becomes unusable after several conversation turns
+- **Solution**: Add context isolation between memory operations
+- **Priority**: High
+- **Effort**: 1-3 days
+
+**Custom mem0 Service Complexity** [RESOLVED - 2025-09-05]
+- **Issue**: ~~Custom wrapper needed for LM Studio/Ollama compatibility~~ 
+- **Resolution**: Switched to simple Mem0ServiceV2 that follows mem0's intended design
+- **Impact**: Eliminated complexity, now using mem0 as designed
+- **Status**: ✅ Fixed - mem0 handles everything internally now
+
+**Dual Schema Handling** [DEPRECATED - 2025-09-05]  
+- **Issue**: ~~Dynamic JSON schema detection based on prompt keywords~~
+- **Resolution**: Removed dual-model approach, mem0 handles schema internally
+- **Status**: ✅ No longer applicable - simplified to single model approach
+
+**Fallback to infer=False** [RESOLVED - 2025-09-05]
+- **Issue**: ~~Memory extraction disabled for local models due to JSON parsing issues~~
+- **Resolution**: Mem0ServiceV2 uses proper mem0 design, no more JSON parsing issues
+- **Status**: ✅ Fixed - memory extraction working correctly
 
 ### 🔄 Error Handling
 
@@ -156,8 +167,8 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 | WebSockets Legacy API (uvicorn) | Low | N/A | Low |
 | AudioOp Deprecation (pipecat) | Low | N/A | Low |
 | **Core System Issues** | | | |
-| Fallback to infer=False | High | High | High |
-| Dual Schema Handling | Medium | Medium | Medium |
+| LM Studio Context Accumulation | High | Low | High |
+| Memory Performance Degradation | High | Low | High |
 | Silent Fallbacks | Medium | Medium | Medium |
 | **Infrastructure** | | | |
 | Manual Osaurus Setup | Medium | Medium | Medium |
@@ -178,7 +189,7 @@ When addressing technical debt:
 3. Document the solution in changelog.md
 4. Consider if the fix creates new technical debt
 
-Last updated: 2025-09-04
+Last updated: 2025-09-05
 
 ## 🎉 Recent Success: Major Cleanup Complete!
 

@@ -13,18 +13,20 @@ A local voice assistant with persistent memory powered by local LLMs.
 ## Architecture
 
 - **Main Model**: Gemma3:4b (conversation) via Ollama
-- **Memory Model**: Qwen3-1.7B-4bit (fact extraction) via Osaurus
+- **Memory Models**: Dual-model approach via LM Studio
+  - **Fact Extraction**: Qwen3-4B (extracts facts from conversations)
+  - **Memory Updates**: Qwen3-4B-Instruct-2507 (handles ADD/UPDATE/DELETE operations)
 - **STT**: Whisper MLX (local speech recognition)
 - **TTS**: Kokoro MLX (local text-to-speech)
 - **Memory**: mem0 + FAISS vector storage
-- **Hybrid Setup**: Ollama + Osaurus for optimal Apple Silicon performance
+- **Hybrid Setup**: Ollama + LM Studio for optimal performance and JSON compliance
 
 ## Quick Start
 
 ### Prerequisites
 - Python 3.12+
 - Ollama installed and running
-- Osaurus app installed (download from [GitHub releases](https://github.com/dinoki-ai/osaurus/releases))
+- LM Studio installed (download from [lmstudio.ai](https://lmstudio.ai))
 
 ### Installation
 
@@ -43,15 +45,17 @@ ollama pull gemma3:4b
 ollama pull nomic-embed-text:latest
 ```
 
-3. Setup Osaurus:
+3. Setup LM Studio:
 ```bash
-# Open Osaurus app
-open /Applications/osaurus.app
+# Open LM Studio app
+open /Applications/LM\ Studio.app
 
-# In Osaurus:
-# 1. Set port to 8000
-# 2. Download model: mlx-community/Qwen3-1.7B-4bit
-# 3. Start the server
+# In LM Studio:
+# 1. Download models:
+#    - qwen/qwen3-4b (for fact extraction)
+#    - qwen3-4b-instruct-2507 (for memory updates)
+# 2. Go to Server tab
+# 3. Load model and start server on port 1234
 ```
 
 4. Configure environment:
@@ -74,9 +78,10 @@ Key environment variables in `.env`:
 OPENAI_BASE_URL=http://127.0.0.1:11434/v1
 OPENAI_MODEL=gemma3:4b
 
-# Memory extraction model (Osaurus)
-MEM0_BASE_URL=http://127.0.0.1:8000/v1
-MEM0_MODEL=mlx-community/Qwen3-1.7B-4bit
+# Memory extraction models (LM Studio - dual model approach)
+MEM0_BASE_URL=http://127.0.0.1:1234/v1
+MEM0_FACT_MODEL=qwen/qwen3-4b           # For fact extraction
+MEM0_UPDATE_MODEL=qwen3-4b-instruct-2507  # For memory updates
 
 # Embeddings (Ollama)
 EMBEDDING_MODEL=nomic-embed-text:latest
@@ -89,9 +94,10 @@ AGENT_ID=locat
 
 ## Memory System
 
-The assistant uses a dual-model approach:
-- **Conversation Model**: Handles real-time chat responses
-- **Memory Model**: Extracts and processes facts for long-term storage
+The assistant uses a three-model approach for optimal performance:
+- **Conversation Model** (Gemma3 4B via Ollama): Handles real-time chat responses
+- **Fact Extraction Model** (Qwen3 4B via LM Studio): Extracts facts from conversations with JSON schema compliance
+- **Memory Update Model** (Qwen3 4B Instruct via LM Studio): Manages ADD/UPDATE/DELETE operations with structured output
 
 Memory is automatically:
 - Extracted from conversations
