@@ -4,8 +4,12 @@ uvicorn
 opencv-python
 mlx-lm
 mlx-audio
-pipecat-ai[openai,deepgram,rime,silero,mlx-whisper]>=0.0.80
+pipecat-ai[openai,deepgram,rime,silero,mlx-whisper,mem0, local-smart-turn]>=0.0.80
 aiortc
 nltk
 
+# Mem0 locally configured
+mem0ai
 
+# CoreML prerequisite to run https://huggingface.co/pipecat-ai/smart-turn
+coremltools

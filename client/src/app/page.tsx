@@ -16,6 +16,14 @@ export default function Home() {
             connectionUrl: "/api/offer",
           }}
           noUserVideo={true}
+          transportOptions={{
+          waitForICEGathering: true,
+          iceServers: [
+            {
+              urls: "stun:stun.l.google.com:19302",
+            },
+          ],
+        }}
         />
       </FullScreenContainer>
     </ThemeProvider>
