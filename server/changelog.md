@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Osaurus integration for Apple Silicon optimized memory extraction
+- Hybrid architecture: Ollama (conversation) + Osaurus (memory)
+- Port conflict resolution (SurrealDB blocking port 8000)
+
+### Changed
+- Updated memory extraction to use mlx-community/Qwen3-1.7B-4bit on Osaurus
+- Simplified startup process (manual Osaurus configuration)
+- Improved architecture documentation
+
+### Removed
+- Removed automated startup script (start_osaurus.sh) in favor of manual setup
+
 ## [0.1.0] - 2025-09-04
 
 ### Added

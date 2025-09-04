@@ -13,17 +13,18 @@ A local voice assistant with persistent memory powered by local LLMs.
 ## Architecture
 
 - **Main Model**: Gemma3:4b (conversation) via Ollama
-- **Memory Model**: Qwen2.5-7B-Instruct (fact extraction) via LM Studio/Ollama
+- **Memory Model**: Qwen3-1.7B-4bit (fact extraction) via Osaurus
 - **STT**: Whisper MLX (local speech recognition)
 - **TTS**: Kokoro MLX (local text-to-speech)
 - **Memory**: mem0 + FAISS vector storage
+- **Hybrid Setup**: Ollama + Osaurus for optimal Apple Silicon performance
 
 ## Quick Start
 
 ### Prerequisites
 - Python 3.12+
 - Ollama installed and running
-- LM Studio (or use Ollama for both models)
+- Osaurus app installed (download from [GitHub releases](https://github.com/dinoki-ai/osaurus/releases))
 
 ### Installation
 
@@ -40,18 +41,26 @@ pip install -r requirements.txt
 # Main conversation model (Ollama)
 ollama pull gemma3:4b
 ollama pull nomic-embed-text:latest
-
-# Memory extraction model (Ollama - recommended)
-ollama pull qwen2.5:7b-instruct
 ```
 
-3. Configure environment:
+3. Setup Osaurus:
+```bash
+# Open Osaurus app
+open /Applications/osaurus.app
+
+# In Osaurus:
+# 1. Set port to 8000
+# 2. Download model: mlx-community/Qwen3-1.7B-4bit
+# 3. Start the server
+```
+
+4. Configure environment:
 ```bash
 cp .env.example .env
 # Edit .env with your settings
 ```
 
-4. Run:
+5. Run:
 ```bash
 python bot.py
 ```
@@ -65,11 +74,11 @@ Key environment variables in `.env`:
 OPENAI_BASE_URL=http://127.0.0.1:11434/v1
 OPENAI_MODEL=gemma3:4b
 
-# Memory extraction model 
-MEM0_BASE_URL=http://127.0.0.1:11434/v1  # Use Ollama for both
-MEM0_MODEL=qwen2.5:7b-instruct
+# Memory extraction model (Osaurus)
+MEM0_BASE_URL=http://127.0.0.1:8000/v1
+MEM0_MODEL=mlx-community/Qwen3-1.7B-4bit
 
-# Embeddings
+# Embeddings (Ollama)
 EMBEDDING_MODEL=nomic-embed-text:latest
 
 # Memory storage
@@ -102,8 +111,9 @@ Memory is automatically:
 - Check model names match .env configuration
 
 **Port Conflicts**:
-- Default: Ollama (11434), LM Studio (1234), Bot (7860)
-- Modify ports in .env if needed
+- Default: Ollama (11434), Osaurus (8000), Bot (7860)
+- Check for SurrealDB blocking port 8000: `lsof -ti:8000`
+- Kill conflicting processes: `kill $(lsof -ti:8000)`
 
 ## Development
 
