@@ -1,15 +1,29 @@
-python-dotenv
-fastapi[all]
-uvicorn
-opencv-python
-mlx-lm
-mlx-audio
-pipecat-ai[openai,deepgram,rime,silero,mlx-whisper,mem0, local-smart-turn]>=0.0.80
-aiortc
-nltk
+# Core dependencies (pinned for stability)
+python-dotenv==1.0.1
+fastapi[all]==0.115.7
+uvicorn==0.35.0  # websockets warning is from uvicorn internals, not fixable
+openai>=1.74.0,<=1.99.1  # Compatible with pipecat-ai requirements
 
-# Mem0 locally configured
-mem0ai
+# Computer vision and ML
+opencv-python==4.10.0.84
+mlx-lm==0.20.2
+mlx-audio==0.2.5
 
-# CoreML prerequisite to run https://huggingface.co/pipecat-ai/smart-turn
-coremltools
+# Pipecat with specific extras
+pipecat-ai[openai,deepgram,rime,silero,mlx-whisper,mem0,local-smart-turn]>=0.0.80
+
+# WebRTC
+aiortc==1.10.1
+
+# NLP
+nltk==3.9.1
+
+# Memory system
+mem0ai==0.1.112
+
+# ML dependencies (pinned for compatibility)
+scikit-learn==1.5.1  # Downgraded for coremltools compatibility
+torch==2.5.0  # Downgraded to tested version with coremltools
+coremltools==8.3.0
+
+# Note: vllm removed (not compatible with macOS)
