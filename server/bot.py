@@ -37,9 +37,8 @@ from custom_mem0_service import CustomMem0MemoryService as Mem0MemoryService
 
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
-from pipecat.transports.network.small_webrtc import SmallWebRTCTransport, SmallWebRTCConnection
-# from pipecat.transports.network.webrtc_connection import IceServer
-from pipecat.transports.network.webrtc_connection import IceServer
+from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
+from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, IceServer
 
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 
