@@ -12,17 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hybrid architecture: Ollama (conversation) + Osaurus (memory)
 - Port conflict resolution (SurrealDB blocking port 8000)
 - Comprehensive technical debt documentation
+- Comprehensive emoji filtering for TTS output (15+ Unicode ranges covered)
 
 ### Changed
 - Updated memory extraction to use mlx-community/Qwen3-1.7B-4bit on Osaurus
 - Simplified startup process (manual Osaurus configuration)
 - Improved architecture documentation
+- Streamlined greeting system to prevent duplication at startup
 
 ### Fixed
 - Pipecat transport import deprecations (updated to new API paths)
 - Dependency version incompatibilities (scikit-learn, PyTorch)
 - Requirements.txt cleanup and version pinning
 - Eliminated all actionable startup warnings
+- **TTS Emoji Speaking**: Emojis now filtered out before TTS processing to prevent garbled audio
+- **Greeting Duplication**: Fixed initial greeting being spoken twice at client connection
+- **Deprecated API Usage**: Removed deprecated `get_context_frame()` calls causing LLM trigger loops
 
 ### Removed
 - Removed automated startup script (start_osaurus.sh) in favor of manual setup

@@ -8,6 +8,7 @@ import subprocess
 import json
 import base64
 import sys
+import re
 from typing import AsyncGenerator, Optional
 from pathlib import Path
 
@@ -22,6 +23,38 @@ from pipecat.frames.frames import (
 )
 from pipecat.services.tts_service import TTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
+
+
+def remove_emojis(text: str) -> str:
+    """Remove ALL emoji characters from text to prevent TTS from speaking them."""
+    # Comprehensive emoji removal - covers all Unicode emoji ranges
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F1E0-\U0001F1FF"  # flags
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F700-\U0001F77F"  # alchemical symbols
+        "\U0001F780-\U0001F7FF"  # geometric shapes extended
+        "\U0001F800-\U0001F8FF"  # supplemental arrows c
+        "\U0001F900-\U0001F9FF"  # supplemental symbols and pictographs
+        "\U0001FA00-\U0001FA6F"  # chess symbols
+        "\U0001FA70-\U0001FAFF"  # symbols and pictographs extended a
+        "\U00002600-\U000026FF"  # miscellaneous symbols
+        "\U00002700-\U000027BF"  # dingbats
+        "\U0001F0A0-\U0001F0FF"  # playing cards
+        "\U00002300-\U000023FF"  # miscellaneous technical
+        "\U0001F100-\U0001F1FF"  # enclosed alphanumeric supplement
+        "\U00002000-\U0000206F"  # general punctuation (some emojis)
+        "\U0000FE00-\U0000FE0F"  # variation selectors
+        "\U0000E000-\U0000F8FF"  # private use area (some custom emojis)
+        "]+",
+        flags=re.UNICODE,
+    )
+    cleaned_text = emoji_pattern.sub('', text)
+    # Clean up extra whitespace
+    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+    return cleaned_text
 
 
 class TTSMLXIsolated(TTSService):
@@ -175,11 +208,19 @@ class TTSMLXIsolated(TTSService):
     @traced_tts
     async def run_tts(self, text: str) -> AsyncGenerator[Frame, None]:
         """Generate speech using isolated worker process."""
-        logger.debug(f"{self}: Generating TTS [{text}]")
+        # Remove emojis before processing
+        cleaned_text = remove_emojis(text)
+        
+        # Skip if text becomes empty after emoji removal
+        if not cleaned_text.strip():
+            logger.debug(f"{self}: Skipping TTS for emoji-only text [{text}]")
+            return
+            
+        logger.debug(f"{self}: Generating TTS [{cleaned_text}]")
 
         try:
             await self.start_ttfb_metrics()
-            await self.start_tts_usage_metrics(text)
+            await self.start_tts_usage_metrics(cleaned_text)
 
             yield TTSStartedFrame()
 
@@ -187,10 +228,10 @@ class TTSMLXIsolated(TTSService):
             if not await self._initialize_if_needed():
                 raise RuntimeError("Failed to initialize Kokoro worker")
 
-            # Generate audio
+            # Generate audio using cleaned text
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
-                None, self._send_command, {"cmd": "generate", "text": text}
+                None, self._send_command, {"cmd": "generate", "text": cleaned_text}
             )
 
             if not result.get("success"):
@@ -214,7 +255,7 @@ class TTSMLXIsolated(TTSService):
             logger.error(f"Error in run_tts: {e}")
             yield ErrorFrame(error=str(e))
         finally:
-            logger.debug(f"{self}: Finished TTS [{text}]")
+            logger.debug(f"{self}: Finished TTS [{cleaned_text}]")
             await self.stop_ttfb_metrics()
             yield TTSStoppedFrame()
 
