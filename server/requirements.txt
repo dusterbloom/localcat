@@ -20,6 +20,7 @@ nltk==3.9.1
 
 # Memory system
 mem0ai==0.1.112
+ollama==0.5.3  # Required for Mem0 ollama provider
 
 # ML dependencies (pinned for compatibility)
 scikit-learn==1.5.1  # Downgraded for coremltools compatibility

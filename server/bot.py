@@ -33,7 +33,8 @@ from pipecat.services.whisper.stt import WhisperSTTServiceMLX, MLXModel
 
 from pipecat.frames.frames import LLMRunFrame
 
-from custom_mem0_service import CustomMem0MemoryService as Mem0MemoryService
+# Use Mem0ServiceV2 - lets mem0 work as designed
+from mem0_service_v2 import Mem0ServiceV2 as Mem0MemoryService
 
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
@@ -155,18 +156,29 @@ async def run_bot(webrtc_connection):
     tts = TTSMLXIsolated(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
     # tts = TTSMLXIsolated(model="Marvis-AI/marvis-tts-250m-v0.1", voice=None)
 
+    # Add random context length variation to prevent LM Studio context caching issues
+    import random
+    context_length_variation = random.randint(-200, 200)  # ±200 tokens for more variation
+    base_max_tokens = 3000  # Much higher to utilize 8k context window
+    varied_max_tokens = max(500, base_max_tokens + context_length_variation)  # Ensure minimum 500
+    
     local_config = {
         "llm": {
-            "provider": "lmstudio",
+            "provider": "openai",
             "config": {
-                "model":  os.getenv("MEM0_MODEL"),
-                "api_key": os.getenv("OPENAI_API_KEY"),  # Make sure to set this in your .env
+                "model": os.getenv("MEM0_MODEL"),  # Single LM Studio model for all mem0 operations
+                "api_key": "lm-studio",  # LM Studio doesn't need real API key
+                "openai_base_url": os.getenv("MEM0_BASE_URL"),  # LM Studio endpoint
+                "max_tokens": varied_max_tokens,  # Varied tokens to prevent context caching
+                "temperature": 0.1  # Low temperature for consistent JSON output
             }
         },
         "embedder": {
             "provider": "openai",
             "config": {
-                "model": os.getenv("EMBEDDING_MODEL")
+                "model": os.getenv("EMBEDDING_MODEL"),
+                "api_key": "not-needed",  # Ollama doesn't need API key
+                "openai_base_url": os.getenv("OPENAI_BASE_URL", "http://127.0.0.1:11434/v1")  # Ollama endpoint for embeddings
             }
         },
         "vector_store": {
@@ -176,20 +188,20 @@ async def run_bot(webrtc_connection):
                     "embedding_model_dims":768, # hard coded to match the embedding dim of the `nomic-embed-text` model
 
                     "path": os.getenv("MEMORY_FAISS_PATH"),
-                    "distance_strategy": "euclidean"
+                    "distance_strategy": "cosine"  # Cosine similarity works better for embeddings than euclidean
                 }   
         }
     }
 
-    # Initialize Mem0 memory service with local configuration
+    # Initialize Qwen3-optimized Mem0 memory service with proper frame processing
     memory = Mem0MemoryService(
         local_config=local_config,  # Use local LLM for memory processing
         user_id=os.getenv("USER_ID"),            # Unique identifier for the user
         agent_id=os.getenv("AGENT_ID"),     # Optional identifier for the agent
         # run_id="session1",        # Optional identifier for the run
         params=Mem0MemoryService.InputParams(
-            search_limit=10,
-            search_threshold=0.3,
+            search_limit=5,  # Limit memory retrieval for speed
+            search_threshold=0.2,  # Threshold for relevant memories
             api_version="v2",
             system_prompt="Based on previous conversations, I recall: \n\n",
             add_as_system_message=True,
