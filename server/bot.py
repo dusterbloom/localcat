@@ -257,11 +257,7 @@ async def run_bot(webrtc_connection):
     @rtvi.event_handler("on_client_ready")
     async def on_client_ready(rtvi):
         await rtvi.set_bot_ready()
-        # Kick off the conversation
-        await task.queue_frames([context_aggregator.user().get_context_frame()])
-
-
-        await rtvi.set_bot_ready()
+        
         # Get personalized greeting based on user memories. Can pass agent_id and run_id as per requirement of the application to manage short term memory or agent specific memory.
         greeting = await get_initial_greeting(
             memory_client=memory.memory_client, user_id=os.getenv("USER_ID"), agent_id=os.getenv("AGENT_ID"), run_id=None
@@ -269,9 +265,10 @@ async def run_bot(webrtc_connection):
 
         # Add the greeting as an assistant message to start the conversation
         context.add_message({"role": "assistant", "content": greeting})
-
-        # Queue the context frame to start the conversation
-        await task.queue_frames([LLMRunFrame()])
+        
+        # Send greeting directly to TTS without triggering LLM
+        from pipecat.frames.frames import TextFrame
+        await task.queue_frames([TextFrame(greeting)])
 
     @transport.event_handler("on_first_participant_joined")
     async def on_first_participant_joined(transport, participant):

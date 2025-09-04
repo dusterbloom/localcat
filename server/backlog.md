@@ -68,3 +68,39 @@ python bot.py  # Now starts with only 2 harmless external warnings (vs. 4+ criti
 ```
 
 **Next Priority**: Focus on core system improvements (memory inference, integration tests)
+
+---
+
+## ✅ Completed: TTS and Greeting Fixes (2025-09-04)
+
+### Issues Fixed
+1. **Emoji Removal from TTS Output** ✅ FIXED
+   - **Problem**: TTS was attempting to speak emoji characters (😊, etc.), causing garbled audio
+   - **Solution**: Added comprehensive `remove_emojis()` function in `tts_mlx_isolated.py`
+   - **Coverage**: All major Unicode emoji ranges (flags, symbols, emoticons, etc.)
+   - **Result**: Clean TTS output, emojis silently filtered out
+
+2. **First Sentence Duplication** ✅ FIXED
+   - **Problem**: Initial greeting was spoken twice at startup
+   - **Root Cause**: Deprecated `get_context_frame()` triggered LLM response + TextFrame duplication
+   - **Solution**: Removed deprecated context frame trigger, send greeting directly to TTS
+   - **Result**: Single greeting spoken at startup, no LLM response until user speaks
+
+### Files Modified
+- ✅ `server/bot.py`: Fixed greeting duplication in `on_client_ready` handler
+- ✅ `server/tts_mlx_isolated.py`: Added emoji filtering with comprehensive Unicode ranges
+- ✅ Import cleanup: Added `re` module for regex pattern matching
+
+### Technical Details
+- **Emoji Pattern**: Covers 15+ Unicode ranges including flags, symbols, pictographs
+- **Empty Text Handling**: Skips TTS entirely if text becomes empty after emoji removal
+- **Logging**: Added debug logs for skipped emoji-only text segments
+- **Performance**: Minimal overhead, regex compiled once at module level
+
+### Success Criteria - MET!
+```bash
+# Before: "Hello! 😊 What can I do for you today? What can I do for you today?"
+# After: "Hello! It's great to see you again."
+```
+
+**Next Priority**: Continue with core system improvements and user experience enhancements
