@@ -3,7 +3,8 @@ import asyncio
 import os
 import sys
 from contextlib import asynccontextmanager
-from typing import Dict
+from typing import Dict, Union
+
 
 # Add local pipecat to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "pipecat", "src"))
@@ -13,8 +14,13 @@ from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
 from loguru import logger
 
+
+
+
 from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
-from pipecat.audio.turn.smart_turn.local_smart_turn_v2 import LocalSmartTurnAnalyzerV2
+#from pipecat.audio.turn.smart_turn.local_smart_turn_v2 import LocalSmartTurnAnalyzerV2
+from pipecat.audio.turn.smart_turn.local_coreml_smart_turn import LocalCoreMLSmartTurnAnalyzer
+
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.pipeline.pipeline import Pipeline
@@ -24,15 +30,86 @@ from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.services.openai.llm import OpenAILLMService
 
 from pipecat.services.whisper.stt import WhisperSTTServiceMLX, MLXModel
+
+from pipecat.frames.frames import LLMRunFrame
+
+from custom_mem0_service import CustomMem0MemoryService as Mem0MemoryService
+
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
-from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
-from pipecat.transports.network.webrtc_connection import IceServer, SmallWebRTCConnection
+from pipecat.transports.network.small_webrtc import SmallWebRTCTransport, SmallWebRTCConnection
+# from pipecat.transports.network.webrtc_connection import IceServer
+from pipecat.transports.network.webrtc_connection import IceServer
+
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 
 from tts_mlx_isolated import TTSMLXIsolated
 
+
+# Setup Mem0 memory service local configuration
+
+
+
 load_dotenv(override=True)
+
+try:
+    from mem0 import Memory, MemoryClient  # noqa: F401
+except ModuleNotFoundError as e:
+    logger.error(f"Exception: {e}")
+    logger.error(
+        "In order to use Mem0, you need to `pip install mem0ai`. Also, set the environment variable MEM0_API_KEY."
+    )
+    raise Exception(f"Missing module: {e}")
+
+
+
+async def get_initial_greeting(
+    memory_client: Union[MemoryClient, Memory], user_id: str, agent_id: str, run_id: str
+) -> str:
+    """Fetch all memories for the user and create a personalized greeting.
+
+    Returns:
+        A personalized greeting based on user memories
+    """
+    try:
+        if isinstance(memory_client, Memory):
+            filters = {"user_id": user_id, "agent_id": agent_id, "run_id": run_id}
+            filters = {k: v for k, v in filters.items() if v is not None}
+            memories = memory_client.get_all(**filters)
+        else:
+            # Create filters based on available IDs
+            id_pairs = [("user_id", user_id), ("agent_id", agent_id), ("run_id", run_id)]
+            clauses = [{name: value} for name, value in id_pairs if value is not None]
+            filters = {"AND": clauses} if clauses else {}
+
+            # Get all memories for this user
+            memories = memory_client.get_all(filters=filters, version="v2", output_format="v1.1")
+
+        if not memories or len(memories) == 0:
+            logger.debug(f"!!! No memories found for this user. {memories}")
+            return "Hello! It's nice to meet you. How can I help you today?"
+
+        # Create a personalized greeting based on memories
+        greeting = "Hello! It's great to see you again. "
+
+        # Add some personalization based on memories (limit to 3 memories for brevity)
+        # if len(memories) > 0:
+        #     greeting += "Based on our previous conversations, I remember: "
+        #     for i, memory in enumerate(memories["results"][:3], 1):
+        #         memory_content = memory.get("memory", "")
+        #         # Keep memory references brief
+        #         if len(memory_content) > 100:
+        #             memory_content = memory_content[:97] + "..."
+        #         greeting += f"{memory_content} "
+
+        #     greeting += "How can I help you today?"
+
+        logger.debug(f"Created personalized greeting from {len(memories)} memories")
+        return greeting
+
+    except Exception as e:
+        logger.error(f"Error retrieving initial memories from Mem0: {e}")
+        return "Hello! How can I help you today?"
 
 app = FastAPI()
 
@@ -45,17 +122,15 @@ ice_servers = [
 ]
 
 
-SYSTEM_INSTRUCTION = """
-"You are Pipecat, a friendly, helpful chatbot.
+smart_turn_model_path = os.getenv("LOCAL_SMART_TURN_MODEL_PATH")
 
-Your input is text transcribed in realtime from the user's voice. There may be transcription errors. Adjust your responses automatically to account for these errors.
 
-Your output will be converted to audio so don't include special characters in your answers and do not use any markdown or special formatting.
-
-Respond to what the user said in a creative and helpful way. Keep your responses brief unless you are explicitly asked for long or detailed responses. Normally you should use one or two sentences at most. Keep each sentence short. Prefer simple sentences. Try not to use long sentences with multiple comma clauses.
-
-Start the conversation by saying, "Hello, I'm Pipecat!" Then stop and wait for the user.
-"""
+SYSTEM_INSTRUCTION =  """You are Locat, a personal assistant. You can remember things about the person you are talking to.
+                        Some Guidelines:
+                        - Make sure your responses are friendly yet short and concise.
+                        - If the user asks you to remember something, make sure to remember it.
+                        - Greet the user by their name if you know about it. 
+                    """
 
 
 async def run_bot(webrtc_connection):
@@ -65,34 +140,83 @@ async def run_bot(webrtc_connection):
             audio_in_enabled=True,
             audio_out_enabled=True,
             vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
-            turn_analyzer=LocalSmartTurnAnalyzerV2(
-                smart_turn_model_path="",  # Download from HuggingFace
-                params=SmartTurnParams(),
+            turn_analyzer=LocalCoreMLSmartTurnAnalyzer(
+                smart_turn_model_path=smart_turn_model_path,  # Download from HuggingFace
+                params=SmartTurnParams(
+                stop_secs=2.0,  # Shorter stop time when using Smart Turn
+                pre_speech_ms=0.0,
+                max_duration_secs=20.0
+            )
             ),
         ),
     )
 
-    stt = WhisperSTTServiceMLX(model=MLXModel.LARGE_V3_TURBO_Q4)
+    stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
 
     tts = TTSMLXIsolated(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
     # tts = TTSMLXIsolated(model="Marvis-AI/marvis-tts-250m-v0.1", voice=None)
 
+    local_config = {
+        "llm": {
+            "provider": "lmstudio",
+            "config": {
+                "model":  os.getenv("MEM0_MODEL"),
+                "api_key": os.getenv("OPENAI_API_KEY"),  # Make sure to set this in your .env
+            }
+        },
+        "embedder": {
+            "provider": "openai",
+            "config": {
+                "model": os.getenv("EMBEDDING_MODEL")
+            }
+        },
+        "vector_store": {
+            "provider": "faiss",
+                "config": {
+                    "collection_name": "memory",
+                    "embedding_model_dims":768, # hard coded to match the embedding dim of the `nomic-embed-text` model
+
+                    "path": os.getenv("MEMORY_FAISS_PATH"),
+                    "distance_strategy": "euclidean"
+                }   
+        }
+    }
+
+    # Initialize Mem0 memory service with local configuration
+    memory = Mem0MemoryService(
+        local_config=local_config,  # Use local LLM for memory processing
+        user_id=os.getenv("USER_ID"),            # Unique identifier for the user
+        agent_id=os.getenv("AGENT_ID"),     # Optional identifier for the agent
+        # run_id="session1",        # Optional identifier for the run
+        params=Mem0MemoryService.InputParams(
+            search_limit=10,
+            search_threshold=0.3,
+            api_version="v2",
+            system_prompt="Based on previous conversations, I recall: \n\n",
+            add_as_system_message=True,
+            position=1,
+        )
+    )
+
+
     llm = OpenAILLMService(
-        api_key="dummyKey",
-        model="gemma-3n-e4b-it-text",  # Small model. Uses ~4GB of RAM.
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL"),  # Small model. Uses ~4GB of RAM.
         # model="google/gemma-3-12b",  # Medium-sized model. Uses ~8.5GB of RAM.
         # model="mlx-community/Qwen3-235B-A22B-Instruct-2507-3bit-DWQ", # Large model. Uses ~110GB of RAM!
-        base_url="http://127.0.0.1:1234/v1",
+        base_url=os.getenv("OPENAI_BASE_URL"), 
         max_tokens=4096,
+        extra_body={"think": False},  # Disable thinking for main conversation model
     )
 
     context = OpenAILLMContext(
         [
             {
-                "role": "user",
+                "role": "system",
                 "content": SYSTEM_INSTRUCTION,
             }
-        ],
+        ]
+
     )
     context_aggregator = llm.create_context_aggregator(
         context,
@@ -114,6 +238,7 @@ async def run_bot(webrtc_connection):
             stt,
             rtvi,
             context_aggregator.user(),
+            memory,
             llm,
             tts,
             transport.output(),
@@ -135,6 +260,19 @@ async def run_bot(webrtc_connection):
         await rtvi.set_bot_ready()
         # Kick off the conversation
         await task.queue_frames([context_aggregator.user().get_context_frame()])
+
+
+        await rtvi.set_bot_ready()
+        # Get personalized greeting based on user memories. Can pass agent_id and run_id as per requirement of the application to manage short term memory or agent specific memory.
+        greeting = await get_initial_greeting(
+            memory_client=memory.memory_client, user_id=os.getenv("USER_ID"), agent_id=os.getenv("AGENT_ID"), run_id=None
+        )
+
+        # Add the greeting as an assistant message to start the conversation
+        context.add_message({"role": "assistant", "content": greeting})
+
+        # Queue the context frame to start the conversation
+        await task.queue_frames([LLMRunFrame()])
 
     @transport.event_handler("on_first_participant_joined")
     async def on_first_participant_joined(transport, participant):
