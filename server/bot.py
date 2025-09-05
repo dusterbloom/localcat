@@ -47,7 +47,8 @@ from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 from tts_mlx_isolated import TTSMLXIsolated
 
 
-load_dotenv(override=True)
+# Load env from server/.env explicitly to ensure consistent paths
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
 
 

@@ -86,6 +86,10 @@ class HotPathMemoryProcessor(BaseProcessor):
             lmdb_dir=lmdb_dir
         )
         self.store = MemoryStore(paths)
+        try:
+            logger.info(f"HotMem storage: sqlite={self.store.paths.sqlite_path} lmdb={self.store.paths.lmdb_dir}")
+        except Exception:
+            pass
         
         # Initialize hot memory
         self.hot = HotMemory(self.store)

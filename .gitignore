@@ -1,13 +1,13 @@
-.DS_Store
-.env
-.venv
-.vscode
-.next
-node_modules
-venv
-__pycache__
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-data
+# Persistent data and logs
+data/
+graph.lmdb/
+memory.db*
+server/.logs/
+
+# Node and Python artifacts
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
