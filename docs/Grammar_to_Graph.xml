@@ -1,0 +1,1076 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE book SYSTEM "BITS-book2.dtd">
+<book xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:mml="http://www.w3.org/1998/Math/MathML" dtd-version="2.0" xml:lang="EN">
+<collection-meta collection-type="series">
+<title-group>
+<title>U.S. Geological Survey Scientific Investigations Report</title>
+<alt-title alt-title-type="pub-short-title">Scientific Investigations Report</alt-title>
+<alt-title alt-title-type="pub-acronym-title">SIR</alt-title>
+</title-group>
+<contrib-group>
+<contrib>
+<aff><institution>U.S. Department of the Interior</institution></aff></contrib>
+<contrib>
+<aff><institution>U.S. Geological Survey</institution></aff></contrib>
+</contrib-group><issn publication-format="print">2328-031X</issn><issn publication-format="online">2328-0328</issn>
+</collection-meta>
+<book-meta>
+<book-id book-id-type="publisher-id">2025-5064</book-id>
+<book-id book-id-type="doi">10.3133/sir20255064</book-id><book-title-group><book-title>Grammar to Graph&#x2014;An Approach for Semantic Transformation of Annotations to Triples</book-title>
+<alt-title alt-title-type="running-head">Grammar to Graph&#x2014;An Approach for Semantic Transformation of Annotations to Triples</alt-title>
+<alt-title alt-title-type="sentence-case">Grammar to graph&#x2014;An approach for semantic transformation of annotations to triples</alt-title></book-title-group>
+<contrib-group content-type="program-note">
+<contrib><collab>National Geospatial Program</collab></contrib>
+</contrib-group>
+<contrib-group content-type="authors">
+<contrib contrib-type="author"><string-name><x>By</x><x> </x><given-names>Dalia E.</given-names><x> </x><surname>Varanka</surname></string-name><xref ref-type="fn" rid="afn1"><sup>1</sup></xref><x> and </x></contrib>
+<contrib contrib-type="author"><string-name><given-names>Emily</given-names><x> </x><surname>Abbott</surname></string-name><xref ref-type="fn" rid="afn2"><sup>2</sup></xref></contrib>
+</contrib-group>
+<author-notes>
+<fn id="afn1"><label>1</label>
+<p>U.S. Geological Survey.</p></fn>
+<fn id="afn2"><label>2</label>
+<p>Colorado School of Mines, under contract to the U.S. Geological Survey.</p></fn></author-notes>
+<pub-date date-type="pub">
+<year>2025</year></pub-date><book-volume-number/>
+<publisher>
+<publisher-name>U.S. Geological Survey</publisher-name>
+<publisher-loc>Reston, Virginia</publisher-loc>
+</publisher>
+<edition/>
+<abstract>
+<title>Abstract</title>
+<p>Data annotation is the process of labeling data to show the outcome that a related data model should predict. In this study, annotation data were transformed into semantic graph triples, mainly for use with the Resource Description Framework (RDF), a type of entity-relationship-attribute data model for graph databases. The transformation of annotation data to semantic graph triples provides complex linguistic meaning with data handling advantages such as reduced data storage needs, improved logical specification of relations between objects, and reusable classes and properties that support logic and inference. A grammar-based framework in graph form supports user questions and queries. </p>
+<p>The words defining approximately 334 topographic feature types compiled by the U.S. Geological Survey were tokenized as units of analysis and grouped by part of speech. Their dependency relations were identified for this study using natural language processing libraries. Dependency concepts are used as structured semantic relations among part-of-speech classes. Tokens, units equivalent to words, form instances of classes and were quantified within a tabular output format using PostgreSQL data storage software. Table data were logically aligned as triples following a mapping file and stored with an ontology file using Ontop virtual triplestore software. A grammar ontology schema for the data was synchronized to match queries whose results validated the graph&#x2019;s structure. The text analysis produced 8 part-of-speech classes of content words for object representations and 4 classes of function words for operational applications. Dependency relations formed 27 ontology properties for topographic subgraph structures. Token occurrences shaped overall ontology salience and formed a lexicon of syntactic terms for subgraph objects and properties. The schema ontology of class and property population shapes formed the lexicon of English terms. SPARQL Protocol and RDF Query Language (SPARQL) was used with the lexicon to conform data to RDF guidelines. </p>
+<p>This study confirms the hypothesis that although linguistic logic varies from description logic, its approximation applies to ontology design. Property and query use case patterns extracted from the analysis support queries concerning complex topographic relations and patterns normally embedded within text definitions. The method used in this study could be applied to text forms in other domains, such as survey notes.</p></abstract>
+<custom-meta-group>
+<custom-meta><meta-name>Online Only</meta-name><meta-value>True</meta-value></custom-meta>
+</custom-meta-group>
+<notes notes-type="associated-data">
+<p>Associated data for this publication:</p>
+<p>Abbott, E.T., 2024, Grammar transformations of topographic feature type annotations of the U.S. to structured graph data: U.S. Geological Survey data release, <ext-link ext-link-type="uri" xlink:href="https://doi.org/10.5066/P1BDPXKZ">https://doi.org/10.5066/P1BDPXKZ</ext-link>.</p></notes>
+<notes notes-type="further-information">
+<p>For more information on the USGS&#x2014;the Federal source for science about the Earth, its natural and living resources, natural hazards, and the environment&#x2014;visit <ext-link>https://www.usgs.gov</ext-link> or call 1&#x2013;888&#x2013;392&#x2013;8545.</p></notes>
+<notes notes-type="overview">
+<p>For an overview of USGS information products, including maps, imagery, and publications, visit <ext-link>https://store.usgs.gov/</ext-link> or contact the store at 1&#x2013;888&#x2013;275&#x2013;8747.</p></notes>
+<notes notes-type="disclaimer">
+<p>Any use of trade, firm, or product names is for descriptive purposes only and does not imply endorsement by the U.S. Government.</p></notes>
+<notes notes-type="permissions">
+<p>Although this information product, for the most part, is in the public domain, it also may contain copyrighted materials as noted in the text. Permission to reproduce <ext-link ext-link-type="uri" xlink:href="https://www.usgs.gov/survey-manual/11006-use-copyrighted-material-usgs-information-products">copyrighted items</ext-link> must be secured from the copyright owner.</p></notes>
+</book-meta>
+<front-matter>
+<glossary content-type="Abbreviations"><title>Abbreviations</title>
+<def-list><def-item><term>ACL</term>
+<def>
+<p>adnominal clause</p></def></def-item><def-item><term>ADJ</term>
+<def>
+<p>adjective</p></def></def-item><def-item><term>ADP</term>
+<def>
+<p>adposition</p></def></def-item><def-item><term>ADV</term>
+<def>
+<p>adverb</p></def></def-item><def-item><term>ADVCL</term>
+<def>
+<p>adverbial clause</p></def></def-item><def-item><term>ADVMOD</term>
+<def>
+<p>adverbial modifier</p></def></def-item><def-item><term>AGENT</term>
+<def>
+<p>agent</p></def></def-item><def-item><term>AI</term>
+<def>
+<p>artificial intelligence</p></def></def-item><def-item><term>AMOD</term>
+<def>
+<p>adjectival modifier</p></def></def-item><def-item><term>AUX</term>
+<def>
+<p>auxiliary</p></def></def-item><def-item><term>CASE</term>
+<def>
+<p>case marker</p></def></def-item><def-item><term>CC</term>
+<def>
+<p>coordinating conjunction (dependency relation)</p></def></def-item><def-item><term>CCONJ</term>
+<def>
+<p>coordinating conjunction (part of speech)</p></def></def-item><def-item><term>CCOMP</term>
+<def>
+<p>clausal complement</p></def></def-item><def-item><term>COMPOUND</term>
+<def>
+<p>multiword expression</p></def></def-item><def-item><term>CONJ</term>
+<def>
+<p>conjunction</p></def></def-item><def-item><term>CSUBJ</term>
+<def>
+<p>clausal subject</p></def></def-item><def-item><term>DET</term>
+<def>
+<p>determiner</p></def></def-item><def-item><term>DOBJ</term>
+<def>
+<p>direct object</p></def></def-item><def-item><term>G2G</term>
+<def>
+<p>Grammar to Graph</p></def></def-item><def-item><term>GIS</term>
+<def>
+<p>Geographic Information System</p></def></def-item><def-item><term>NEG</term>
+<def>
+<p>negation</p></def></def-item><def-item><term>NLP</term>
+<def>
+<p>natural language processing</p></def></def-item><def-item><term>NMOD</term>
+<def>
+<p>nominal modifier</p></def></def-item><def-item><term>NOUN</term>
+<def>
+<p>noun</p></def></def-item><def-item><term>NSUBJ</term>
+<def>
+<p>nominal subject</p></def></def-item><def-item><term>NUM</term>
+<def>
+<p>numeral</p></def></def-item><def-item><term>NUMMOD</term>
+<def>
+<p>numeric modifier</p></def></def-item><def-item><term>OWL</term>
+<def>
+<p>Web Ontology Language</p></def></def-item><def-item><term>PART</term>
+<def>
+<p>particle</p></def></def-item><def-item><term>POBJ</term>
+<def>
+<p>object of preposition</p></def></def-item><def-item><term>POS</term>
+<def>
+<p>part of speech</p></def></def-item><def-item><term>PREP</term>
+<def>
+<p>preposition</p></def></def-item><def-item><term>PRON</term>
+<def>
+<p>pronoun</p></def></def-item><def-item><term>RDF</term>
+<def>
+<p>Resource Description Framework</p></def></def-item><def-item><term>ROOT</term>
+<def>
+<p>root</p></def></def-item><def-item><term>SCONJ</term>
+<def>
+<p>subordinating conjunction</p></def></def-item><def-item><term>SPARQL</term>
+<def>
+<p>recursive acronym for SPARQL Protocol and RDF Query Language</p></def></def-item><def-item><term>SPO</term>
+<def>
+<p>subject-property-object</p></def></def-item><def-item><term>SQL</term>
+<def>
+<p>structured query language</p></def></def-item><def-item><term>SVO</term>
+<def>
+<p>subject-verb-object</p></def></def-item><def-item><term>USGS</term>
+<def>
+<p>U.S. Geological Survey</p></def></def-item><def-item><term>VERB</term>
+<def>
+<p>verb</p></def></def-item>
+</def-list>
+</glossary>
+</front-matter>
+<book-body>
+<book-part>
+<body>
+<sec>
+<title>Introduction</title>
+<p>This project, called Grammar to Graph (G2G), encompasses a data transformation process from natural language text strings to node-edge-node triples that <bold>federate</bold> to form a graph database. The transformation of annotation data to semantic <bold>graph triples</bold>, called &#x201C;triples&#x201D; throughout this text, provides complex linguistic meaning with data handling advantages such as reduced data storage needs, improved logical specification of relations between objects, and reusable classes and properties that support logic and inference. The transformation is based on English-language grammar rules. The scope of this report is to describe how geospatial feature-type definitions such as a bar (that is, a mound or ridge of naturally accumulated sand, gravel, or alluvium forming an underwater or exposed embankment or succession of ridges) can be analyzed using grammar rules that align with the Resource Description Framework (RDF) triples (<xref ref-type="bibr" rid="r17">Resource Description Framework Working Group, 2014</xref>). The RDF models statements of facts or web resources in expressions of the form subject-predicate-object, known as triples. For example, two nodes connected by an edge can describe a fact, represented as (subject, predicate, object) triples. Results were usable for developing topographic query types involving commonly used topographic domain properties. </p>
+<p>This report is an accompanying publication to a publicly distributed U.S. Geological Survey data release (<xref ref-type="bibr" rid="r1">Abbott, 2024</xref>) that includes three tabular data files: 1) a glossary that forms the input data for a dependency analysis of definitions, 2) text strings tagged with their part of speech (POS) and the <bold>dependency relation</bold>, and 3) a quantified lexicon of each <bold>token</bold>, their occurrences, and the related POS categories of the input text corpus. The data release includes the ontology header and an approach for creating a subclasses query. </p>
+<sec>
+<title>Purpose and Scope</title>
+<p>Natural language processing assisted by artificial intelligence (AI) is commonly composed of large language models using statistical approaches for word predictability and sense detection among large bodies of input text data. Applying an ontology as a schema structure with logic property relations improves the efficiency and accuracy of inferring information from AI technologies by vectorizing the graph and integrating it with multiple data models. The syntactic expression of words can vary, but the meanings of statements are reflected in grammar. The purpose of the G2G project is to study how grammar structures in graph databases may support natural language queries. This report describes the initial natural language processing stage of the G2G project as a prototype for procedures using geographical language data as an ontology and for further research.</p>
+<p>This report describes the knowledge modeling scope of an ontology that approximates a range of targeted potential natural language queries by employing primitive entities to define basic concepts that can be used to build complex concepts. Topographic data share attributes of linguistic primitives learned early in life in creating categories as standard locality features and logical relations. Logic primitives are categories that cannot be defined in terms of other category criteria for inclusion in the same ontology. Primitives are compatible with disjoint properties whose classes are reused as separate elements for building flexible semantic (subgraph) models of more complex concepts by minimizing overlapping inferences. </p>
+</sec>
+</sec>
+<sec>
+<title>Background</title>
+<p>Source data from a glossary of topographic features (<xref ref-type="bibr" rid="r4">Caro and Varanka, 2011</xref>) were normalized by removing punctuation and other characters or replacing these with different formatting for data processing consistency. Normalization allowed the syntax of the text to be examined and used flexibly for focusing on topographic vocabulary meaning and patterns of language use and their spatial nuances. The normalized data are defined as feature-type class semantic universals involving multiple entities and various relations for graph data. </p>
+<p>The <bold>dependency grammar</bold> analysis provided semantically governed rules among object categories, such as structures and relations and their associated morphological processes to simulate the complexity of linguistic expression. Dependency grammar takes the verb as the central unit of the phrase. A phrase has a subject as the core argument and, secondarily, an object. These positions can be compiled as a three-part data structure based on the dependency relations between POS sets or lexical instances. An analogy is sometimes made that the subject-verb-object (SVO) languages, such as English, are intuitively related to subject-property-object (SPO) triple resources as a simple sentence form. This analogy is roughly correct, but linguistically, a POS serves as the subject, and a relation connects it to the verb. Some schemas of POS are associated with dependency relations for defining triples during postprocessing.</p>
+<p>Data were tokenized and tagged with respective POS and dependency relations using spaCy pipelines for processing and analysis (<xref ref-type="bibr" rid="r6">ExplosionAI GmbH, 2024</xref>). The logic of each dependency relation among POS was semantically aligned as a triple pattern with property domain and range classes, and was manually mapped to structure the language processing data output as an RDF vocabulary of hierarchical types and other classes with word instances as set members and primarily object properties to create the grammar ontology files. Patterns in the semantic order of word associations were considered equivalent for SPARQL query matching against the database schema in the SPO forms derived from SVO clause structures. Subgraphs of complex relations consisted of object modifiers and other subproperties expanding upon the SPO form.</p>
+<sec>
+<title>Glossary Database</title>
+<p>The compiled glossary database includes approximately 334 topographic feature-type English-language labels and associated definitions whose original versions are provided in <xref ref-type="bibr" rid="r4">Caro and Varanka (2011)</xref>. The input annotation data to study geospatial language were manually edited to ensure data quality. For example, nominative terms of glosses whose definitions are meant to persist with time allow the modality of verb forms (representing tense or mood) within the input definition to be omitted to focus on spatial aspects of the data. Subtypes of English, such as those expressing linguistic variety related to geographical areas, were not considered. Only active-voice phrases, such as &#x201C;A zone where waves break into foam as they move towards the shore,&#x201D; were included in the analysis. </p>
+<p>All punctuation was removed and replaced according to the following rules:</p><list id="L1" list-type="bullet"><list-item><label>&#x25CF;</label>
+<p>Where a slash appears in the topographic label (as in &#x201C;sea/ocean&#x201D;), it is replaced by a space.</p></list-item><list-item><label>&#x25CF;</label>
+<p>&#x201C;And/or&#x201D; is replaced with &#x201C;or.&#x201D;</p></list-item><list-item><label>&#x25CF;</label>
+<p>Commas are replaced with &#x201C;and&#x201D; or &#x201C;or&#x201D; in a list, often as a stylistic change.</p></list-item><list-item><label>&#x25CF;</label>
+<p>Periods are removed. Where there are two sentences, a natural language passage is written for each sentence individually.</p></list-item><list-item><label>&#x25CF;</label>
+<p>Brackets are removed if the bracketed phrase&#x2019;s insertion makes grammatical sense.</p></list-item><list-item><label>&#x25CF;</label>
+<p>Contractions are broken out into separate words.</p></list-item><list-item><label>&#x25CF;</label>
+<p>Hyphenated words remain as compound words.</p></list-item></list>
+<p>Punctuation rules consisted of:</p><list id="L2" list-type="bullet"><list-item><label>&#x25CF;</label>
+<p>Terms appearing after &#x201C;especially&#x201D; are considered subclasses and are removed if the parent class encompasses them.</p></list-item><list-item><label>&#x25CF;</label>
+<p>Feature types with more than one definition are edited and either incorporated in a single definition or remain as multiple definitions where distinct characters are defined.</p></list-item><list-item><label>&#x25CF;</label>
+<p>The first determiner of the definition, such as &#x201C;a&#x201D; or &#x201C;an&#x201D; (as in &#x201C;an area&#x201D;), is assumed to be a subsumption relation of the feature label to its definition, such as &#x201C;Feature [isA] Definition.&#x201D; &#x201C;The&#x201D; is removed using the same rule, although this causes slight differences in semantics (that is, whether the referent is specified or unspecified). Determiners within the definition are kept.</p></list-item><list-item><label>&#x25CF;</label>
+<p>The linguistic and first-order logic concepts can be resolved for computation, although not perfectly. Some annotation of language relations reflects labels assigned to properties for ease of use.</p></list-item></list>
+<p>Variations in writing style were interpreted following Modern Language Association formatting principles and guidelines for consistency (refer to <xref ref-type="bibr" rid="r16">Purdue Online Writing Lab, 2024</xref>).</p>
+</sec>
+<sec>
+<title>Language Processing</title>
+<p>Text data to instantiate user queries were organized among their POS category and dependencies on the basis of a predominant subject of a phrase called the <bold>head</bold>. Patterns among word dependencies reflect types of semantic roles such as object, modifier, or spatial preposition. These grammar rules form the domain and range classes for RDF properties aligned along equivalent grammar rules. Types of word dependency patterns among tokens are called <bold>chunks</bold> in the case of nouns and their modifiers.</p>
+<sec>
+<title>Dependency Grammar</title>
+<p>Dependency grammar organizes relations among linguistic units, such as words, according to their predominant or dependent roles to communicate meaning (<xref ref-type="fig" rid="fig01">fig. 1</xref>). The verb is taken to be the structural center of a clause and requires the semantic agreement of other words directly or indirectly connected to it according to its dependency direction, as in &#x201C;is dependent on&#x201D; or &#x201C;has dependent.&#x201D; The data structure is represented by the dependency arcs between the main word acting as the head and the head&#x2019;s dependents. Dependency structures may be formed as chunks consisting of nouns with auxiliary relations to verbs, such as modifiers or other information, adding complexity, such as phrases.</p>
+<fig id="fig01" position="float" fig-type="figure"><label>Figure 1</label><caption><p>Diagram of a dependency arc representing grammatical word dependencies among parts of speech categories and their abbreviations in an example phrase.</p><p content-type="toc">Figure 1.	Diagram of a dependency arc representing grammatical word dependencies among parts of speech categories and their abbreviations in an example phrase</p></caption><long-desc>Alternative (alt) text for figure 1. A phrase, &#x201C;A long narrow passage sunk in the earth,&#x201D; is diagrammed to show the parts of speech.</long-desc><graphic xlink:href="den24-0056_fig01"/></fig>
+</sec>
+<sec>
+<title>Part-of-Speech Classes</title>
+<p>SpaCy natural language processing pipelines tokenize phrases and assign POS abbreviation tags to those tokens and tags for the dependency relations determined among tokens based on Universal Dependencies libraries, as presented by <xref ref-type="bibr" rid="r11">Marneffe and others (2024)</xref>. Token texts and their associated tags compose the tabular data column headings of the USGS data release associated with this report (<xref ref-type="bibr" rid="r1">Abbott, 2024</xref>). The text analysis in this study produced eight POS classes of content words for object representations and four classes of function words for operational applications; these are listed below. Function words provide clarifying context to descriptions. For example, descriptions formed with the determiner &#x201C;the&#x201D; that appear to refer to exactly one object could indicate logical primitives.</p>
+<p>The eight POS content words and their abbreviations are:</p><list id="L3" list-type="bullet"><list-item><label>&#x2022;</label>
+<p>Adjective (ADJ)</p></list-item><list-item><label>&#x2022;</label>
+<p>Adverb (ADV)</p></list-item><list-item><label>&#x2022;</label>
+<p>Auxiliary (AUX)</p></list-item><list-item><label>&#x2022;</label>
+<p>Determiner (DET)</p></list-item><list-item><label>&#x2022;</label>
+<p>Noun (NOUN)</p></list-item><list-item><label>&#x2022;</label>
+<p>Numeral (NUM)</p></list-item><list-item><label>&#x2022;</label>
+<p>Pronoun (PRON) and</p></list-item><list-item><label>&#x2022;</label>
+<p>Verb (VERB)</p></list-item></list>
+<p>The four POS function words are:</p><list id="L4" list-type="bullet"><list-item><label>&#x2022;</label>
+<p>Adposition (ADP)</p></list-item><list-item><label>&#x2022;</label>
+<p>Coordinating conjunction (CCONJ)</p></list-item><list-item><label>&#x2022;</label>
+<p>Particle (PART) and</p></list-item><list-item><label>&#x2022;</label>
+<p>Subordinating conjunction (SCONJ)</p></list-item></list>
+<p>A token's <bold>lemma</bold> is an attribute that describes the root form or infinitive of that word. In the word&#x2019;s dictionary form, a lemma is used as a heading indicating the subject or argument of an annotation or a dictionary entry. Lemmas may be preferred forms for entity classes in an ontology because definitions usually reflect stable states such as roots or infinitives. However, linguistic class definitions include conditional properties indicated by the word token texts of their input clause. Word token texts vary to indicate semantic properties (such as person, number, tense, use, and the action role of subjects and objects) that may be transferable to graphs. POS tags, such as &#x201C;noun,&#x201D; &#x201C;verb,&#x201D; &#x201C;adjective,&#x201D; and &#x201C;adverb,&#x201D; indicate grammatical roles that help distinguish how a lemma may function within a graph, whether as a class, relationship, or property.</p>
+<p>The POS sets transfer to the class-subclass hierarchy of taxonomy and tree-type databases to allow <bold>Boolean operations</bold> involving set members and inference. However, the relations and attributes may lack equivalent formal semantic axioms or formulas that enable some semantic similarity measures but limit logic applications. Some set relations are inherent in definitions of words, such as plurals. Different kinds of relations among objects, space, and time, such as agency, possession, or topology, are marked by prepositions or subordinate conjunctions. Verb relations and attributes can infer some processes. For example, in the meteorological phenomenon called the convection cycle, dynamic markers such as &#x201C;cooling,&#x201D; &#x201C;shrinking,&#x201D; and &#x201C;sinking&#x201D; can be used to define an entity such as a convective storm, &#x201C;An atmospheric storm which is generated by the heating and convection of moist and unstable air masses&#x201D; (<xref ref-type="bibr" rid="r19">The Ontology Lookup Service, 2025</xref>). Adverbs can reflect conditions of necessity, uncertainty, possibility, or permission, including time conditions. Some subordinate conjunctions beginning with &#x201C;wh-,&#x201D; such as &#x201C;where&#x201D; and &#x201C;when,&#x201D; provide indications of space and time.</p>
+<p>Grouping POS with tags categorizes syntactic text terms into semantic roles and creates a lexicon. The lexicon offers quantitative summaries of the input data corpus. Each word has its lemma listed once in order of most frequent occurrence, with POS category tags included for grouping terms. Descriptive parts of speech, such as determiners, are removed from the lexicon. The same format is applied to chunks. Determiners are like noun modifiers when included in chunks, which are groupings of a noun and its modifiers. Chunking streamlines the processing workload if context is not a priority.</p>
+</sec>
+<sec>
+<title>Dependency Relation Properties</title>
+<p>Dependency relations are grammatically associated with certain parts of speech to form semantic patterns. The word token text has attributes of its POS and its lemma. The head, representing the predominant concept of the relationship, has attributes of the POS and the lemma. The dependency relation has one head and any number of children.</p>
+<p>The dependency relation for the head and its children is similar to an ontology property&#x2019;s domain and range class. The following relations form the semantic transformation rules for the grammar ontology:</p><list id="L5" list-type="bullet"><list-item><label>&#x2022;</label>
+<p>Adnominal clause (ACL)</p></list-item><list-item><label>&#x2022;</label>
+<p>Adverbial clause (ADVCL)</p></list-item><list-item><label>&#x2022;</label>
+<p>Adverbial modifier (ADVMOD)</p></list-item><list-item><label>&#x2022;</label>
+<p>Agent (AGENT)</p></list-item><list-item><label>&#x2022;</label>
+<p>Adjectival modifier (AMOD)</p></list-item><list-item><label>&#x2022;</label>
+<p>Auxiliary verb (AUX)</p></list-item><list-item><label>&#x2022;</label>
+<p>Case marker (CASE)</p></list-item><list-item><label>&#x2022;</label>
+<p>Coordinating conjunction (CC)</p></list-item><list-item><label>&#x2022;</label>
+<p>Clausal complement (CCOMP)</p></list-item><list-item><label>&#x2022;</label>
+<p>Multiword expression (COMPOUND)</p></list-item><list-item><label>&#x2022;</label>
+<p>Conjunction (CONJ)</p></list-item><list-item><label>&#x2022;</label>
+<p>Clausal subject (CSUBJ)</p></list-item><list-item><label>&#x2022;</label>
+<p>Direct object (DOBJ)</p></list-item><list-item><label>&#x2022;</label>
+<p>Negation (NEG)</p></list-item><list-item><label>&#x2022;</label>
+<p>Nominal modifier (NMOD)</p></list-item><list-item><label>&#x2022;</label>
+<p>Nominal subject (NSUBJ)</p></list-item><list-item><label>&#x2022;</label>
+<p>Numeric modifier (NUMMOD)</p></list-item><list-item><label>&#x2022;</label>
+<p>Object of preposition (POBJ)</p></list-item><list-item><label>&#x2022;</label>
+<p>Preposition (PREP)</p></list-item><list-item><label>&#x2022;</label>
+<p>Root (ROOT)</p></list-item></list>
+<p><xref ref-type="table" rid="t01">Table 1</xref> shows an input clause, &#x201C;An aircraft facility is an area where aircraft can take-off and land usually equipped with associated buildings and facilities,&#x201D; tokenized as words or as chunks and assigned their corresponding POS categories, and the dependency relation of the tokens to their arc heads of phrases within the clause.</p>
+<table-wrap id="t01" position="float"><label>Table 1</label><caption>
+<title>Part-of-speech and dependency relations analyzed from the input phrase based on the gloss, &#x201C;An aircraft facility is an area where aircraft can take-off and land usually equipped with associated buildings and facilities.&#x201D;</title>
+<p content-type="toc">Table 1.&#x2003;Part of speech and dependency relations analyzed from the input phrase based on the gloss, &#x201C;An aircraft facility is an area where aircraft can take off and land usually equipped with associated buildings and facilities&#x201D;</p>
+<p>[Input phrase, read top to bottom, is the tokenized gloss. Abbreviations for terms are provided in parentheses. Head, word that determines the nature of the phrase (<xref ref-type="bibr" rid="r14">Nordquist, 2019</xref>).]</p></caption>
+<table rules="groups">
+<col width="19.04%"/>
+<col width="32.53%"/>
+<col width="29.41%"/>
+<col width="19.02%"/>
+<thead>
+<tr>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Input phrase</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Part-of-speech abbreviation</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Dependency tag</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Head</td>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td valign="top" align="left" style="border-top: solid 0.50pt" scope="row">An aircraft facility</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">Noun (NOUN)</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">Nominal subject (NSUBJ)</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">is</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">is</td>
+<td valign="top" align="left">Auxiliary (AUX)</td>
+<td valign="top" align="left">Root (ROOT)</td>
+<td valign="top" align="left">is</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">an area</td>
+<td valign="top" align="left">Noun (NOUN)</td>
+<td valign="top" align="left">Attributive (ATTR)</td>
+<td valign="top" align="left">is</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">where</td>
+<td valign="top" align="left">Subordinating conjunction (SCONJ)</td>
+<td valign="top" align="left">Adverbial modifier (ADVMOD)</td>
+<td valign="top" align="left">land</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">aircraft</td>
+<td valign="top" align="left">Noun (NOUN)</td>
+<td valign="top" align="left">Nominal subject (NSUBJ)</td>
+<td valign="top" align="left">take-off</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">can</td>
+<td valign="top" align="left">Auxiliary (AUX)</td>
+<td valign="top" align="left">Auxiliary verb (AUX)</td>
+<td valign="top" align="left">take-off</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">take-off</td>
+<td valign="top" align="left">Verb (VERB)</td>
+<td valign="top" align="left">Relative clause (RELCL)</td>
+<td valign="top" align="left">an area</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">and</td>
+<td valign="top" align="left">Coordinating conjunction (CCONJ)</td>
+<td valign="top" align="left">Coordinating conjunction (CC)</td>
+<td valign="top" align="left">take-off</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">land</td>
+<td valign="top" align="left">Verb (VERB)</td>
+<td valign="top" align="left">Conjunction (CONJ)</td>
+<td valign="top" align="left">take-off</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">usually</td>
+<td valign="top" align="left">Adverb (ADV)</td>
+<td valign="top" align="left">Adverbial modifier (ADVMOD)</td>
+<td valign="top" align="left">equipped</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">equipped</td>
+<td valign="top" align="left">Verb (VERB)</td>
+<td valign="top" align="left">Adnominal clause (ACL)</td>
+<td valign="top" align="left">an area</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">with</td>
+<td valign="top" align="left">Adposition (ADP)</td>
+<td valign="top" align="left">Preposition (PREP)</td>
+<td valign="top" align="left">equipped</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">associated buildings</td>
+<td valign="top" align="left">Noun (NOUN)</td>
+<td valign="top" align="left">Object of preposition (POBJ)</td>
+<td valign="top" align="left">with</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">and</td>
+<td valign="top" align="left">Coordinating conjunction (CCONJ)</td>
+<td valign="top" align="left">Coordinating conjunction (CC)</td>
+<td valign="top" align="left">associated buildings</td>
+</tr>
+<tr>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt" scope="row">facilities</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">Noun (NOUN)</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">Conjunction (CONJ)</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">associated buildings</td>
+</tr>
+</tbody>
+</table>
+</table-wrap>
+<p>An input clause can have multiple dependency relations that can form subgraphs within the same input sentence or across other definitions. Dependent children and their relation to the heads form multiple arcs within an input sentence to map to triples.</p>
+<p>To simulate the node-edge-node pattern of triples, the dependency relations between words grouped by the POS of the data output by the natural language processing (NLP) software were directed edges, which connect the child to the head in the direction from child to head. However, directed edges can appear anywhere in the clause, so the meaning may be represented as pointing right or left. The object dependency represented by the triple property is assumed to be roughly the same as in grammar in that the object is determined by, and secondary to, the subject. However, the triple syntax can be specified using an inverse property relation, creating a directed edge to the left or right of the specified nodes. Care is required to confirm directionality when mapping the dependency of the translation because some linguistic semantic dependencies are similar but not equivalent to the formal logic.</p>
+<p>Some dependency relations between words of an input definition are related to a baseline triple based on a verb, its subject, and any object. Adding additional properties to these main parts of a triple creates chunks, which are nouns and their modifiers (usually adjectives). Chunks can be mapped to subgraphs in the positions of the subject and object nodes.</p>
+<p>To produce the data for the topographic subject area study, NLP preprocessing was completed using two approaches. One approach was to analyze each input token to create chunks for the head of the dependency arc. The chunk pattern approach combines related dependent tokens to group commonly used POS, such as articles and determiners, or to document words commonly used together. The second approach, the token pattern approach, individualizes each unit by category to be examined by the category&#x2019;s clausal roles. Chunks are phrases formed as the head, dependency, and children of the subject and object relations of the verb of an input phrase. Modifiers and other dependents form clausal subjects with the head of the chunk, the core of the subject, or the object of the basic triple. In <xref ref-type="table" rid="t02">table 2</xref>, the arc heads &#x201C;is,&#x201D; &#x201C;in,&#x201D; and &#x201C;of&#x201D; are word tokens. &#x201C;Any bowl-shaped depression&#x201D; and &#x201C;the surface&#x201D; are chunks. The differences between these two approaches to information retrieval are the number and pattern of categories and properties.</p>
+<table-wrap id="t02" position="float"><label>Table 2</label><caption>
+<title>Dependency arc formation from an input clause (&#x201C;A basin is any bowl-shaped depression in the surface of the land or ocean floor&#x201D;) aligned in position with the head as subject, its parent part-of-speech category, the child as object, and the dependency relation of the child to the head.</title>
+<p content-type="toc">Table 2.	Dependency arc formation from an input clause aligned in position with the head as subject, its parent part-of-speech category, the child as object, and the dependency relation of the child to the head</p>
+<p>[Dependency arc formation between head, part-of-speech categories, and child is determined by Universal Dependencies software libraries. Abbreviations for terms are provided in parentheses.]</p></caption>
+<table rules="groups">
+<col width="29.4%"/>
+<col width="21.53%"/>
+<col width="23.72%"/>
+<col width="25.35%"/>
+<thead>
+<tr>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Head text</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Head part of speech</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Child</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Child dependency to head</td>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td valign="top" align="left" style="border-top: solid 0.50pt" scope="row">is</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">Auxiliary (AUX)</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">A basin</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">Nominal subject (NSUBJ)</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">is</td>
+<td valign="top" align="left">Auxiliary (AUX)</td>
+<td valign="top" align="left">any bowl-shaped depression</td>
+<td valign="top" align="left">Attributive (ATTR)</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">any bowl-shaped depression</td>
+<td valign="top" align="left">Noun (NOUN)</td>
+<td valign="top" align="left">in</td>
+<td valign="top" align="left">Preposition (PREP)</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">in</td>
+<td valign="top" align="left">Adposition (ADP)</td>
+<td valign="top" align="left">the surface</td>
+<td valign="top" align="left">Object of a preposition (POBJ)</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">the surface</td>
+<td valign="top" align="left">Noun (NOUN)</td>
+<td valign="top" align="left">of</td>
+<td valign="top" align="left">Preposition (PREP)</td>
+</tr>
+<tr>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt" scope="row">of</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">Adposition (ADP)</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">the land or ocean floor</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">Object of a preposition (POBJ)</td>
+</tr>
+</tbody>
+</table>
+</table-wrap>
+</sec>
+</sec>
+</sec>
+<sec>
+<title>Methods</title>
+<p>This study&#x2019;s analysis aims to create schemas of POS associations with dependency relations for inferring triples. The tabular data results from NLP were integrated using Ontop, a virtual <bold>knowledge graph</bold> system, and SPARQL endpoint (<xref ref-type="bibr" rid="r9">Harris and Seaborne, 2013</xref>; <xref ref-type="bibr" rid="r7">Free University of Bozen-Bolzano, 2024</xref>). Data were stored using PostgreSQL software for the database (<xref ref-type="bibr" rid="r15">PostgreSQL Database Management System, 2024</xref>), including a relational data mapping file and ontology files with Ontop plugins for Prot&#x00E9;g&#x00E9; (<xref ref-type="bibr" rid="r13">Musen, 2015</xref>). Ontop converts SPARQL queries to SQL for PostgreSQL data retrieval. SPARQL was used to conform the RDF that connects instances in the database with International Resource Identifier prefixes from the furnished ontology, which is the Web Ontology Language standard vocabulary (<xref ref-type="bibr" rid="r20">W3C OWL Working Group, 2012</xref>). Postprocessing of the output structure for the ontology was required to restructure instances of dependency relations from the tabular column of the input data as properties, as were tokens for the lexicon, POS class hierarchy, and other Web Ontology Language (OWL) expressions (<xref ref-type="bibr" rid="r20">W3C OWL Working Group, 2012</xref>). This study included dependency relations for 27 ontology properties for topographic subgraph structures. Specific relations were differentiated manually as RDF subproperties using the Prot&#x00E9;g&#x00E9; software plugin for Ontop.</p>
+<p>An initial competency query to test the general operation of the database design split the label and definition annotations of a linguistic concept, as is required by an ontology hierarchy. Subclasses of feature type for the ontology hierarchy are determined from the input glossary definitions by retrieving noun heads of the noun-subject relation combined with the auxiliary verb &#x201C;is&#x201D; or &#x201C;are,&#x201D; indicating the subsumption relation represented by the W3 standard property rdfs:subClassOf property to build the hierarchy. Classes are associated with input data labels and definitions to be linked to the triples for reference. The approximate graph pattern of the SPARQL query, using prefixes for namespaces and triple syntax, is printed below.</p><list id="L6" list-type="simple"><list-item>
+<p>SELECT ?FTI </p></list-item><list-item>
+<p>WHERE { ?FT ud:hasPOS ud:NOUN .</p></list-item><list-item>
+<p>?FT ud:dep ud:nsubj .</p></list-item><list-item>
+<p>?FT rdfs:subClassOf g2g:FeatureType</p></list-item><list-item>
+<p>?FT ud:hasToken ud:Token .</p></list-item><list-item>
+<p>?FT rdfs:label ?Label .</p></list-item><list-item>
+<p>rdfs:Label g2g:hasDescription g2g:Description . }</p></list-item></list>
+<sec>
+<title>Dependency Relation Property</title>
+<p>This section presents the four roles of chunk, property, object, and function, followed by grammar-semantic schema mapping. The subset of dependency relations identified from the analysis and query output comprises the subproperties of ud:dependencyRelation using the Universal Dependencies International Resource Identifier (<xref ref-type="fig" rid="fig02">fig. 2</xref>). The hierarchy of classes (<xref ref-type="fig" rid="fig02">fig. 2<italic>A</italic></xref>) for subjects and objects and properties (<xref ref-type="fig" rid="fig02">fig. 2<italic>B</italic></xref>) differs between the linguistic input clause and a comparable triple semantics. These differences represent the transformation of grammar semantics to the description logic of the Prot&#x00E9;g&#x00E9; software.  </p>
+<fig id="fig02" position="float" fig-type="figure"><label>Figure 2</label><caption><p>Graphs showing the grammar classes and properties for Web Ontology Language (OWL) files using the Universal Dependencies prefix (ud:) displayed on Prot&#x00E9;g&#x00E9; ontology design software interfaces (<xref ref-type="bibr" rid="r13">Musen, 2015</xref>). <italic>A</italic>, a file version showing object classes abstracted from clauses, and <italic>B</italic>, a file version showing Resource Description Framework graph properties.</p><p content-type="toc">Figure 2.	Graphs showing the grammar classes and properties for Web Ontology Language files using the Universal Dependencies prefix displayed on Prot&#x00E9;g&#x00E9; ontology design software interfaces</p></caption><long-desc>Alternative (alt) text for figure 2. Graphs of object classes and dependency relation properties in a nested schema structure.</long-desc><graphic xlink:href="den24-0056_fig02"/></fig>
+<p>As shown in <xref ref-type="fig" rid="fig02">figure 2</xref>, the concept maps are expressed as RDF triples and arranged by their allowable relations to create OWL files. The columns on the left in <xref ref-type="fig" rid="fig02">figures 2<italic>A</italic></xref> and <xref ref-type="fig" rid="fig02">2<italic>B</italic></xref> show linguistic classes and properties of the taxonomy as allowed by grammar rules. The transformation to description logic shown in the right column of <xref ref-type="fig" rid="fig02">figures 2<italic>A</italic></xref> and <xref ref-type="fig" rid="fig02">2<italic>B</italic></xref> show changes in the hierarchy due to conforming from grammar to RDF standards. The issue of concern is the inheritance of attributes from parent classes. The inverted taxonomic hierarchy of grammar compared to triples shows that linguistic complexity predominates in gloss clauses and is greatly subsumed in graphs, where the core arguments, which are the primary drivers of the meaning, include complexity along with the simplified predominant triple.</p>
+<sec>
+<title>Part-of-Speech Rules</title>
+<p>The number of POS terms output from the NLP was counted (<xref ref-type="table" rid="t03">table 3</xref>). Nouns predominate but include modifiers essential to the meaning of the nominal (the combined modifiers and noun). Other adjectives are descriptive. In addition to over 200 verbs, all other POS terms number fewer than 100, including modifiers and function words, which include prepositions that combine with nouns to suggest spatial relations and conjunctions that join more than one phrase that may indicate context.</p>
+<table-wrap id="t03" position="float"><label>Table 3</label><caption>
+<title>Number of unique terms from the input glossary and the frequencies of term occurrences grouped by part of speech.</title>
+<p content-type="toc">Table 3.	Number of unique terms from the input glossary and the frequencies of term occurrences grouped by part of speech</p>
+<p>[The input data corpus is the total set of tokens from the analyzed definitions. The number of term occurrences can indicate the frequency of reuse. There were 1,540 terms total, and 3,641 term occurrences.]</p></caption>
+<table rules="groups">
+<col width="36.41%"/>
+<col width="21.38%"/>
+<col width="16.38%"/>
+<col width="25.83%"/>
+<thead>
+<tr>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Part of speech</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Abbreviation</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Number of terms</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Number of term occurrences</td>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td valign="top" align="left" style="border-top: solid 0.50pt" scope="row">Proper noun</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">PROPN</td>
+<td valign="top" align="char" char="." style="border-top: solid 0.50pt">11</td>
+<td valign="top" align="char" char="." style="border-top: solid 0.50pt">16</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Adjective</td>
+<td valign="top" align="left">ADJ</td>
+<td valign="top" align="char" char=".">31</td>
+<td valign="top" align="char" char=".">51</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Determiner</td>
+<td valign="top" align="left">DET</td>
+<td valign="top" align="char" char=".">4</td>
+<td valign="top" align="char" char=".">11</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Noun</td>
+<td valign="top" align="left">NOUN</td>
+<td valign="top" align="char" char=".">1,175</td>
+<td valign="top" align="char" char=".">1,795</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Numeral</td>
+<td valign="top" align="left">NUM</td>
+<td valign="top" align="char" char=".">1</td>
+<td valign="top" align="char" char=".">2</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Pronoun</td>
+<td valign="top" align="left">PRON</td>
+<td valign="top" align="char" char=".">11</td>
+<td valign="top" align="char" char=".">93</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Verb</td>
+<td valign="top" align="left">VERB</td>
+<td valign="top" align="char" char=".">215</td>
+<td valign="top" align="char" char=".">482</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Adverb</td>
+<td valign="top" align="left">ADV</td>
+<td valign="top" align="char" char=".">40</td>
+<td valign="top" align="char" char=".">76</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Adposition</td>
+<td valign="top" align="left">ADP</td>
+<td valign="top" align="char" char=".">36</td>
+<td valign="top" align="char" char=".">730</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Coordinating conjunction</td>
+<td valign="top" align="left">CCONJ</td>
+<td valign="top" align="char" char=".">5</td>
+<td valign="top" align="char" char=".">324</td>
+</tr>
+<tr>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt" scope="row">Subordinating conjunction</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">SCONJ</td>
+<td valign="top" align="char" char="." style="border-bottom: solid 0.50pt">11</td>
+<td valign="top" align="char" char="." style="border-bottom: solid 0.50pt">61</td>
+</tr>
+</tbody>
+</table>
+</table-wrap>
+<p>Parts of speech other than nouns and verbs use dependency relations that add semantic specificity to the main parts of the triple through the data output from tokenization. Dependency relations analyses break up the input clause to be readable by logical relations (<xref ref-type="table" rid="t04">table 4</xref>). In this way, the data can be reused to connect phrases to each other in ways that support graph processing. </p>
+<table-wrap id="t04" position="float"><label>Table 4</label><caption>
+<title>Software retrieval variables for simulating a clause using modifiers and function words.</title>
+<p content-type="toc">Table 4. Software retrieval variables for simulating a clause using modifiers and function words</p>
+<p>[Properties forming a chunk pattern can include a function word such as a determiner (DET), adjective (ADJ) and numerical (NUM) modifiers, nominal noun (NOUN), and pronouns (PRON) referring to the objects of the chunk. Modifiers of the main verb include adverbs (ADV) and auxiliary (AUX) verbs. VERB, verb; NA, not applicable]</p></caption>
+<table rules="groups">
+<col width="8.67%"/>
+<col width="13.99%"/>
+<col width="10.42%"/>
+<col width="9.09%"/>
+<col width="20.99%"/>
+<col width="11.66%"/>
+<col width="7.69%"/>
+<col width="17.49%"/>
+<thead>
+<tr>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">DET</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">PRON</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">ADJ</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">NUM</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">NOUN chunk</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">ADV</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">AUX</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">VERB</td>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td valign="top" align="left" style="border-top: solid 0.50pt" scope="row">an</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">it</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">able</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">one</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">aborted take-off</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">alongside</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">will</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">accommodate</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">each</td>
+<td valign="top" align="left">its</td>
+<td valign="top" align="left">adjacent</td>
+<td valign="top" align="left">NA</td>
+<td valign="top" align="left">access</td>
+<td valign="top" align="left">always</td>
+<td valign="top" align="left">do</td>
+<td valign="top" align="left">acquire</td>
+</tr>
+<tr>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt" scope="row">the</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">something</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">artificial</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">NA</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">access restriction</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">as</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">can</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">advance</td>
+</tr>
+</tbody>
+</table>
+</table-wrap>
+<p>The twelve types of POSs are grouped into four roles (<xref ref-type="fig" rid="fig03">fig. 3</xref>). The chunk is based on the nominal consisting of a noun, adjectives, and other token dependencies of the noun. The property role includes the verb and adverb. The third position, object, includes the adposition or preposition and directly follows the property; the object has a chunk pattern. The function role of conjunctions is to join or provide context for chunks. The semantic schema mapping rules to organize the chunk, property, and function are explained in the section of this report titled &#x201C;Semantic Schema Mapping.&#x201D;</p>
+<fig id="fig03" position="float" fig-type="figure"><label>Figure 3</label><caption><p>Diagram showing general part-of-speech dependencies and number of terms from glossary corpus used in this study.</p><p content-type="toc">Figure 3.	Diagram showing general part-of-speech dependencies and number of terms from glossary corpus used in this study</p></caption><long-desc>Alternative (alt) text for figure 3. General part-of-speech dependencies are diagrammed in different colors to represent different parts, with arrows showing relations.</long-desc><graphic xlink:href="den24-0056_fig03"/></fig>
+</sec>
+<sec>
+<title>Semantic Schema Mapping</title>
+<p>The semantic schema maps grammar rules to generate types of triple patterns, particularly RDF. The property establishes the primary semantic element with subject and object arguments. The subject is the head of the clause. The subject and property without an object fulfill the requirements of a clause. As a triple, the object can be implied, such as with a blank node. The subject and property have an object, and objects and subjects may have modifiers. Function words join or describe a context for multiple subjects and objects.</p>
+<p>The dependency relations used as properties for triples have domain and range classes corresponding to grammar classes within the ontology structure. The SVO triple pattern has five subtypes of POS classes for the lexical graph data that will be queried using SPARQL (<xref ref-type="fig" rid="fig04">fig. 4</xref>).</p>
+<fig id="fig04" position="float" fig-type="figure"><label>Figure 4</label><caption><p>Part-of-speech (POS) dependency relations and property patterns for a subject-verb-object (SVO) triple structure. The SVO triple has five triple patterns used in this study, shown in the figure as the POS, Dep, POS columns of the data output.</p><p content-type="toc">Figure 4.	Part-of-speech dependency relations and property patterns for a subject-verb-object triple structure</p></caption><long-desc>Alternative (alt) text for figure 4. A diagram with circles and arrows for dependency rules and a table with the range of potential data values for those rules.</long-desc><graphic xlink:href="den24-0056_fig04"/></fig>
+<p>Complexes of noun modifiers have four potential property patterns, as do verbs and their modifiers, to support property clusters. An object-like pattern called a chunk is used as the subject and reused as the object and as part of combined triples (<xref ref-type="fig" rid="fig05">fig. 5</xref>). Chunks have nominals such as modifiers and subtypes.</p>
+<fig id="fig05" position="float" fig-type="figure"><label>Figure 5</label><caption><p>Part-of-speech dependency relations and property patterns for a noun chunk triple structure.</p><p content-type="toc">TOC 5.	Part-of-speech dependency relations and property patterns for a noun chunk triple structure</p></caption><long-desc>Alternative (alt) text for figure 5. A diagram with circles and arrows for dependency rules and a table with the range of potential data values for those rules.</long-desc><graphic xlink:href="den24-0056_fig05"/></fig>
+<p>Parts of speech relating to the central grammatical verb combine to form the action property (<xref ref-type="fig" rid="fig06">fig. 6</xref>).</p>
+<fig id="fig06" position="float" fig-type="figure"><label>Figure 6</label><caption><p>Verb modifiers and verb preposition subtypes and property patterns.</p><p content-type="toc">TOC 6.	Verb modifiers and verb preposition subtypes and property patterns</p></caption><long-desc>Alternative (alt) text for figure 6. A diagram with circles and arrows for dependency rules and a table with the range of potential data values for those rules.</long-desc><graphic xlink:href="den24-0056_fig06"/></fig>
+<p>Retrieval variables for a data sample forming a verb property and its modifiers include adverbs (ADV), auxiliary (AUX) verbs, and the central verb (VERB). Each subproperty of the dependency relation property controls the appropriate structure and function relations of POS word instances to be represented in RDF.</p>
+</sec>
+<sec>
+<title>Directionality</title>
+<p>An object&#x2019;s dependency on a head preserves semantic coherence as a graph among tokens or POS categories to resemble the grammar of phrases and complex concepts. The head is always the subject, and the dependency direction is from children to head. The directionality of the RDF is in the inverse direction, from subject to object. A triple is read from left to right, although dependents can appear on either the left or right side in a dependency relation.</p>
+<p>Data were formatted as a dependency arc starting at the head, shown in <xref ref-type="table" rid="t05">table 5</xref> as HeadText, the dependency relation abbreviation, and a token representing the child. The children are more variable than the subject, so they are not grouped as often in a POS category, or the category is left blank (<xref ref-type="table" rid="t05">table 5</xref>). The arc head is analogous to the triple subject, and the token dependent aligns with the object as the argument of the verb.</p>
+<table-wrap id="t05" position="float"><label>Table 5</label><caption>
+<title>Head and token dependency relation direction in the positions of subject, property, and object.</title>
+<p content-type="toc">TOC 5.	Head and token dependency relation direction in the positions of subject, property, and object</p>
+<p>[Results reflect the natural language phrases &#x201C;support&#x201D; as the clausal modifier of the noun &#x201C;ability,&#x201D; &#x201C;limited&#x201D; as the modifier of &#x201C;ability,&#x201D; and &#x201C;able&#x201D; having an open complement (XCOMP) for a core argument of the verb as HeadText. ACL, adnominal clause; AMOD, adjectival modifier]</p></caption>
+<table rules="groups">
+<col width="37.72%"/>
+<col width="32.11%"/>
+<col width="30.17%"/>
+<thead>
+<tr>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">HeadText</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Dependency</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Token</td>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td valign="top" align="left" style="border-top: solid 0.50pt" scope="row">ability</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">ACL</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">support</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">ability</td>
+<td valign="top" align="left">AMOD</td>
+<td valign="top" align="left">limited</td>
+</tr>
+<tr>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt" scope="row">able</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">XCOMP</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">support</td>
+</tr>
+</tbody>
+</table>
+</table-wrap>
+</sec>
+</sec>
+<sec>
+<title>Property Patterns</title>
+<p>The domain and range classes of properties offer a mixture of category tags, lexical instance texts, and lemmas in the database that reflect grammar for querying, competency questions, and determining vocabulary word sets. <xref ref-type="table" rid="t06">Table 6</xref> shows examples of spatial dependency relations &#x201C;above&#x201D; and &#x201C;below&#x201D; using coordinating conjunctions for a phrase such as &#x201C;A snag is a stem or trunk of a tree above or below the surface of the water&#x201D; to characterize the concept using objects of a preposition to indicate relative spatial position.</p>
+<table-wrap id="t06" position="float"><label>Table 6</label><caption>
+<title>Examples of spatial property patterns&#x2014;spatial conjunction and relative spatial position&#x2014;for a phrase such as &#x201C;A snag is a stem or trunk of a tree above or below the surface of the water.&#x201D;</title>
+<p content-type="toc">TOC 6.	Examples of spatial property patterns&#x2014;spatial conjunction and relative spatial position&#x2014;for an example phrase</p>
+<p>[On the basis of data line extraction, patterns for a spatial conjunction concept, represented by a spatial relationship of prepositions &#x201C;above&#x201D; or &#x201C;below,&#x201D; have a coordinating conjunction (CC) connector &#x201C;or&#x201D; and conjunction (CONJ) joining with &#x201C;below.&#x201D; An object of a preposition (POBJ) is linked to a spatial preposition, &#x201C;above.&#x201D;]</p></caption>
+<table rules="groups">
+<col width="43.81%"/>
+<col width="20.25%"/>
+<col width="17.72%"/>
+<col width="18.22%"/>
+<thead>
+<tr>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Property pattern</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Head (subject)</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Dependency (property)</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Child (object)</td>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td valign="top" align="left" style="border-top: solid 0.50pt" scope="row">Spatial conjunction</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">above</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">CC</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">or</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Spatial conjunction</td>
+<td valign="top" align="left">above</td>
+<td valign="top" align="left">CONJ</td>
+<td valign="top" align="left">below</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Relative position</td>
+<td valign="top" align="left">above</td>
+<td valign="top" align="left">POBJ</td>
+<td valign="top" align="left">deck</td>
+</tr>
+<tr>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt" scope="row">Relative position</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">above</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">POBJ</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">level</td>
+</tr>
+</tbody>
+</table>
+</table-wrap>
+<p>The SPO patterns were manually interpreted using perception or experience of a linguistic relation of a token or POS class in addition to automated dependency relation arc creation. Manual testing, such as interchanging optional tokens and POS types to explore one-to-many relationships, was used. Some words served as semantic case markers, such as &#x201C;by&#x201D; to indicate agency and &#x201C;to&#x201D; to indicate functionality, spatial relation, or the receiver of the action.</p>
+<p>The property patterns listed below in this section formulate variables for describing some semantic key concepts. These are 1) chunk subject, relating to objects and their attributes; 2) the SVO triple of the subject, verb, and object parts of predicates; and 3) conjunctions using grammatical rules for building Boolean-operation types of property patterns. A subset of the glossary definitions was written as subject-verb <bold>predicate</bold> clauses with no third object, such as when a chunk is a subject node of a predicate clause. The predicate consisting of a verb and an object was considered the SVO form. Conjunction relations have semantic functions comparable to labels for Boolean operations. Set theory properties applied to classes can operate on the graph model and connect datasets by linking namespaces of other common vocabularies, such as standards for cited references, data attribution, and other metadata. </p>
+<p>The list below in this section provides a natural language question for formulating topographic database user queries. An informal representation of language formatted as a graph is included in the list for providing a semantic base for serializing SPARQL queries. Despite the similarities between dependency arc and triples, a logic notation that clearly aligns text data dependencies for conversion to triples was not widely available in related research literature, although language and logic notations can be used (<xref ref-type="bibr" rid="r2">Allwood and others, 1977</xref>; <xref ref-type="bibr" rid="r18">Sowa, 2010</xref>; <xref ref-type="bibr" rid="r8">Gregory, 2015</xref>; <xref ref-type="bibr" rid="r21">Wybraniec-Skardowska, 2022</xref>). Logic notation was excluded from the semantic transformation, and comparisons were made using the manual interpretation of data results from NLP as three parts of a single entity on one line, which organizes the data spatially (for database design) and is not meant to be interpreted as logical proofs. The style of arrows inserted for this function expresses directionality of text, category tags, or abbreviations. The semantic transformation is supported because, by understanding the rules of the property domains and ranges, direct string matching of classes, properties, and instances is entered in the ontology. Where concepts do not have exact matches, the owl:equivalentTo property connects the immediate triples. OWL provides a rich vocabulary for designing and structuring graphs. The RDF-based W3 standards assure the logic is correct when applied to data in compliant software, such as Prot&#x00E9;g&#x00E9;. </p>
+<p>The three-column arrangement of output data from the NLP tabular results, as described in <xref ref-type="table" rid="t05">table 5</xref>, is expressed as RDF in the ontology or knowledge graph. The spaCy output tables were arranged as POS-dependency-POS to capture semantic relations. The data shown below is also arranged following a SPO triple convention basis, where the dependency property representation is simplified as a relation of the subject as an object and relation to the verb. The verb represents an action of relation between object sets or literals, whose dependency on the verb is subsumed to the property, and so are SPO subjects and objects classes. Members of those subject or object sets are included in the retrieval of data in the SPARQL triple patterns following this intermediary step between language and ontology formatted in a graph pattern using RDF. The arrows in the numbered examples below show the dependency of the verb in subject-object core arguments and correspond to applications in RDF. Potential dependencies of triple resources that can be modified by standard OWL properties are not included in arrow representations. </p><list id="L7" list-type="order"><list-item><label>1.</label>
+<p>Chunk subject: property pattern for a competency question and data retrieval  </p></list-item></list><list id="L8" list-type="simple"><list-item>
+<p>Question: What special types of objects are or have special properties?</p></list-item><list-item>
+<p>The head nominal of the chunk is identified first, followed by the subject dependency on the verb-related POS for structuring complex properties. Each line of the pattern inherits the data retrieved by the previous dependency arc. The final pronoun, nominal subject, and verb results approximate a chunk subject and dependency relations. </p></list-item><list-item>
+<p>Using NLP output tags, the variables to be retrieved are demonstrated below:</p></list-item></list>
+<p>ADJ&#x2192;adjectival modifier&#x2192;NOUN</p>
+<p>NOUN&#x2192;auxiliary&#x2192;AUX</p>
+<p>AUX&#x2192;ADV&#x2192;VERB</p>
+<p>PRON&#x2192;NSUBJ&#x2192;VERB</p><list id="L9" list-type="order"><list-item><label>2.</label>
+<p>SVO or triple</p></list-item></list><list id="L10" list-type="simple"><list-item>
+<p>The SVO pattern includes an object with a subject and a verb. The structure of the object can be equivalent to the subject and modifiers, although the object appears after the adposition such as a preposition that indicates the receiver of the action.</p></list-item><list-item>
+<p>Question: What actions of subjects are associated with a spatial preposition?</p></list-item><list-item>
+<p>The auxiliary and active verbs with an adpositive are retrieved followed by the subjects of those actions or state of being. Adverb attributes of actions can specify the types of actions and their related adpositive. </p></list-item><list-item>
+<p>Linguistic order of variables to be retrieved:</p></list-item></list>
+<p>AUX&#x2192;VERB&#x2192;ADP</p>
+<p>NOUN&#x2192;VERB&#x2192;AUX</p>
+<p>ADV&#x2192;VERB&#x2192;ADP</p><list id="L11" list-type="order"><list-item><label>3.</label>
+<p>Conjunctions</p></list-item></list><list id="L12" list-type="simple"><list-item>
+<p>Functions that join words that establish context for the main clause, including subordinating and coordinating conjunctions.</p></list-item><list-item>
+<p>Question: What related objects are likely to both be affected?</p></list-item><list-item>
+<p>Nouns are established as objects following the adposition of a verb. Multiple action nouns of chunks are related to each other, linked by conjunctions that also link multiple verbs and adpositions.  </p></list-item><list-item>
+<p>Linguistic order of variables to be retrieved:</p></list-item></list>
+<p>VERB&#x2192;ADP&#x2192;NOUN</p>
+<p>NOUN&#x2192;CCONJ&#x2192;NOUN</p>
+<p>NOUN&#x2192;SCONJ&#x2192;NOUN</p>
+<p>VERB&#x2192;CCONJ&#x2192;ADP </p>
+<p>The semantics of the notation described above were applied throughout this study based on topographic information and knowledge. The G2G approach&#x2019;s analysis of the translation among linguistic and graph semantic annotations was used to create some initial SPARQL graph patterns. The results described in this report&#x2019;s &#x201C;Results&#x201D; section focus on semantic translation. </p>
+</sec>
+</sec>
+<sec>
+<title>Results</title>
+<p>In this study, linguistic text-graph associations are common and can support structures for topographic information retrieval from the domain language, including the user perspective. Linguistic descriptions and words that support the primarily SVO form from spatial perspectives can be linguistic corollaries of logic concepts. Ontologists draw on linguistic schemas; for example, <xref ref-type="bibr" rid="r5">Casati and Varzi (2003)</xref> investigated the linguistic foundations of <bold>mereotopologic</bold> relations as a type of upper ontology. Linguistic labels were assigned to qualitative spatial relations functions that were later adapted as part of the GeoSPARQL standard. GeoSPARQL is an extension of SPARQL for determining topological relations by the presence or absence of interior, boundary, or exterior intersections among geospatial geometry objects, among other spatial data-handling functions (<xref ref-type="bibr" rid="r3">Car and others, 2024</xref>). Other tokens have direct equivalencies with OWL, such as the determiner &#x201C;any;&#x201D; &#x201C;one of several&#x201D; (ROOT-PREP-AMOD) to indicate cardinality; &#x201C;not&#x201D; to indicate negation; and &#x201C;other&#x201D; to indicate the complement, as with owl:disjointFrom. Some property patterns have equivalencies with OWL property restrictions and specifications.</p>
+<p>Asserted ontology subclasses and properties from the feature-type definitions can be validated through cross-thematic competency questions, which may also be a method for improving ontology logic organization for information retrieval by refining the queries and the queries&#x2019; interactions within and external to the grammar ontology. The query use cases described in the &#x201C;Geographic Semantics&#x201D; section of this report match topographic knowledge questions to grammar organization to test the results of the approach. Results were iteratively evaluated for the geographic sense outcomes described in the next section, &#x201C;Geographic Semantics.&#x201D; Linguistic expressions of topography are meant to be recognizable to public users sharing common concepts, whether those concepts are universal. Outcomes were manually evaluated to refine semantic pattern associations by examining the patterns of properties reflecting topographic vocabulary and then used for query use-case patterns. </p>
+<sec>
+<title>Geographic Semantics</title>
+<p>Spatial relation vocabularies commonly used for executable applications, such as those of the GeoSPARQL standard, can indicate concepts of location, feature geometry, and map algebra functions such as intersections, linear pathfinding, and buffering. A broader scope of geospatial data research addresses aspects of processes and temporal representation. The complexity of some geographical phenomena has been difficult to express using relational table technology. Complex vocabularies can be enabled by expanding the range of geospatial semantic representations within graph models that support data interoperability (<xref ref-type="bibr" rid="r10">Huang and others, 2019</xref>). Vocabularies for properties such as force dynamics and social space are not widely evident in research literature. The following two sections, &#x201C;Force Dynamics&#x201D; and &#x201C;Social Space,&#x201D; discuss semantic aspects of a use-case study to articulate differences among categories of natural and cultural features based on the analysis of their subgraphs. </p>
+<sec>
+<title>Force Dynamics</title>
+<p>The topographic analysis of this study focuses on property patterns, including geographic process and force dynamic concepts, which include morphology and description, properties of human intention, and concepts of spatial data science. The property and lexical semantics of feature-type definitions build knowledge more flexibly than a literal clause by relating the data as triple propositions for graph processing. For example, a definition from the database for &#x201C;ar&#x00EA;te,&#x201D; a landform type, would be &#x201C;a sharp narrow ridge formed as a result of glacial erosion from both sides.&#x201D; </p>
+<p>Changing the representation as an SPO pattern, in which case terms or labels take the three positions of a potential RDF serialized triple, creates the following series of ontology propositions to form the criteria of inclusion for a set of objects and attributes that comprise a dataset schema for information retrieval. </p><list id="L13" list-type="bullet"><list-item><label>&#x2022;</label>
+<p>GlacialErosion formed ridge</p></list-item><list-item><label>&#x2022;</label>
+<p>GlacialErosion formed (sides exactly 2)</p></list-item><list-item><label>&#x2022;</label>
+<p>Both sides form ridge</p></list-item><list-item><label>&#x2022;</label>
+<p>Ridge was formed from both sides by glacial erosion</p></list-item><list-item><label>&#x2022;</label>
+<p>Both sides were formed by glacial erosion</p></list-item></list>
+<p>The style of writing reflects the normalization of the input data adapted for the ontology taxonomy. Spaces between complex terms are omitted to indicate a single-class label. Object classes with multiple members are written in single numbers.</p>
+<p>The propositions listed above build a pattern that fits a subgroup of the dataset, defining natural features of a morphological process, which entails the determination of a shape that is described verbally (like a metaphor) or geometrically. The shape helps define the feature-type class along with supporting details. The dependency of subjects, properties, and objects in the pattern connects the feature type to additional data such as its identity or context. </p>
+</sec>
+<sec>
+<title>Social Space</title>
+<p>The language analysis in this study inferred human intention and the agency of socially constructed properties. For example, a park is a place or area that, set aside by human agents, will allow for specific attributes while suppressing other competing attributes. Socially constructed spatial relations, such as &#x201C;set aside&#x201D; or &#x201C;preserve,&#x201D; may seem more like environmental attributes and not specific spatial relations with physical manifestations. The distance and implicit nature of human influence control the environment surrounding or setting conditions within which an entity operates. Spatial relations are required for entities to exist and operate in their environments. Socially constructed spatial relations can be understood as informal logic relations between sets of entities.</p>
+<p>Cultural geographers have analyzed socially constructed spatial relations and found that they were not adequately modeled in Geographic Information Systems (GIS). <xref ref-type="bibr" rid="r12">Massey (2004)</xref> found that humans create and control spaces of interrelations. In those relations, temporal change differs from natural change, and socially constructed relations involve quicker observable temporal change in general. The outcomes of morphologic processes are less determinant and more varied than those of long-lasting natural processes.</p>
+<p>The G2G approach of listing natural language propositions to align with semantic technology standards, as was shown for an ar&#x00EA;te in the &#x201C;Force Dynamics&#x201D; section of this report, was applied to a group of definitions involving socially constructed spatial relations, also known as cultural features. The key aspects of cultural-features morphology were agents, objectives, and technology that broaden the scope of topographical shapes. An example of statements defining cropland as &#x201C;land that is plowed or cultivated for crop production&#x201D; appears below as a list of necessary classes and properties forming the criteria of inclusion.</p><list id="L14" list-type="bullet"><list-item><label>&#x2022;</label>
+<p>Plow: Overturn an area of land with a plow</p></list-item><list-item><label>&#x2022;</label>
+<p>Overturn: Temporal change of geometric shape</p></list-item><list-item><label>&#x2022;</label>
+<p>Cultivate: Break up the soil in preparation for sowing or planting; to raise or grow plants</p></list-item></list>
+<p>As demonstrated by the semantic analysis above, topographic morphology is driven by agents with objectives using tools, based on the natural environment. Cropland varies in shape based on this pattern of interaction. The shape of the cropland area is determined by the interactions as, for example, mixed-use cultivation such as a vineyard designed for small-scale production on a larger farm, cropland driven by circular irrigation systems, or cultivated terraces adjusted to contoured terrain. </p>
+<p>The semantic patterns of cultural features were initially similar to the natural feature patterns, but some differences were evident. Morphologic processes included physical force dynamics and human-driven, tool-based forces. The &#x201C;shape&#x201D; descriptor, important for natural features, is replaced by a term of human interaction, such as &#x201C;cultivated.&#x201D; In the natural feature example in the &#x201C;Force Dynamics&#x201D; section of this report, all ar&#x00EA;tes would look similar based on their definition and generalized geometric shape. However, this is not so for all croplands. Socio-spatial relations are affected by environmental conditions and the cumulative history of human modifications; the abandonment of cropland to physical forces also affects relations. These relations are often observable in the topography of places and regions.</p>
+</sec>
+<sec>
+<title>Subgraphs of Natural and Cultural Feature Properties</title>
+<p>A use case to guide queries along semantically specific property paths differentiates natural and cultural features using force dynamics and social space patterns, beginning with a general morphology class whose criteria are inherited by both natural and cultural features. The use case concept relies on common understandings about topography for testing this graph-based querying approach and is easily altered for other general-purpose uses. </p>
+<p>Two knowledge concepts to disambiguate features using semantic graph searches are commonality, for which we heuristically assume a natural feature is the entailment or predecessor of cultural features, and cause and action. Shown in <xref ref-type="fig" rid="fig07">figure 7</xref>, commonality is tested if there is a missing edge between object classes or if there are duplicate nodes. The cause and action pattern tests for a common ancestor node or alternative action pathway along edges.</p>
+<fig id="fig07" position="float" fig-type="figure"><label>Figure 7</label><caption><p>Concept map for morphology feature types involving natural agents (force dynamics) and cultural drivers (purpose and instrument). Graph property paths are diagrammed for &#x201C;Cause and action&#x201D; and &#x201C;Commonality&#x201D; concepts.</p><p content-type="toc">Figure 7.	Concept map for morphology feature types involving natural agents and cultural drivers</p></caption><long-desc>Alternative (alt) text for figure 7. Concepts, which are circled, are connected by arrows to other concepts.</long-desc><graphic xlink:href="den24-0056_fig07"/></fig>
+<p>Commonality is tested if an edge between object classes is missing or if there are duplicate nodes. The cause and action test is done for a common ancestor node or an alternative action pathway along edges. Three definitions from the glossary database for the feature types &#x201C;bridge&#x201D; and &#x201C;arch&#x201D; that pose a logical contradiction are used for semantically differentiating the data for this use case:</p><list id="L15" list-type="bullet"><list-item><label>&#x2022;</label>
+<p>An arch is a natural opening in a rock mass.</p></list-item><list-item><label>&#x2022;</label>
+<p>A bridge is a human-made structure carrying across a body of water or depression.</p></list-item><list-item><label>&#x2022;</label>
+<p>A bridge is the same as an arch.</p></list-item></list>
+<p>The tokenized definitions of arch and bridge were mapped for commonality and cause and action patterns using the natural or cultural feature properties (<xref ref-type="fig" rid="fig08">fig. 8</xref>). The feature-type patterns shown in blue in <xref ref-type="fig" rid="fig08">figure 8</xref> are the same pattern as in <xref ref-type="fig" rid="fig07">figure 7</xref>, with the definitions for arch and bridge in black print (<xref ref-type="fig" rid="fig08">fig. 8</xref>). The semantic paths of term definitions are linked by properties. Topological relations to geospatial features are included in <xref ref-type="fig" rid="fig08">figure 8</xref>. </p>
+<fig id="fig08" position="float" fig-type="figure"><label>Figure 8</label><caption><p>Diagram of bridge and arch semantics. <italic>A</italic>, the semantics for a bridge as a natural feature resemble those for an arch, but with the added property &#x201C;for&#x201D; indicating a purpose, as shown by the green arrow. <italic>B</italic>, &#x201C;Agent&#x201D; and &#x201C;Shape&#x201D; are common ancestors of a concept hierarchy and indicate data inheritance along graph paths between the &#x201C;cultural&#x201D; and &#x201C;natural&#x201D; subclasses.</p><p content-type="toc">Figure 8.	Diagram of bridge and arch semantics</p></caption><long-desc>Alternative (alt) text for figure 8: Two flow charts show relationships among concepts using arrows. </long-desc><graphic xlink:href="den24-0056_fig08"/></fig>
+<p>Commonality is tested by missing edges or duplicate nodes in the subgraph of the input clause token nodes. &#x201C;Bridge&#x201D; includes a property indicating a purpose, which is missing for &#x201C;arch.&#x201D; The commonality (<xref ref-type="fig" rid="fig08">fig. 8<italic>A</italic></xref>) of the two feature type classes is changed by &#x201C;carry,&#x201D; which disambiguates the cultural feature-type bridge from a natural bridge. </p>
+<p>Differences in cause and effect are matched against the subgraphs. &#x201C;Cause and action&#x201D; is defined as &#x201C;common ancestor or succession&#x201D; on nodes and &#x201C;alternative action&#x201D; on edges. Arch and bridge have a common ancestor, Agent, and can have a common succession to the class Shape, which is shown in <xref ref-type="fig" rid="fig08">figure 8<italic>B</italic></xref> by blue arrows, and as an alternative action differentiating artificial and natural semantic paths, which are shown by purple arrows.</p>
+<p>The semantics of shape may explain that a bridge is the same thing as an arch if a bridge includes an overhead linear connection from point to point. Roughly speaking, bridge and arch share the shape of an overhead point-to-point stationary connection. A bridge with the same natural features as an arch, without a purpose, could be the same thing as an arch. When the purpose &#x201C;carrying across&#x201D; is added, the bridge shape differs from an arch.</p>
+<p>The use case demonstrates how graph properties can support semantic specification to resolve potential issues of ambiguity, differentiation, and relative meaning. Graph data processing depends on patterns for these functions. The &#x201C;Results&#x201D; section clarifies the property patterns for some topographic semantic patterns. </p>
+</sec>
+</sec>
+<sec>
+<title>Competency Questions</title>
+<p>The following are competency questions used in this study to query and validate basic semantic roles of properties linking classes, subjects, actions, and receivers. The first set of competency questions focus on predication:</p><list id="L16" list-type="bullet"><list-item><label>&#x2022;</label>
+<p>What do subjects do to objects? If an object is missing, a blank node can be used to expand the predicate through reification.</p></list-item><list-item><label>&#x2022;</label>
+<p>What subjects spatially relate to other objects? Spatial relations are represented using the POS preposition.</p></list-item><list-item><label>&#x2022;</label>
+<p>What types of subject act in particular ways to objects? Adverbs and prepositions indicate actions to an indirect object.</p></list-item><list-item><label>&#x2022;</label>
+<p>What types of objects have properties reflecting actions of the subject on them? Nominals are objects whose adjectives and other modifiers represent attributes as receivers of actions (that is, verbs). </p></list-item></list>
+<p>Other questions and related queries match complex aspects of topographic-feature queries using a graph pattern structure. Examples given below are followed by data retrieval variables that could be used to represent semantic data retrieval patterns:</p><list id="L17" list-type="bullet"><list-item><label>&#x2022;</label>
+<p>What attributes differentiate feature type subclasses? Token AMOD ADJ</p></list-item><list-item><label>&#x2022;</label>
+<p>What features have spatial relations attributed to rivers? River PREP ADP or token PREP rivers</p></list-item></list>
+<p>For information about actions, agents, and affordances, some examples of semantic transformation from question to computational query values are listed below:</p><list id="L18" list-type="bullet"><list-item><label>&#x2022;</label>
+<p>What multiple actions are involved in processes? VERB CC and</p></list-item><list-item><label>&#x2022;</label>
+<p>What were agents of actions? VERB AGENT by</p></list-item><list-item><label>&#x2022;</label>
+<p>What conditional activities are possible? VERB AUX to, affords DOBJ entry</p></list-item></list>
+</sec>
+<sec>
+<title>Spatial, Topological, and Relative Relations</title>
+<p>This section lists data variables organized by topographical relation property patterns for knowledge concepts (spatial prepositions, relative position, multiple relations, feature topology, topological relations, and joins), which are listed on the left of the colon in the list below. Listed to the right of the colon are related property patterns of those knowledge concepts to retrieve data that is not specified in advance, yet that should be acceptable as geographic sense (as described in the section of this report titled &#x201C;Geographic Semantics&#x201D;). These example patterns are not definitive; they are flexible and are included as a proof-of-concept. </p><list id="L19" list-type="bullet"><list-item><label>&#x2022;</label>
+<p>Spatial prepositions: access PREP between</p></list-item><list-item><label>&#x2022;</label>
+<p>Spatially relative to: above POBJ level</p></list-item><list-item><label>&#x2022;</label>
+<p>Spatial conjunction: above CONJ below</p></list-item><list-item><label>&#x2022;</label>
+<p>Feature topology: access compound traffic</p></list-item><list-item><label>&#x2022;</label>
+<p>Topological relation to: across POBJ bottom</p></list-item><list-item><label>&#x2022;</label>
+<p>Topological joins: across CC or</p></list-item></list>
+<p>We designed and adapted topographic property patterns for competency questions that were intended to validate the ontology for retrieving information for spatial, topological, and relative relation concepts. The G2G approach proposes a way to represent complexity for a place or locality study that involves multiple perceptible and experiential factors by representing the complex semantics of attributes and properties. The property patterns retrieved from the analyzed data constitute topographic knowledge patterns to use as ontology properties. The property patterns are used to create query patterns to retrieve data for competency questions and information retrieval queries.</p>
+<p>All pattern dependency relation arcs emerge from and maintain associated text that forms the scope of the lexicon and syntax of the pattern schemas from property types determined from data examples such as those shown in <xref ref-type="table" rid="t07">table 7</xref>. Referring to the table, the head, the relation, and a dependent token chain together as sets of triples form a graph to query. Classes allow multiple token instances, but a particular token may mark a certain property type or an exemplar of a meaning, enabling the token to function as part of the pattern. Tokens can be indicators of a way the object is used by including the grammar case, such as the genitive case of possession indicated by an apostrophe, or can be interchangeable within a POS category if the semantic role is consistent for the set of instances or among more than one general POS if the property is semantically rich in meaning. The selected model for tokens and POS categories must be recognizable as ontologically believable to the topographic data user.</p>
+<table-wrap id="t07" position="float"><label>Table 7</label><caption>
+<title>Example data showing topographic property patterns abstracted from multiple topography-related definitions. The head, dependency, and child are read on each line from left to right.</title>
+<p content-type="toc">Table 7.	 Example data showing topographic property patterns abstracted from multiple topography-related definitions</p>
+<p>[A property pattern for a concept listed in the left column follows the dependency of children to a head shown in the next three columns. MARK, case marker; AMOD, adjectival modifier; DOBJ, direct object; AGENT, agent; COMPOUND, multiword expression. Other abbreviations defined in <xref ref-type="table" rid="t01">table 1</xref>.]</p></caption>
+<table rules="groups">
+<col width="44.18%"/>
+<col width="15.91%"/>
+<col width="24.56%"/>
+<col width="15.35%"/>
+<thead>
+<tr>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Concept</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Head</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Dependency arc</td>
+<td valign="middle" align="center" scope="col" style="border-top: solid 0.50pt; border-bottom: solid 0.50pt">Child</td>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td valign="top" align="left" style="border-top: solid 0.50pt" scope="row">Multiples</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">VERB</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">CC</td>
+<td valign="top" align="left" style="border-top: solid 0.50pt">and</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Subordinating joiner</td>
+<td valign="top" align="left">Acquired</td>
+<td valign="top" align="left">MARK</td>
+<td valign="top" align="left">after</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Ordinal data level</td>
+<td valign="top" align="left">NUM</td>
+<td valign="top" align="left">AMOD</td>
+<td valign="top" align="left">more</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Ordinal data level</td>
+<td valign="top" align="left">NUM</td>
+<td valign="top" align="left">ADVMOD</td>
+<td valign="top" align="left">than</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Modifier: verb</td>
+<td valign="top" align="left">VERB</td>
+<td valign="top" align="left">ADVMOD</td>
+<td valign="top" align="left">naturally</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Modifier: noun</td>
+<td valign="top" align="left">NOUN</td>
+<td valign="top" align="left">AMOD</td>
+<td valign="top" align="left">major</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Affordances</td>
+<td valign="top" align="left">VERB</td>
+<td valign="top" align="left">AUX</td>
+<td valign="top" align="left">to</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Affordances</td>
+<td valign="top" align="left">Affords</td>
+<td valign="top" align="left">DOBJ</td>
+<td valign="top" align="left">entry</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Agent</td>
+<td valign="top" align="left">VERB</td>
+<td valign="top" align="left">AGENT</td>
+<td valign="top" align="left">by</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Spatial preposition</td>
+<td valign="top" align="left">Access</td>
+<td valign="top" align="left">PREP</td>
+<td valign="top" align="left">between</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Spatial preposition</td>
+<td valign="top" align="left">Access</td>
+<td valign="top" align="left">PREP</td>
+<td valign="top" align="left">to</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Spatial conjunction</td>
+<td valign="top" align="left">Above</td>
+<td valign="top" align="left">CC</td>
+<td valign="top" align="left">or</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Spatial conjunction</td>
+<td valign="top" align="left">Above</td>
+<td valign="top" align="left">CONJ</td>
+<td valign="top" align="left">below</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Spatially relative to something</td>
+<td valign="top" align="left">Above</td>
+<td valign="top" align="left">POBJ</td>
+<td valign="top" align="left">deck</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Spatially relative to something</td>
+<td valign="top" align="left">Above</td>
+<td valign="top" align="left">POBJ</td>
+<td valign="top" align="left">level</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Feature topology</td>
+<td valign="top" align="left">Access</td>
+<td valign="top" align="left">COMPOUND</td>
+<td valign="top" align="left">traffic</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Topological conjunctions</td>
+<td valign="top" align="left">Across</td>
+<td valign="top" align="left">CC</td>
+<td valign="top" align="left">or</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Topological conjunctions</td>
+<td valign="top" align="left">Across</td>
+<td valign="top" align="left">CONJ</td>
+<td valign="top" align="left">into</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Topological relation to feature</td>
+<td valign="top" align="left">Across</td>
+<td valign="top" align="left">POBJ</td>
+<td valign="top" align="left">bottom</td>
+</tr>
+<tr>
+<td valign="top" align="left" scope="row">Topological relation to feature</td>
+<td valign="top" align="left">Across</td>
+<td valign="top" align="left">POBJ</td>
+<td valign="top" align="left">course</td>
+</tr>
+<tr>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt" scope="row">Topological relation to feature</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">Across</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">POBJ</td>
+<td valign="top" align="left" style="border-bottom: solid 0.50pt">terrain</td>
+</tr>
+</tbody>
+</table>
+</table-wrap>
+<p>In this study, patterns were detected that relate to spatial or thematic topographical content whose semantic meaning is related by a dependency arc based on Head.text/dep and children position open links for variable values such as tokens or POS. Examples are expanded as patterns in <xref ref-type="app" rid="a1">appendix 1</xref>. The objective of this study was to retrieve node and property values providing geographic sense from a single queryable question, but a single line of a triple-type pattern is most often insufficient for complex questions. Additional lines must be added to create a subgraph query pattern for complex questions. </p>
+</sec>
+</sec>
+<sec>
+<title>Discussion</title>
+<p>The G2G study demonstrates that, although grammar rules differ from description logic axioms used by RDF and SPARQL, semantic transference approximations can enable ontology design for querying the text of long-tailed datasets with data engineering requirements that do not require machine learning methods typical of large language models. The method used in this study is reproducible specifically to support queries concerning topographic relations and patterns normally embedded within text statements, such as definitions. The G2G method may be applied to other domain text forms, such as land survey notes, social media sources, or chat box output, but these text forms were not tested. The approach is meant to be open. From any perspective, queries should produce results evaluated for geographic sense to refine ontological commitments of semantic patterns. The resulting topographic data representations create a basic semantic framework based on a natural language base map similar to topographic base maps used for thematic cartography.</p>
+</sec>
+<sec>
+<title>Summary</title>
+<p>The graph-to-graph technique transforms dependency relations between words transformed to triples that behave as properties connecting types of nodes. Nouns with dependents can create triple-type structures for graph software processing. The grammar rules of dependency relations function as schemas for triples.</p>
+<p>This study demonstrated the transformation of a feature-type definition to subject-predicate-object formations typical of triple resources. Dependency relation arcs form data structure edges to create semantic template patterns. The dependency relations of subjects and objects create a semantic framework that is instantiated with vocabulary syntax, creating a lexicon. The semantics of graphs derived from natural language using grammar ontology contributes to knowledge properties and inference among triples. Grammar creates a discourse of queries that help refine patterns to update the ontology. </p>
+<p>A grammar ontology for topographical language queries shows that the processing pipeline is a repeatable approach that supports the geographical sense of data retrieval. The graph design was tested as a basic application that is useful for limited text corpora, such as annotations or notes. Statistical accuracy measurements of the triple schemas populated with word or phrase instances could be improved by vectorizing the graph with other artificial intelligence-assisted processing. </p>
+</sec>
+</body>
+</book-part>
+</book-body>
+<book-back>
+<ack>
+<title>Acknowledgments</title>
+<p>Thanks are extended to Richard Brown and other U.S. Geological Survey system administrators for the software referenced in this report. Emily Abbott's work was done while she was a Student Contractor with the U.S. Geological Survey. Samantha Arundel and Ethan Shavers reviewed the manuscript and offered important suggestions. Evelyn Hampton edited the manuscript with insight and rigor. This work was conducted using Prot&#x00E9;g&#x00E9;. </p>
+</ack>
+<ref-list><title>References Cited</title>
+<ref id="r1"><mixed-citation publication-type="web">Abbott, E.T., 2024, Grammar transformations of topographic feature type annotations of the U.S. to structured graph data: U.S. Geological Survey data release, <pub-id pub-id-type="doi">https://doi.org/10.5066/P1BDPXKZ</pub-id>.</mixed-citation></ref>
+<ref id="r2"><mixed-citation publication-type="book"><person-group person-group-type="editor"><string-name><surname>Allwood</surname>, <given-names>J.</given-names></string-name>, <string-name><surname>Andersson</surname>, <given-names>L.-G.</given-names></string-name>, and <string-name><surname>Dahl</surname>, <given-names>O.</given-names></string-name></person-group>, eds., <year>1977</year>, <source>Logic in linguistics</source>: <publisher-loc>Cambridge, Mass.</publisher-loc>, <publisher-name>Cambridge University Press</publisher-name>. <comment>[Also available at https://doi.org/10.1017/CBO9780511621017.]</comment></mixed-citation></ref>
+<ref id="r3"><mixed-citation publication-type="web">Car, N.J., Homburg, T., Perry, M., Knibbe, F., Cox, S.J.D., Abhayaratna, J., Bonduel, M., Cripps, P.J., and Janowicz, K., eds., 2024, OGC GeoSPARQL&#x2014;A geographic query language for RDF data (version 1.1): Open Geospatial Consortium website, accessed March 3, 2025, at <ext-link ext-link-type="uri" xlink:href="https://docs.ogc.org/is/22-047r1/22-047r1.html">https://docs.ogc.org/is/22-047r1/22-047r1.html</ext-link>.</mixed-citation></ref>
+<ref id="r4"><mixed-citation publication-type="web">Caro, H.K., and Varanka, D.E., 2011, An analysis of spatial relation predicates in U.S. Geological Survey feature definitions: U.S. Geological Survey Open-File Report 2011&#x2013;1235, 37 p., accessed March 3, 2025, at <ext-link ext-link-type="uri" xlink:href="https://pubs.usgs.gov/of/2011/1235/">https://pubs.usgs.gov/of/2011/1235/</ext-link>.</mixed-citation></ref>
+<ref id="r5"><mixed-citation publication-type="book"><person-group person-group-type="author"><string-name><surname>Casati</surname>, <given-names>R.</given-names></string-name>, and <string-name><surname>Varzi</surname>, <given-names>A.</given-names></string-name></person-group>, <year>2003</year>, <source>Parts and places&#x2014;The structures of spatial representation</source>: <publisher-loc>Cambridge, Mass.</publisher-loc>, <publisher-name>The MIT Press</publisher-name>, <size units="page">248</size> p. </mixed-citation></ref>
+<ref id="r6"><mixed-citation publication-type="web">ExplosionAI GmbH, 2024, spaCy&#x2014;Industrial-strength natural language processing (ver. 3.0): Explosion AI software release, accessed March 19, 2025, at <ext-link ext-link-type="uri" xlink:href="https://spacy.io">https://spacy.io</ext-link>.</mixed-citation></ref>
+<ref id="r7"><mixed-citation publication-type="web">Free University of Bozen-Bolzano, 2024, Ontop&#x2014;A virtual knowledge graph system: Ontop website, accessed June 8, 2025, at <ext-link ext-link-type="uri" xlink:href="https://ontop-vkg.org/">https://ontop-vkg.org/</ext-link>.</mixed-citation></ref>
+<ref id="r8"><mixed-citation publication-type="web">Gregory, H., 2015, Language and logics&#x2014;An introduction to the logical foundations of language: Edinburgh, U.K., Edinburgh University Press, 328 p., accessed July 8, 2025, at <ext-link ext-link-type="uri" xlink:href="http://www.jstor.org/stable/10.3366/j.ctt1g09w89">http://www.jstor.org/stable/10.3366/j.ctt1g09w89</ext-link>.</mixed-citation></ref>
+<ref id="r9"><mixed-citation publication-type="web">Harris, S., and Seaborne, A., eds., 2013, SPARQL 1.1 query language&#x2014;W3C recommendation 21 March 2013: W3C web page, accessed March 19, 2025, at <ext-link ext-link-type="uri" xlink:href="https://w3.org/TR/sparql11-query/">https://w3.org/TR/sparql11-query/</ext-link>.</mixed-citation></ref>
+<ref id="r10"><mixed-citation publication-type="book">Huang, Y., Yuan, M., Sheng, Y., Min, X., and Cao, Y., 2019, Using geographic ontologies and geo-characterization to represent geographic scenarios: ISPRS International Journal of Geo-Information, v. 8, no. 12, 19 p. [Also available at <pub-id pub-id-type="doi">https://doi.org/10.3390/ijgi8120566</pub-id>.]</mixed-citation></ref>
+<ref id="r11"><mixed-citation publication-type="web">Marneffe, M. de, Ginter, F., Goldberg, Y., Haji&#x010D;, J., Manning, C., McDonald, R., Levin, L., Nivre, J., Petrov, S., Pyysalo, S., Schneider, N., Schuster, S., Silveira, N., Tsarfaty, R., Tyers, F., Zeldes, A., and Zeman, D., 2024, Universal Dependencies guidelines (ver. 2): Universal Dependencies website, accessed March 19, 2025, at <ext-link ext-link-type="uri" xlink:href="https://universaldependencies.org/#language-">https://universaldependencies.org/#language-</ext-link>.</mixed-citation></ref>
+<ref id="r12"><mixed-citation publication-type="journal"><person-group person-group-type="author"><string-name><surname>Massey</surname>, <given-names>D.</given-names></string-name></person-group>, <year>2004</year>, <article-title>Space-time, 'science' and the relationship between physical geography and human geography</article-title>: <source>Transactions of the Institute of British Geographers</source>, v. <volume>24</volume>, <issue>no. 3</issue>, p. <fpage>261</fpage>&#x2013;<lpage>276</lpage>. [Also available at <pub-id pub-id-type="doi">http://doi.org/10.1111/j.0020-2754.1999.00261.x</pub-id>.]</mixed-citation></ref>
+<ref id="r13"><mixed-citation publication-type="journal"><person-group person-group-type="author"><string-name><surname>Musen</surname>, <given-names>M.A.</given-names></string-name></person-group>, <year>2015</year>, <article-title>The prot&#x00E9;g&#x00E9; project&#x2014;A look back and a look forward</article-title>: <source>AI Matters</source>, v. <volume>1</volume>, <issue>no. 4</issue>, p. <fpage>4</fpage>&#x2013;<lpage>12</lpage>, accessed March 19, 2025, at <pub-id pub-id-type="doi">https://doi.org/10.1145/2757001.2757003</pub-id>.</mixed-citation></ref>
+<ref id="r14"><mixed-citation publication-type="web">Nordquist, R., 2019, Head (words)&#x2014;Glossary of grammatical and rhetorical terms: ThoughtCo. website, accessed February 1, 2025, at <ext-link ext-link-type="uri" xlink:href="https://www.thoughtco.com/head-words-tern-1690922">https://www.thoughtco.com/head-words-tern-1690922</ext-link>. </mixed-citation></ref>
+<ref id="r15"><mixed-citation publication-type="web">PostgreSQL Database Management System, 2024, PostgreSQL 16: PostgreSQL Global Development Group website, accessed June 8, 2025, at <ext-link ext-link-type="uri" xlink:href="https://www.postgresql.org/">https://www.postgresql.org/</ext-link>.</mixed-citation></ref>
+<ref id="r16"><mixed-citation publication-type="web">Purdue Online Writing Lab, 2024, MLA formatting and style guide: Purdue University website, accessed June 1, 2024, at <ext-link ext-link-type="uri" xlink:href="https://owl.purdue.edu/owl/research_and_citation/mla_style/mla_formatting_and_style_guide/mla_formatting_and_style_guide.html">https://owl.purdue.edu/owl/research_and_citation/mla_style/mla_formatting_and_style_guide/mla_formatting_and_style_guide.html</ext-link>.</mixed-citation></ref>
+<ref id="r17"><mixed-citation publication-type="web">Resource Description Framework Working Group, 2014, Resource Description Framework (RDF): W3C Semantic Web Standards, accessed March 19, 2025, at <ext-link ext-link-type="uri" xlink:href="https://www.w3.org/RDF/">https://www.w3.org/RDF/</ext-link>.</mixed-citation></ref>
+<ref id="r18"><mixed-citation publication-type="book">Sowa, J.F., 2010, The role of logic and ontology in language and reasoning, <italic>in</italic> Poli, R., and Seibt, J., eds., Theory and applications of ontology&#x2014;Philosophical perspectives: Dordrecht, Netherlands, Springer Dordrecht, p. 231&#x2013;263, accessed July 8, 2025, at <pub-id pub-id-type="doi">https://doi.org/10.1007/978-90-481-8845-1_11</pub-id>.</mixed-citation></ref>
+<ref id="r19"><mixed-citation publication-type="web">The Ontology Lookup Service, 2025, Convective storm: European Molecular Biology Laboratory-European Bioinformatics Institute (EMBL-EBI) web page, accessed July 8, 2025, at <ext-link ext-link-type="uri" xlink:href="http://purl.obolibrary.org/obo/ENVO_01001294">http://purl.obolibrary.org/obo/ENVO_01001294</ext-link>.</mixed-citation></ref>
+<ref id="r20"><mixed-citation publication-type="web">W3C OWL Working Group, 2012, OWL 2 Web Ontology Language document overview (second edition)&#x2014;W3C recommendation 11 December 2012: W3C web page, accessed January 16, 2025, at <ext-link ext-link-type="uri" xlink:href="https://www.w3.org/TR/2012/REC-owl2-overview-20121211/">https://www.w3.org/TR/2012/REC-owl2-overview-20121211/</ext-link>.</mixed-citation></ref>
+<ref id="r21"><mixed-citation publication-type="other">Wybraniec-Skardowska, U., 2022, Logic - Language - Ontology&#x2014;Studies in universal logic [chap. 12]: Basel, Switzerland, Birkh&#x00E4;user, p. 257&#x2013;278, accessed July 8, 2025, at <pub-id pub-id-type="doi">https://doi.org/10.1007/978-3-031-22330-3_14</pub-id>.</mixed-citation></ref>
+</ref-list>
+<glossary content-type="Glossary"><title>Glossary</title>
+<def-list><def-item><term><bold>Boolean operations</bold></term>
+<def>
+<p>A branch of algebra involving conjunction, disjunction, and negation operations expressed and corresponding with binary operators AND, OR, and NOT.</p></def></def-item><def-item><term><bold>children</bold></term>
+<def>
+<p>Words or other tokens with dependency relations to the arc head.</p></def></def-item><def-item><term><bold>chunk</bold></term>
+<def>
+<p>Nominals or other nouns with grammatical relationships to other parts of speech.</p></def></def-item><def-item><term><bold>dependency relation</bold></term>
+<def>
+<p>The dependency of the meanings of words and other units of texts among each other and aligning with grammar rules.</p></def></def-item><def-item><term><bold>dependency grammar</bold></term>
+<def>
+<p>Linguistic relations that organize units, such as words, based on the completeness of meaning according to the units&#x2019; predominant or dependent roles.</p></def></def-item><def-item><term><bold>head</bold></term>
+<def>
+<p>The word that determines the nature of the phrase (<xref ref-type="bibr" rid="r14">Nordquist, 2019</xref>).</p></def></def-item><def-item><term><bold>federate</bold></term>
+<def>
+<p>A way to integrate multiple decentralized data as sources to independently query using semantic technology query systems.</p></def></def-item><def-item><term><bold>graph triples</bold></term>
+<def>
+<p>A data model following graph theory structured as a three-part node-edge-node semantic structure. Nodes are represented as object classes, member sets, and data literals. Edges are represented as relationships or properties linking nodes.</p></def></def-item><def-item><term><bold>knowledge graph</bold></term>
+<def>
+<p>A type of database that maintains knowledge or information in a graph form. A typical knowledge graph includes a plurality of nodes representing objects (also referred to as entities) and a plurality of edges connecting the nodes, where the edges represent properties as relationships between the objects (for example, is a parent of, is located in, and so on). One common type of knowledge graph is based on the Resource Description Framework (RDF), which models statements of facts or web resources in expressions of the form subject-property-object, known as &#x201C;triples,&#x201D; also referred to here as &#x201C;graph triples.&#x201D; For example, two nodes connected by an edge can describe a fact, which can be represented as (subject, property, object) triples.</p></def></def-item><def-item><term><bold>lemma</bold></term>
+<def>
+<p>An attribute of a word that describes its root form or infinitive.</p></def></def-item><def-item><term><bold>mereotopology</bold></term>
+<def>
+<p>A theory (using mereological and topological concepts) of the relations among wholes, parts, and the boundaries among parts.</p></def></def-item><def-item><term><bold>predicate</bold></term>
+<def>
+<p>The subject of the statement performs an action, and the verb or predicate describes what the subject does. If there is a receiver of the action, the verb followed by an object is a predicate.</p></def></def-item><def-item><term><bold>token</bold></term>
+<def>
+<p>An instance of a linguistic symbol or expression.</p></def></def-item>
+</def-list>
+</glossary>
+<book-app-group>
+<book-app id="a1">
+<book-part-meta>
+<title-group><label>Appendix 1</label>
+<title>Topographic Property Patterns</title>
+</title-group>
+</book-part-meta>
+<body>
+<p>Each entry in this appendix describes a concept demonstrated by data variables structured by the logical order of semantic roles.</p>
+<p>Affordances: Patterns that indicate affordances include conditional information</p><list id="L20" list-type="simple"><list-item>
+<p>Language pattern: token auxiliary (AUX) Head.text</p></list-item></list>
+<p/>
+<p>Agency: The volitional or primary cause of the action expressed by a verb and the agentive case. The head of the pattern &#x201C;verb and agent&#x201D; is the dependent marked with the word &#x201C;by.&#x201D;</p><list id="L21" list-type="simple"><list-item>
+<p>Language pattern: verb (VERB) agent (AGENT) by</p></list-item></list>
+<p/>
+<p>Multiple actions: Actions occurring concurrently</p><list id="L22" list-type="simple"><list-item>
+<p>Language pattern: VERB coordinating conjunction (CC) and</p></list-item></list>
+<p/>
+<p>Ordinal property: Data whose values are ordered</p><list id="L23" list-type="simple"><list-item>
+<p>Language pattern: numeral (NUM) adjectival modifier (AMOD) more</p></list-item></list>
+<p/>
+<p>Spatial conjunction: Related spatial positions</p><list id="L24" list-type="simple"><list-item>
+<p>Language pattern: above CC or; above conjunction (CONJ) below</p></list-item></list>
+<p/>
+<p>Spatially relative: The relative relation of one thing to another</p><list id="L25" list-type="simple"><list-item>
+<p>Language pattern: above object of preposition (POBJ) deck; above POBJ level</p></list-item></list>
+<p/>
+<p>Feature topology: Topological relations among features</p><list id="L26" list-type="simple"><list-item>
+<p>Language pattern: access compound traffic</p></list-item></list>
+<p/>
+<p>Spatial prepositions: A spatial relationship indicated by a preposition</p><list id="L27" list-type="simple"><list-item>
+<p>Language pattern: access	preposition (PREP) between; access PREP to</p></list-item></list>
+<p/>
+<p>Modifier&#x2014;verb: A term that describes or adds detail to a verb similar to an attribute</p><list id="L28" list-type="simple"><list-item>
+<p>Language pattern: VERB adverbial modifier (ADVMOD) naturally</p></list-item></list>
+<p/>
+<p>Modifier&#x2014;noun: A term that describes or adds detail to an object similar to an attribute</p><list id="L29" list-type="simple"><list-item>
+<p>Language pattern: noun (NOUN) AMOD major</p></list-item></list>
+<p/>
+<p>Subordinating conjunction: Word connecting the dependent clause to a main clause</p><list id="L30" list-type="simple"><list-item>
+<p>Language pattern: acquired mark after; token AUX Head.text</p></list-item></list>
+<p/>
+<p>Topological conjunctions: a word joining together words, phrases, or clauses using topological relation indicated by a preposition or as an adverb. </p><list id="L31" list-type="simple"><list-item>
+<p>Language pattern: across CC or; across CONJ into</p></list-item></list>
+<p/>
+<p>Topological relation to feature: Relation indicated by a </p><list id="L32" list-type="simple"><list-item>
+<p>Language pattern: across POBJ bottom; across POBJ course; across POBJ terrain</p></list-item></list>
+</body>
+</book-app>
+</book-app-group>
+<notes notes-type="colophon">
+<sec>
+<p>National Geospatial Technical Operations Center</p>
+<p>U.S. Geological Survey</p>
+<p>Box 25046, Mail Stop 510</p>
+<p>[or 6th and Kipling, MS 510]</p>
+<p>Denver Federal Center</p>
+<p>Denver, Colorado 80225-0046</p>
+<p>Or visit the National Geospatial Technical Operations Center website at</p>
+<p><ext-link ext-link-type="uri" xlink:href="https://www.usgs.gov/national-geospatial-technical-operations-center">https://www.usgs.gov/national-geospatial-technical-operations-center</ext-link></p>
+<p>Publishing support provided by the Science Publishing Network,&#x00A0;&#x00A0;</p>
+<p>Denver and Reston Publishing Service Centers</p>
+</sec></notes>
+</book-back>
+</book>

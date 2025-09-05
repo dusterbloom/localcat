@@ -8,30 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Osaurus integration for Apple Silicon optimized memory extraction
-- Hybrid architecture: Ollama (conversation) + Osaurus (memory)
-- Port conflict resolution (SurrealDB blocking port 8000)
-- Comprehensive technical debt documentation
-- Comprehensive emoji filtering for TTS output (15+ Unicode ranges covered)
+- **HotMem Ultra-Fast Memory System**: Complete local memory solution achieving <200ms p95 latency
+  - Dual storage architecture: SQLite (persistence) + LMDB (O(1) memory-mapped lookups)
+  - Universal Dependencies (UD) based extraction using spaCy
+  - USGS Grammar-to-Graph 27-pattern coverage for comprehensive fact extraction
+  - Real-time memory bullet injection directly into Pipecat context system
+- Comprehensive extraction testing and evaluation framework
+- **HotPathMemoryProcessor**: Pipecat-integrated processor for seamless memory injection
+- **Enhanced logging and debugging**: Frame tracing, performance metrics, extraction visibility
+- Reference materials: Grammar-to-Graph XML, USGS patterns, test datasets
+- Comprehensive technical debt documentation and cleanup guidelines
 
 ### Changed
-- Updated memory extraction to use mlx-community/Qwen3-1.7B-4bit on Osaurus
-- Simplified startup process (manual Osaurus configuration)
-- Improved architecture documentation
-- Streamlined greeting system to prevent duplication at startup
+- **Complete Memory Architecture Overhaul**: Replaced mem0 (2s latency) with HotMem (<200ms)
+- **Proper Pipecat Integration**: HotMem now uses context aggregator for memory injection
+- **Pipeline Optimization**: Moved memory processor before context aggregator for correct frame flow
+- **WhisperSTTServiceMLX Compatibility**: Fixed `is_final=None` handling for non-streaming STT
+- **Universal Dependencies Enhancement**: Enabled spaCy lemmatizer for proper relation extraction
+- **Memory Bullet Generation**: Contextual, concise bullets for enhanced LLM context
+- **Performance Monitoring**: Real-time metrics tracking with p95 latency goals
 
 ### Fixed
-- Pipecat transport import deprecations (updated to new API paths)
-- Dependency version incompatibilities (scikit-learn, PyTorch)
-- Requirements.txt cleanup and version pinning
-- Eliminated all actionable startup warnings
-- **TTS Emoji Speaking**: Emojis now filtered out before TTS processing to prevent garbled audio
-- **Greeting Duplication**: Fixed initial greeting being spoken twice at client connection
-- **Deprecated API Usage**: Removed deprecated `get_context_frame()` calls causing LLM trigger loops
+- **Critical Memory Extraction Bug**: Fixed retrieval returning query text instead of actual facts
+- **Frame Processing Issues**: Resolved `is_final=None` causing extraction to be skipped  
+- **Context Integration Failure**: Fixed memory bullets not appearing in LLM context
+- **Pipeline Ordering**: Corrected processor placement for proper TranscriptionFrame handling
+- **Empty Relation Extraction**: Fixed spaCy lemmatizer being disabled causing empty predicates
+- **Pipecat Frame Lifecycle**: Proper StartFrame handling and frame forwarding compliance
+- **Audio Frame Flooding**: Filtered audio frames from debug logs for readable output
 
 ### Removed
 - Removed automated startup script (start_osaurus.sh) in favor of manual setup
 - Removed vllm dependency (not compatible with macOS)
+- Removed deprecated mem0 services (`server/deprecated_memory_services/*`, `server/mem0_service_v2.py`)
 
 ## [0.1.0] - 2025-09-04
 
