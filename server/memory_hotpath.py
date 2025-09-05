@@ -35,10 +35,11 @@ def _load_nlp(lang: str = "en"):
     """Load spaCy model (cached singleton)"""
     if lang not in _nlp_cache:
         try:
+            # Keep lemmatizer+parser across all supported langs; disable only NER/textcat for speed
             if lang == "en":
                 nlp = spacy.load("en_core_web_sm", disable=["ner", "textcat"])
             else:
-                nlp = spacy.load(f"{lang}_core_news_sm", disable=["ner", "lemmatizer", "textcat"])
+                nlp = spacy.load(f"{lang}_core_news_sm", disable=["ner", "textcat"])
             _nlp_cache[lang] = nlp
             logger.info(f"Loaded spaCy model {lang}_core_web_sm")
         except:
@@ -154,7 +155,12 @@ class HotMemory:
         
         # Stage 2: Refine triples with intent-aware processing
         refine_start = time.perf_counter()
-        triples = self._refine_triples(text, triples, doc, intent)
+        triples = self._refine_triples(text, triples, doc, intent, lang)
+        # Apply light coreference resolution for third-person pronouns
+        try:
+            triples = self._apply_coref_lite(triples, doc)
+        except Exception:
+            pass
         # Rebuild entities from refined triples + text context
         ent_from_triples: Set[str] = set()
         for s, r, d in triples:
@@ -168,8 +174,21 @@ class HotMemory:
         
         # Filter and store facts based on quality and intent
         stored_triples = []
+        # Hedge/negation adjustments
+        t_lower = (text or "").lower()
+        hedge_terms = ("maybe", "i think", "probably", "kinda", "sort of", "not sure", "perhaps", "possibly")
+        hedged = any(ht in t_lower for ht in hedge_terms)
+
         for s, r, d in triples:
             should_store, confidence = quality_filter.should_store_fact(s, r, d, intent)
+            # Adjust confidence for hedging/negation context
+            if hedged:
+                confidence -= 0.2
+            if neg_count > 0 and intent.intent != IntentType.CORRECTION:
+                confidence -= 0.2
+            confidence = max(0.0, min(1.0, confidence))
+            if confidence < 0.3:
+                should_store = False
             if should_store:
                 # Handle corrections by demoting old facts
                 if intent.intent == IntentType.CORRECTION:
@@ -681,6 +700,8 @@ class HotMemory:
                     return f"• You are {d}"
                 else:
                     return f"• You are {d} years old"
+            elif r == "favorite_number":
+                return f"• Your favorite number is {d}"
             elif r == "has":
                 return f"• You have {d}"
             elif r == "is":
@@ -712,6 +733,8 @@ class HotMemory:
                     return f"• {s.title()} is {d}"
                 else:
                     return f"• {s.title()} is {d} years old"
+            elif r == "favorite_number":
+                return f"• {s.title()}'s favorite number is {d}"
             elif r == "has":
                 return f"• {s.title()} has {d}"
             elif r == "is":
@@ -774,6 +797,7 @@ class HotMemory:
             "friend_of": 0.78,
             "name": 0.75,
             "favorite_color": 0.70,
+            "favorite_number": 0.70,
             "has": 0.60,
             "is": 0.55,
         }
@@ -798,7 +822,7 @@ class HotMemory:
             "name", "age", "favorite_color",
             "lives_in", "works_at", "born_in", "moved_from",
             "participated_in", "went_to",
-            "friend_of", "owns", "has",
+            "friend_of", "owns", "has", "favorite_number",
         }
         blocked_tokens = {"system prompt", "what time", "no-"}
 
@@ -953,7 +977,7 @@ class HotMemory:
                 seen.add(e)
         return uniq
 
-    def _refine_triples(self, text: str, triples: List[Tuple[str, str, str]], doc, intent=None) -> List[Tuple[str, str, str]]:
+    def _refine_triples(self, text: str, triples: List[Tuple[str, str, str]], doc, intent=None, lang: str = "en") -> List[Tuple[str, str, str]]:
         t = (text or "").lower()
         refined: List[Tuple[str, str, str]] = []
 
@@ -1000,6 +1024,16 @@ class HotMemory:
             fav = _canon_entity_text(fc.group(1))
             refined.append(("you", "favorite_color", fav))
 
+        # 5) Favorite number is X → favorite_number
+        fn = None
+        try:
+            fn = __import__("re").search(r"\bfavorite number is\s+([^,.!?]+)", t)
+        except Exception:
+            fn = None
+        if fn:
+            favn = _canon_entity_text(fn.group(1))
+            refined.append(("you", "favorite_number", favn))
+
         for s, r, d in triples:
             cs = _canon_entity_text(s)
             cd = _canon_entity_text(d)
@@ -1025,6 +1059,64 @@ class HotMemory:
                     rr = "participated_in"
                 elif (" go" in t or " went" in t) and r == "_to":
                     rr = "went_to"
+
+                # Multilingual normalization (simple keyword checks)
+                l = (lang or "en").lower()
+                try:
+                    if l == 'es':
+                        if (" vive" in t or t.startswith("vive")) and r == "_in":
+                            rr = "lives_in"
+                        elif (" trabaja" in t or t.startswith("trabaja")) and r in {"_at", "_in"}:
+                            rr = "works_at"
+                        elif (" nació" in t or t.startswith("nació")) and r == "_in":
+                            rr = "born_in"
+                        elif (" mudó" in t or " se mudó" in t) and r == "_from":
+                            rr = "moved_from"
+                        elif (" particip" in t) and r == "_in":
+                            rr = "participated_in"
+                        elif (" fue" in t or " ir " in t or t.startswith("fue") or t.startswith("ir ")) and r == "_to":
+                            rr = "went_to"
+                    elif l == 'fr':
+                        if (" habite" in t or t.startswith("habite")) and r in {"_in", "_at"}:
+                            rr = "lives_in"
+                        elif (" travaille" in t or t.startswith("travaille")) and r in {"_at", "_in"}:
+                            rr = "works_at"
+                        elif (" né" in t or " née" in t) and r == "_in":
+                            rr = "born_in"
+                        elif (" déménagé" in t) and r == "_from":
+                            rr = "moved_from"
+                        elif (" participé" in t) and r == "_in":
+                            rr = "participated_in"
+                        elif (" allé" in t) and r == "_to":
+                            rr = "went_to"
+                    elif l == 'de':
+                        if (" wohnt" in t or t.startswith("wohnt")) and r == "_in":
+                            rr = "lives_in"
+                        elif (" arbeitet" in t or t.startswith("arbeitet")) and r in {"_at", "_in"}:
+                            rr = "works_at"
+                        elif (" geboren" in t) and r == "_in":
+                            rr = "born_in"
+                        elif (" zog" in t or " umgezogen" in t) and r == "_from":
+                            rr = "moved_from"
+                        elif (" teilgenommen" in t) and r == "_in":
+                            rr = "participated_in"
+                        elif (" ging" in t or " gegangen" in t) and r == "_to":
+                            rr = "went_to"
+                    elif l == 'it':
+                        if (" vive" in t or t.startswith("vive")) and r == "_in":
+                            rr = "lives_in"
+                        elif (" lavora" in t or t.startswith("lavora")) and r in {"_at", "_in"}:
+                            rr = "works_at"
+                        elif (" nato" in t or " nata" in t) and r == "_in":
+                            rr = "born_in"
+                        elif (" trasferit" in t) and r == "_from":
+                            rr = "moved_from"
+                        elif (" partecipat" in t) and r == "_in":
+                            rr = "participated_in"
+                        elif (" andat" in t) and r == "_to":
+                            rr = "went_to"
+                except Exception:
+                    pass
 
             # Normalize belongs_to ownership
             if (r in {"_to", "belong_to", "belongs_to"}) and ("belong" in t):
@@ -1131,6 +1223,62 @@ class HotMemory:
                 uniq.append(tr)
                 seen.add(tr)
         return uniq
+
+    # --- Coref-lite: resolve third-person pronouns to recent mentions ---
+    def _build_mention_stack(self, doc) -> List[str]:
+        stack: List[str] = []
+        try:
+            # Noun chunks and proper nouns in order of appearance
+            if doc is not None:
+                for chunk in getattr(doc, 'noun_chunks', []):
+                    txt = _canon_entity_text(chunk.text)
+                    if txt and txt not in stack:
+                        stack.append(txt)
+                for tok in doc:
+                    if tok.pos_ == 'PROPN':
+                        txt = _canon_entity_text(tok.text)
+                        if txt and txt not in stack:
+                            stack.append(txt)
+        except Exception:
+            pass
+        # Add recent entities from recency_buffer
+        try:
+            for item in list(self.recency_buffer)[-5:]:
+                for ent in (item.s, item.d):
+                    if ent and ent not in stack and ent != 'you':
+                        stack.append(ent)
+        except Exception:
+            pass
+        return stack
+
+    def _resolve_pronoun(self, token_text: str, stack: List[str]) -> Optional[str]:
+        p = (token_text or '').strip().lower()
+        if not p:
+            return None
+        third = {'he', 'him', 'his', 'she', 'her', 'hers', 'they', 'them', 'their', 'theirs', 'it', 'this', 'that'}
+        if p in third:
+            # Return most recent stack entry not 'you'
+            for cand in reversed(stack):
+                if cand != 'you':
+                    return cand
+        return None
+
+    def _apply_coref_lite(self, triples: List[Tuple[str, str, str]], doc) -> List[Tuple[str, str, str]]:
+        stack = self._build_mention_stack(doc)
+        out: List[Tuple[str, str, str]] = []
+        for s, r, d in triples:
+            rs = s
+            rd = d
+            if s not in {'you'}:
+                rs2 = self._resolve_pronoun(s, stack)
+                if rs2:
+                    rs = rs2
+            if d not in {'you'}:
+                rd2 = self._resolve_pronoun(d, stack)
+                if rd2:
+                    rd = rd2
+            out.append((rs, r, rd))
+        return out
 
     def _extract_entities_light(self, text: str) -> List[str]:
         """Lightweight entity extraction for reactions/questions (no full NLP)"""

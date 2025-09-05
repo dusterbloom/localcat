@@ -151,6 +151,23 @@ Two approaches (choose A for simplicity, B later if needed):
 - In-memory only (preferred): add `edge_meta[(s,r,d)] = {ts, weight}` in `HotMemory`; populate during observe/negate and rebuild.
 - Optional (if needed): expose `edge.updated_at` in `MemoryStore.get_all_edges()` for rebuild to seed `ts` without extra queries.
 
+### 6.1) Embedding Storage Extensions (Phase 1.5)
+- **SQLite schema**: Add `embedding BLOB` and `embedding_version TEXT DEFAULT 'embeddinggemma-308m-v1'` columns to edge table
+- **LMDB hot cache**: Extend `edge_meta[(s,r,d)]` to include:
+  ```python
+  edge_meta[(s,r,d)] = {
+      'ts': last_update_timestamp,
+      'weight': edge_weight,
+      'last_accessed': access_timestamp,
+      'last_injected_turn': turn_id,
+      'embedding_hash': str,  # MD5 of fact text for cache invalidation
+      'embedding': Optional[np.ndarray]  # 768-dim cached if recently accessed
+  }
+  ```
+- **RAM LRU cache**: 1K most accessed embeddings (~3MB) for sub-15ms lookup
+- **Rebuild logic**: Populate missing embeddings during hot cache rebuild
+- **Memory budget**: +263MB total (+30MB SQLite BLOBs, +30MB LMDB vectors, +3MB RAM cache, +200MB model)
+
 ## Testing Plan
 - Update/extend 27-pattern tests to validate taxonomy mapping, multi-fact segmentation, and multilingual surface forms.
   - File: `server/test_27_patterns_updated.py` (new/updated).
@@ -162,6 +179,10 @@ Two approaches (choose A for simplicity, B later if needed):
 - Phase 1 (Retrieval/Injection):
   - Implement scoring, novelty/diversity, system-role injection, rotating message window.
   - Add metrics and env toggles. Ship behind feature flags.
+- Phase 1.5 (Semantic Embeddings):
+  - Deploy EmbeddingGemma model and extend storage for embeddings.
+  - Implement hybrid scoring (semantic + lexical + predicate + recency).
+  - A/B test semantic vs. lexical retrieval quality.
 - Phase 2 (Extraction):
   - Relation taxonomy and coref-lite; hedging/negation adjustments.
   - Multilingual normalization maps and loaders.
