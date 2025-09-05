@@ -23,11 +23,11 @@ Since Pipecat is a real-time voice AI framework, context management happens auto
 How Context Updates During Conversations
 Context updates happen automatically as frames flow through your pipeline:
 User Messages:
-User speaks → InputAudioRawFrame → STT Service → TranscriptionFrame
-context_aggregator.user() receives TranscriptionFrame and adds user message to context
+ User speaks → InputAudioRawFrame → STT Service → TranscriptionFrame
+ context_aggregator.user() receives TranscriptionFrame and adds user message to context
 Assistant Messages:
-LLM generates response → LLMTextFrame → TTS Service → TTSTextFrame
-context_aggregator.assistant() receives TTSTextFrame and adds assistant message to context
+ LLM generates response → LLMTextFrame → TTS Service → TTSTextFrame
+ context_aggregator.assistant() receives TTSTextFrame and adds assistant message to context
 Frame types that update context:
 TranscriptionFrame: Contains user speech converted to text by STT service
 LLMTextFrame: Contains LLM-generated responses

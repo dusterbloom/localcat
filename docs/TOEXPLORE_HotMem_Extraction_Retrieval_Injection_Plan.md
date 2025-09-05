@@ -197,3 +197,207 @@ Two approaches (choose A for simplicity, B later if needed):
 
 This document specifies the planned changes without modifying code. Once approved, we can implement in small PRs following the rollout plan.
 
+## Addendum: Concrete Implementation Details
+
+### Data Structures (in-memory, hot path)
+- entity_index: dict[str, set[(s,r,d)]]
+  - Key: canonical entity; Value: distinct (s,r,d) triples touching that entity.
+- edge_meta: dict[(s,r,d), {ts:int, weight:float, last_injected_turn:int|None}]
+  - Metadata to avoid LMDB scans during ranking and enforce novelty.
+- recency_buffer: deque[RecencyItem], maxlen=50 (existing)
+  - RecencyItem: { s,r,d,text,timestamp,turn_id,score }
+- inject_window: deque[InjectItem], maxlen=HOTMEM_HINT_WINDOW (default 10)
+  - InjectItem: { turn_id:int, triple:(s,r,d), bullet:str, score:float }
+- last_turn_entities: list[str]
+  - Entities recognized post-refinement for gating.
+- novelty_cache: dict[(s,r,d), int]
+  - Last turn_id a triple was injected.
+
+### Canonical Relation Mapping (taxonomy)
+- Identity/Attributes: name, age, favorite_color, is
+- Residence/Work: lives_in, works_at, born_in, moved_from
+- Participation/Movement: participated_in, went_to
+- Social/Ownership: friend_of, owns, has
+- Temporal/Quant: time, duration, quantity
+
+UD patterns → canonical relations (English):
+- Copula: nsubj + cop + attr/acomp → (subj, is, attr)
+- Passive name: nsubjpass(head∈{name,call}) + oprd → (subj, name, oprd)
+- Prepositions with governing verb:
+  - live + in/at → lives_in/lives_at
+  - work + at/for/in → works_at/works_in
+  - born + in → born_in
+  - move + from → moved_from
+  - participate + in → participated_in
+  - go/went + to → went_to
+- Possessive copula: "my X is Y" → (you, X_as_relation, Y)
+- Have/has/had dobj → (subj, has, obj)
+- Conjunction propagation; friend_of derivation from "X and Y are friends".
+
+Multilingual surface aliasing (examples):
+- ES: vive en→lives_in, trabaja en→works_at, nació en→born_in, se mudó de→moved_from
+- FR: habite à/en→lives_in, travaille chez/à→works_at, né(e) à/en→born_in
+- DE: wohnt in→lives_in, arbeitet bei→works_at, geboren in→born_in
+- IT: vive a/in→lives_in, lavora a/presso→works_at, nato/a a/in→born_in
+
+Implementation: per-language maps in refinement to rewrite underspecified rels ("_in", "_at", …) to canonical forms using verb lemma + preposition.
+
+### Coreference-lite Algorithm
+- Maintain mention_stack per turn with recent proper-noun/noun-chunk mentions.
+- Pronouns:
+  - he/she → last PERSON mention ≠ you
+  - they → last plural/group mention else last PERSON
+  - it/this/that → last concrete non-PERSON noun
+  - we/our/us → you (unless clear group entity present)
+- Backoff: current turn stack → last 3 named entities from recency_buffer.
+- O(1) lookups; no neural coref to preserve latency.
+
+### Hedging/Negation Handling
+- Hedge lexicon: maybe, I think, probably, kinda, sort of, not sure, perhaps, possibly.
+- If hedged: QualityFilter confidence −0.2.
+- If neg_count>0 and intent≠CORRECTION: confidence −0.2; if CORRECTION: +0.3 and trigger conflict demotion.
+
+### Retrieval Scoring Algorithm
+- score(t) = α·pred_priority(r) + β·recency(ts) + γ·lexical_overlap(q,s,r,d) + δ·edge_weight
+- pred_priority: { lives_in:100, works_at:95, born_in:90, moved_from:85, participated_in:80, friend_of:78, name:75, favorite_color:70, has:60, is:55 }
+- recency(ts): exp(-Δ/T) where Δ = now - ts, T default 3 days (configurable); apply a same-session boost (e.g., ×1.2) for mentions within the current session/turn cluster and optional time-of-day weighting (today > yesterday at same local hour)
+- lexical_overlap: token-overlap/Jaccard of content words between query and {s, r tokens, d}; optional small boost if entity appears in SQLite FTS search
+- edge_weight: from edge_meta
+- Default weights: α=0.4, β=0.2, γ=0.3, δ=0.1 (env-tunable)
+
+Ranking flow:
+- Gather candidates from entity_index for entities in query (non-"you" first, then "you")
+- Lookup ts/weight from edge_meta (fallback ts=0, weight=0.3)
+- Score, de-duplicate by (s,r,d)
+- Diversity: ≤1 per relation by default; allow ≤2 for high-scoring pairs (score ≥ τ + ε), still preferring distinct subjects when not "you"
+- Novelty: skip if novelty_cache[(s,r,d)] ≥ turn_id - HOTMEM_NOVELTY_TURNS
+- Select top K via dynamic policy below
+
+### Dynamic Bullet Count (K)
+- Compute scores; define τ as 75th percentile or baseline 0.45 if few candidates
+- REACTION/PURE_QUESTION: up to 2 if score ≥ τ and entity-targeted
+- QUESTION_WITH_FACT/FACT_STATEMENT/MULTIPLE_FACTS: 2–5, capped by HOTMEM_BULLETS_MAX
+
+### Injection Gating and Rotating System Message
+- Inject only if candidates above τ and entity overlap, or intent ∈ {FACT_STATEMENT, QUESTION_WITH_FACT, MULTIPLE_FACTS}
+- Rotating single system message (preferred):
+  - Build from inject_window (last N turns), dedup by (s,r,d), sort by recency then score
+  - Replace/update a single tagged system message before user message is added
+  - Include freshness header, e.g., "Context from the last 10 conversational turns (updated: ISO 8601)"
+  - Update novelty_cache[(s,r,d)] = turn_id for injected bullets
+
+### Concurrency & Thread Safety
+- Reader–writer locks around hot indices:
+  - Read lock for retrieval/scoring on `entity_index` and `edge_meta`
+  - Write lock for updates to `entity_index`, `edge_meta`, `recency_buffer`, `inject_window`
+- Atomic updates for weights/metadata:
+  - Update `(weight, ts, last_injected_turn)` under a single write lock to keep metadata coherent
+  - Favor single-writer principle on the hot path; readers proceed concurrently
+- Queue-based batching to reduce contention:
+  - Keep persistence batching (SQLite/LMDB) off the hot lock
+  - Optionally stage hot-index updates and commit once per turn under the write lock
+
+### Error Handling and Fallbacks
+- spaCy load failure → spacy.blank(lang) + sentencizer; rely on regex/refinement; retrieval continues
+- LMDB/SQLite transient errors → catch/log, enqueue for retry in batch flush; do not block hot loop
+- Context aggregator missing → log and skip injection; continue extraction/storage
+- Token budget exceeded when building rotating message → trim by lowest score/oldest first; respect HOTMEM_BULLETS_MAX
+- Kill switches: HOTMEM_DISABLE_INJECTION=1, HOTMEM_DISABLE_EXTRACTION=1
+
+### Memory Lifecycle and Conflict Resolution
+- Reinforcement: EWMA of weight; status from weight (existing)
+- Corrections: demote conflicting (s,r,old_d) then observe (s,r,new_d); update entity_index accordingly
+- Staleness decay: optional passive decay (e.g., 0.99/day) during rebuild/maintenance; status flips to stale/archive thresholds
+- Forgetting: hard_forget(s[,r[,d]]) purges LMDB + tombstones in SQLite; expose via user command
+- TTLs: optional env TTL per relation type; transition to stale if not reinforced
+
+### Privacy and Security (offline)
+- All processing local; no network
+- Optional log minimization/redaction for PII (emails/phones) if enabled
+- User controls: export memories; hard forget; per-user isolation by user_id
+- At-rest: rely on OS/disk encryption if needed; no change to hot path
+
+### Examples (EN + Multilingual)
+- EN: "My name is Alex Thompson" → (you, name, alex thompson) → • Your name is Alex Thompson
+- EN: "I live in Seattle and work at Microsoft" → (you, lives_in, seattle), (you, works_at, microsoft)
+- ES: "Vivo en Madrid" → (you, lives_in, madrid)
+- FR: "Je travaille chez Airbus" → (you, works_at, airbus)
+- DE: "Ich bin 30 Jahre alt" → (you, age, 30) → • You are 30 years old
+- IT: "Mi sono trasferito da Torino" → (you, moved_from, torino)
+
+Sample rotating system message (system role):
+Use the following factual context if helpful.
+Context from the last 10 conversational turns (updated: 2025-01-01T12:34:56Z):
+• Your name is Alex Thompson
+• You live in Seattle
+• You work at Microsoft
+
+### Benchmarks (targets & method)
+- Prewarm: spaCy/Stanza load < 1.5s (off hot path)
+- Per-turn targets (CPU): intent_ms ≤ 20ms, extraction_ms ≤ 60ms, update_ms ≤ 10ms, retrieval_ms ≤ 20ms, total_ms p95 ≤ 200ms
+- Method: 200-turn mixed multilingual set; measure mean/p95 per stage; validate against ≥100-fact gold set
+
+### Success Metrics (beyond latency)
+- Extraction precision ≥ 0.80 and recall ≥ 0.60 on curated multilingual set
+- Retrieval relevance@3 ≥ 0.80 (human or heuristic overlap)
+- Injection usefulness ≥ 0.60 (assistant references injected entities/relations when applicable)
+- Duplicate reinjection within 3 turns < 10%
+- Rotating system message ≤ HOTMEM_BULLETS_MAX bullets in 99% of turns
+- Multilingual mapping success ≥ 90% on language-specific patterns
+
+## Implementation TODOs
+
+### Phase 1 — Retrieval & Injection (high priority)
+- Add `edge_meta` cache for ts/weight (hot index)
+- Implement scoring function and weights (env-tunable)
+- Add lexical overlap and optional FTS boost
+- Enforce diversity (≤1 per rel, ≤2 high-score)
+- Add novelty suppression window (configurable turns)
+- Compute dynamic bullet count (1–5) per intent
+- Implement rotating system message with timestamp header
+- Switch default injection role to `system`
+- Add gating by intent and entity overlap
+- Deduplicate against existing rotating message bullets
+- Add reader–writer locks for hot indices
+- Atomic updates for weights and metadata
+- Stage hot-index commits once per turn
+- Add telemetry for retrieval/injection metrics
+- Add env flags: disable extraction/injection, weights, K, windows
+- Write unit tests for scoring/diversity/novelty/dynamic K
+- Write integration test for rotating message update/pruning
+- Add benchmarks to record per-stage timings (p95)
+
+Acceptance criteria (Phase 1)
+- Retrieval_ms mean ≤ 20ms; total_ms p95 ≤ 200ms
+- No duplicate reinjection within last N=3 turns (≤10%)
+- Rotating message capped ≤ HOTMEM_BULLETS_MAX and includes timestamp
+- Relevance@3 ≥ 0.80 on test prompts
+
+### Phase 2 — Extraction (taxonomy, coref-lite, multilingual)
+- Implement canonical relation mapping table
+- Add per-language alias maps (EN/ES/FR/DE/IT)
+- Keep lemmatizer+parser; disable NER/textcat
+- Add coref-lite mention stack resolver
+- Extend regex refinements (pets/family/preferences)
+- Apply hedging/negation to QualityFilter confidence
+- Expand multi-fact segmentation via conj propagation
+- Add tests for 27 patterns + multilingual cases
+- Update bullet formatter for new relations
+
+Acceptance criteria (Phase 2)
+- Extraction precision ≥ 0.80, recall ≥ 0.60 (gold set)
+- Multilingual canonicalization success ≥ 90%
+- No increase in mean extraction_ms > 60ms
+
+### Phase 3 — Tuning & Lifecycle
+- Tune weights/thresholds from telemetry distributions
+- Add passive decay/TTL policy (optional)
+- Improve correction demotion + conflict logging
+- Add forgetting commands and verification tests
+- Enhance privacy: optional log redaction toggles
+- Expand benchmarks with multilingual/longer dialogs
+
+Acceptance criteria (Phase 3)
+- Reduced over-injection in reactive turns (>20% drop)
+- Stable context hygiene across long sessions
+- Documented ops toggles and runbooks

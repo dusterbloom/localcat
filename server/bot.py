@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "pipecat", "src"))
 
 import uvicorn
 from dotenv import load_dotenv
+from datetime import datetime
 from fastapi import BackgroundTasks, FastAPI
 from loguru import logger
 
@@ -68,12 +69,14 @@ ice_servers = [
 smart_turn_model_path = os.getenv("LOCAL_SMART_TURN_MODEL_PATH")
 
 
-SYSTEM_INSTRUCTION =  """You are Locat, a personal assistant. You can remember things about the person you are talking to.
-                        Some Guidelines:
-                        - Make sure your responses are friendly yet short and concise.
-                        - If the user asks you to remember something, make sure to remember it.
-                        - Greet the user by their name if you know about it. 
-                    """
+SYSTEM_INSTRUCTION_BASE =  (
+    "You are Locat, a personal assistant. You can remember things about the person you are talking to.\n"
+    "Guidelines:\n"
+    "- Keep responses friendly and concise.\n"
+    "- If the user asks you to remember something, remember it.\n"
+    "- Greet the user by their name if you know it.\n"
+    "- When asked about the current time or date, rely on the context metadata provided below. If it seems stale, say so.\n"
+)
 
 
 async def run_bot(webrtc_connection):
@@ -111,15 +114,36 @@ async def run_bot(webrtc_connection):
         extra_body={"think": False},  # Disable thinking for main conversation model
     )
 
-    context = OpenAILLMContext(
-        [
-            {
-                "role": "system",
-                "content": SYSTEM_INSTRUCTION,
-            }
-        ]
+    # Build dynamic system instruction with IDs and current local time
+    agent_id = os.getenv("AGENT_ID", "locat")
+    user_id = os.getenv("USER_ID", "default-user")
 
+    # Human-friendly local time string: "It is 2:43 pm and today is Friday 5th September 2025 (TZ)"
+    now = datetime.now().astimezone()
+    def _ordinal(n: int) -> str:
+        if 10 <= n % 100 <= 20:
+            suf = "th"
+        else:
+            suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+        return f"{n}{suf}"
+    time_str = now.strftime('%I:%M %p').lstrip('0').lower()
+    weekday = now.strftime('%A')
+    month = now.strftime('%B')
+    day_ordinal = _ordinal(now.day)
+    year = now.year
+    tzname = now.tzname() or "local"
+    human_time = f"It is {time_str} and today is {weekday} {day_ordinal} {month} {year} ({tzname})."
+
+    system_intro = (
+        f"Agent ID: {agent_id}\n"
+        f"User ID: {user_id}\n"
+        f"{human_time}\n"
     )
+    system_instruction = system_intro + SYSTEM_INSTRUCTION_BASE
+
+    context = OpenAILLMContext([
+        {"role": "system", "content": system_instruction}
+    ])
     context_aggregator = llm.create_context_aggregator(
         context,
         # Whisper local service isn't streaming, so it delivers the full text all at

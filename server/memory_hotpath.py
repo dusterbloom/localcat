@@ -8,6 +8,7 @@ import os
 import time
 from typing import List, Tuple, Set, Dict, Optional, Any
 from collections import defaultdict, deque
+import math
 import heapq
 from dataclasses import dataclass
 import statistics
@@ -101,6 +102,7 @@ class HotMemory:
         self.entity_index = defaultdict(set)  # entity -> set of (s,r,d) triples
         self.recency_buffer = deque(maxlen=max_recency)  # Recent interactions
         self.entity_cache = {}  # Canonical entity mapping
+        self.edge_meta: Dict[Tuple[str, str, str], Dict[str, Any]] = {}  # (s,r,d) -> {ts, weight}
         
         # Performance tracking
         self.metrics = defaultdict(list)
@@ -136,7 +138,7 @@ class HotMemory:
             # Still retrieve context for responses
             retrieve_start = time.perf_counter()
             entities = self._extract_entities_light(text)
-            bullets = self._retrieve_context(text, entities, turn_id)
+            bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
             self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
             
             elapsed_ms = (time.perf_counter() - start) * 1000
@@ -186,12 +188,17 @@ class HotMemory:
         
         # Stage 3: Retrieve relevant memories
         retrieve_start = time.perf_counter()
-        bullets = self._retrieve_context(text, entities, turn_id)
+        bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
         self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
         
         # Update recency with stored triples only
         for s, r, d in stored_triples:
             self.recency_buffer.append(RecencyItem(s, r, d, text, now_ts, turn_id))
+            # Update hot edge metadata for recency/weight (weight approx if unknown)
+            self.edge_meta[(s, r, d)] = {
+                'ts': now_ts,
+                'weight': max(0.3, 0.7)  # optimistic default
+            }
         
         # Track overall performance
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -730,13 +737,23 @@ class HotMemory:
                 else:
                     return f"• {s.title()}'s {relation} is {d}"
     
-    def _retrieve_context(self, query: str, entities: List[str], turn_id: int) -> List[str]:
+    def _retrieve_context(self, query: str, entities: List[str], turn_id: int, intent=None) -> List[str]:
         """
         Retrieve relevant memory bullets for context
-        Returns top 3 most relevant memories
+        Returns up to 5 most relevant memories based on scoring
         """
         bullets: List[str] = []
-        seen = set()
+        seen_triples: Set[Tuple[str, str, str]] = set()
+
+        # Tokenize query for lexical overlap (simple, fast)
+        def _tokens(t: str) -> Set[str]:
+            out = set()
+            for w in (t or "").lower().split():
+                w = ''.join(ch for ch in w if ch.isalnum())
+                if len(w) >= 3:
+                    out.add(w)
+            return out
+        qtok = _tokens(query)
 
         # 1) Prefer fact bullets based on query entities
         #    Put non-'you' entities first; then 'you' if present.
@@ -747,57 +764,94 @@ class HotMemory:
         if include_you:
             query_entities.append("you")
 
-        # Predicate priority for better answerability
+        # Predicate priority (normalized 0..1)
         pred_pri = {
-            "lives_in": 100,
-            "works_at": 95,
-            "born_in": 90,
-            "moved_from": 85,
-            "participated_in": 80,
-            "friend_of": 78,
-            "name": 75,
-            "has": 60,
+            "lives_in": 1.00,
+            "works_at": 0.95,
+            "born_in": 0.90,
+            "moved_from": 0.85,
+            "participated_in": 0.80,
+            "friend_of": 0.78,
+            "name": 0.75,
+            "favorite_color": 0.70,
+            "has": 0.60,
+            "is": 0.55,
         }
+
+        # Weights (env tunable later)
+        alpha, beta, gamma, delta = 0.4, 0.2, 0.3, 0.1
+        recency_T_ms = 3 * 24 * 3600 * 1000  # 3 days
+
+        # Intent-aware K limit
+        K_max = 5
+        try:
+            from memory_intent import IntentType  # type: ignore
+            if intent and getattr(intent, 'intent', None) in {IntentType.REACTION, IntentType.PURE_QUESTION}:
+                K_max = 2
+        except Exception:
+            pass
+
+        scored_all: List[Tuple[float, int, str, str, str]] = []
+        now_ms = int(time.time() * 1000)
+        # Only inject from a safe canonical relation set; exclude question scaffolding/noise
+        allowed_rels = {
+            "name", "age", "favorite_color",
+            "lives_in", "works_at", "born_in", "moved_from",
+            "participated_in", "went_to",
+            "friend_of", "owns", "has",
+        }
+        blocked_tokens = {"system prompt", "what time", "no-"}
 
         for entity in query_entities:
             if entity in self.entity_index:
                 candidates = list(self.entity_index[entity])
-                scored = []
                 for s, r, d in candidates:
-                    # Try to recover recency from store
-                    ts = 0
-                    try:
-                        neigh = self.store.neighbors(s, r)
-                        for (dst, _w, nts, _p, _n, _st) in neigh:
-                            if dst == d:
-                                ts = int(nts)
-                                break
-                    except Exception:
-                        ts = 0
-                    pri = pred_pri.get(r, 50)
-                    scored.append((pri, ts, s, r, d))
-                # Sort by priority desc, then time desc
-                scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
-                for _pri, _ts, s, r, d in scored:
-                    fact = f"{s} {r} {d}"
-                    if fact not in seen:
-                        formatted = self._format_memory_bullet(s, r, d)
-                        bullets.append(formatted)
-                        seen.add(fact)
-                        if len(bullets) >= 3:
-                            return bullets
+                    # Filter out low-value relations and question scaffolding for injection
+                    if r not in allowed_rels:
+                        continue
+                    sd_text = f"{s} {d}".lower()
+                    if any(bt in sd_text for bt in blocked_tokens):
+                        continue
+                    meta = self.edge_meta.get((s, r, d), {})
+                    ts = int(meta.get('ts', 0))
+                    age = max(0, now_ms - ts)
+                    rec = math.exp(-age / max(1, recency_T_ms)) if ts > 0 else 0.0
+                    pri = pred_pri.get(r, 0.5)
+                    # Lexical overlap
+                    stok = _tokens(s) | _tokens(r) | _tokens(d)
+                    lex = 0.0
+                    if qtok and stok:
+                        inter = len(qtok & stok)
+                        union = len(qtok | stok)
+                        lex = inter / union if union else 0.0
+                    w = float(meta.get('weight', 0.3))
+                    score = alpha * pri + beta * rec + gamma * lex + delta * w
+                    scored_all.append((score, ts, s, r, d))
 
-        # 2) Fallback to recent facts if we still need context
-        for item in reversed(list(self.recency_buffer)[-10:]):
-            fact = f"{item.s} {item.r} {item.d}"
-            if fact not in seen:
-                formatted = self._format_memory_bullet(item.s, item.r, item.d)
-                bullets.append(formatted)
-                seen.add(fact)
-                if len(bullets) >= 3:
-                    break
+        # Threshold (τ) and diversity
+        if scored_all:
+            scored_all.sort(key=lambda x: (x[0], x[1]), reverse=True)
+            scores_only = [s for (s, _ts, _s, _r, _d) in scored_all]
+            idx = max(0, int(len(scores_only) * 0.75) - 1)
+            tau = scores_only[idx]
+            eps = 0.05
+            by_rel: Dict[str, int] = defaultdict(int)
+            for score, _ts, s, r, d in scored_all:
+                if (s, r, d) in seen_triples:
+                    continue
+                # diversity: allow 1 per relation, or 2 if high-scoring
+                if by_rel[r] >= 1 and not (by_rel[r] < 2 and score >= (tau + eps)):
+                    continue
+                if score < tau and len(bullets) >= max(1, K_max // 2):
+                    continue
+                bullets.append(self._format_memory_bullet(s, r, d))
+                seen_triples.add((s, r, d))
+                by_rel[r] += 1
+                if len(bullets) >= K_max:
+                    return bullets
 
-        return bullets[:3]
+        # No recency fallback: only inject facts relevant to current turn
+        return bullets[:K_max]
     
     def _detect_language(self, text: str) -> str:
         """Detect language using env override or pycld3"""
@@ -848,6 +902,8 @@ class HotMemory:
             if conf > 0.1:  # Only active edges
                 self.entity_index[s].add((s, r, d))
                 self.entity_index[d].add((s, r, d))
+                # Seed meta with weight; ts unknown (0)
+                self.edge_meta[(s, r, d)] = {'ts': 0, 'weight': float(conf)}
                 count += 1
         
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -864,7 +920,7 @@ class HotMemory:
             entities = self._refine_entities_from_text(text, entities)
         except Exception:
             entities = []
-        bullets = self._retrieve_context(text, entities, turn_id=-1)
+        bullets = self._retrieve_context(text, entities, turn_id=-1, intent=None)
         return {"entities": entities, "bullets": bullets}
 
     # ---------- Refinement helpers (quality without large perf cost) ----------
