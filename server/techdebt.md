@@ -9,49 +9,39 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 
 ## Current Technical Debt
 
-### 🧩 HotMem Modularization & Duplication (NEW - 2025-09-05)
+### 🚀 HotMem Evolution Requirements (NEW - 2025-09-05)
 
-**Duplicate Extractors / Naming Drift**
-- Issue: Multiple extractor files (`memory_extraction_usgs.py`, `memory_extraction_v2.py`, `memory_extraction_final.py`) coexist
-- Impact: Confusion, higher maintenance, risk of drift
-- Solution: Consolidate under `server/memory/extractors/{usgs.py,rules.py}`
-- Priority: High
-- Effort: 0.5–1 day
+**Critical Performance Regression**  
+- **Issue**: 1041ms spike on complex question parsing ("Did I tell you that Potola is five years old?")
+- **Impact**: Breaks 200ms budget, blocks evolution features
+- **Root Cause**: Likely spaCy model loading or complex parsing inefficiency  
+- **Solution**: Profile parsing pipeline, optimize or cache expensive operations
+- **Priority**: URGENT
+- **Effort**: 2-4 hours
 
-**Flat Module Layout**
-- Issue: HotMem modules live at repo root (`hotpath_processor.py`, `memory_hotpath.py`, `memory_store.py`, `ud_utils.py`)
-- Impact: Harder imports, unclear ownership, test brittleness
-- Solution: Create `server/memory/` package with `processor.py`, `hotpath.py`, `store.py`, `utils/ud.py`
-- Priority: High
-- Effort: 0.5–1 day
+**Poor Extraction Quality on Real Conversations**
+- **Issue**: 6.9/10 average quality, missing key facts, extracting useless relations
+- **Impact**: Degraded user experience, irrelevant memory bullets
+- **Examples**: 
+  - `('you', 'tell', 'you')` instead of `('Potola', 'age', 'five years old')`
+  - Extracting facts from hypothetical statements ("If I had a cat...")
+- **Solution**: Intent classification + quality filtering + temporal awareness
+- **Priority**: High  
+- **Effort**: 1-2 days
 
-**Transient DB Artifacts in VCS**
-- Issue: `.db`, `*.db-shm`, `*.db-wal`, LMDB directories not ignored; test DBs appear unstaged
-- Impact: Risk of accidental commits and noisy diffs
-- Solution: Update `.gitignore` to exclude these
-- Priority: Medium
-- Effort: 10 mins
+**No Context-Aware Memory Intelligence**
+- **Issue**: No reinforcement for repeated facts, no temporal distinctions, no fact updates
+- **Impact**: Missed opportunity for intelligent memory that learns and adapts
+- **Solution**: Confidence scoring, temporal parsing, fact consolidation system  
+- **Priority**: High
+- **Effort**: 2-3 days
 
-**spaCy Model Availability**
-- Issue: Runtime requires language models; missing models cause failures
-- Impact: Setup friction; non-deterministic behavior across machines
-- Solution: Detect-and-warn with graceful fallback; document `python -m spacy download en_core_web_sm`
-- Priority: Medium
-- Effort: 1–2 hours
-
-**Env Config Sprawl**
-- Issue: Multiple env vars across files; defaults scattered
-- Impact: Hard to reason about runtime configuration
-- Solution: Centralize config and pass explicitly to processor/store
-- Priority: Medium
-- Effort: 2–4 hours
-
-**Metrics & Regression Guards**
-- Issue: No automated guardrails for p95 latency and bullet size
-- Impact: Performance regressions can slip in
-- Solution: Add simple perf assertions to tests; log stage timings
-- Priority: Medium
-- Effort: 2–4 hours
+**Lack of Advanced Semantic Features**
+- **Issue**: Basic UD parsing without semantic clustering or entity disambiguation
+- **Impact**: Cannot leverage remaining 49ms budget for advanced features
+- **Solution**: Implement semantic clustering, cross-conversation threading, entity linking
+- **Priority**: Medium
+- **Effort**: 3-5 days
 
 ### ⚠️ Remaining Startup Warnings
 

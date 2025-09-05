@@ -17,6 +17,7 @@ import spacy
 from spacy.tokens import Token
 
 from memory_store import MemoryStore
+from memory_intent import get_intent_classifier, get_quality_filter, IntentType
 
 # Try to import language detection
 try:
@@ -114,22 +115,44 @@ class HotMemory:
 
     def process_turn(self, text: str, session_id: str, turn_id: int) -> Tuple[List[str], List[Tuple[str, str, str]]]:
         """
-        Process a conversation turn
+        Process a conversation turn with intelligent intent analysis
         Returns: (memory_bullets, extracted_triples)
         """
         start = time.perf_counter()
         
-        # Language detection
+        # Language detection first (needed for intent analysis)
         lang = self._detect_language(text) if PYCLD3_AVAILABLE else "en"
+        
+        # Stage 0: Intent classification for quality guidance
+        intent_start = time.perf_counter()
+        intent_classifier = get_intent_classifier()
+        quality_filter = get_quality_filter()
+        intent = intent_classifier.analyze(text, lang)
+        self.metrics['intent_ms'].append((time.perf_counter() - intent_start) * 1000)
+        
+        # Early exit for reactions and pure questions (no fact extraction)
+        if intent.intent in {IntentType.REACTION, IntentType.PURE_QUESTION}:
+            logger.debug(f"Skipping extraction for {intent.intent.value}: {text[:50]}...")
+            # Still retrieve context for responses
+            retrieve_start = time.perf_counter()
+            entities = self._extract_entities_light(text)
+            bullets = self._retrieve_context(text, entities, turn_id)
+            self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
+            
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            self.metrics['total_ms'].append(elapsed_ms)
+            return bullets, []
+        
+        # Language already detected above
         
         # Stage 1: Extract entities and relations
         extract_start = time.perf_counter()
         entities, triples, neg_count, doc = self._extract(text, lang)
         self.metrics['extraction_ms'].append((time.perf_counter() - extract_start) * 1000)
         
-        # Stage 2: Refine triples and update memory with new facts (skip writes for questions)
+        # Stage 2: Refine triples with intent-aware processing
         refine_start = time.perf_counter()
-        triples = self._refine_triples(text, triples, doc)
+        triples = self._refine_triples(text, triples, doc, intent)
         # Rebuild entities from refined triples + text context
         ent_from_triples: Set[str] = set()
         for s, r, d in triples:
@@ -137,14 +160,28 @@ class HotMemory:
             ent_from_triples.add(d)
         entities = self._refine_entities_from_text(text, list(ent_from_triples))
 
+        # Stage 3: Quality filtering and storage
         update_start = time.perf_counter()
         now_ts = int(time.time() * 1000)
-        if not self._is_question(text):
-            for s, r, d in triples:
-                self.store.observe_edge(s, r, d, 0.9, now_ts)
+        
+        # Filter and store facts based on quality and intent
+        stored_triples = []
+        for s, r, d in triples:
+            should_store, confidence = quality_filter.should_store_fact(s, r, d, intent)
+            if should_store:
+                # Handle corrections by demoting old facts
+                if intent.intent == IntentType.CORRECTION:
+                    self._handle_fact_correction(s, r, d, confidence, now_ts)
+                else:
+                    self.store.observe_edge(s, r, d, confidence, now_ts)
+                    
                 # Update hot indices
                 self.entity_index[s].add((s, r, d))
                 self.entity_index[d].add((s, r, d))
+                stored_triples.append((s, r, d))
+            else:
+                logger.debug(f"Filtered low-quality fact: ({s}, {r}, {d}) confidence={confidence:.2f}")
+                
         self.metrics['update_ms'].append((time.perf_counter() - update_start) * 1000)
         
         # Stage 3: Retrieve relevant memories
@@ -152,8 +189,8 @@ class HotMemory:
         bullets = self._retrieve_context(text, entities, turn_id)
         self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
         
-        # Update recency with extracted triples
-        for s, r, d in triples:
+        # Update recency with stored triples only
+        for s, r, d in stored_triples:
             self.recency_buffer.append(RecencyItem(s, r, d, text, now_ts, turn_id))
         
         # Track overall performance
@@ -162,9 +199,9 @@ class HotMemory:
         self._cleanup_metrics()
         
         if elapsed_ms > 200:
-            logger.warning(f"Hot path took {elapsed_ms:.1f}ms (budget: 200ms)")
+            logger.warning(f"Hot path took {elapsed_ms:.1f}ms (budget: 200ms) - intent: {intent.intent.value}")
         
-        return bullets, triples
+        return bullets, stored_triples
     
     def _extract(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any]:
         """
@@ -435,8 +472,25 @@ class HotMemory:
         
         for child in token.head.children:
             if child.dep_ in {"nsubj", "nsubjpass"}:
+                subj_token = child
                 subj = self._get_entity(child, entity_map)
-                triples.append((subj, "is", attr))
+                
+                # Special handling for possessive copula: "My X is Y" -> (you, X, Y)
+                possessive_owner = None
+                for poss_child in subj_token.children:
+                    if poss_child.dep_ == "poss" and poss_child.text.lower() in {"my", "mine"}:
+                        possessive_owner = "you"
+                        break
+                
+                if possessive_owner:
+                    # Convert "favorite number" to "favorite_number" relation
+                    relation = subj.lower().replace(" ", "_")
+                    triples.append((possessive_owner, relation, attr))
+                    entities.add(attr)
+                    # Skip the normal subject-is-attribute extraction since we handled it
+                    return
+                else:
+                    triples.append((subj, "is", attr))
                 break
     
     def _extract_acomp(self, token, entity_map, triples, entities):
@@ -457,6 +511,19 @@ class HotMemory:
         """amod - adjectival modifier"""
         adj = token.text.lower()
         head_entity = self._get_entity(token.head, entity_map)
+        
+        # Skip quality extraction for possessive copula patterns ("My favorite X is Y")
+        # Check if the head is subject of a copula and has possessive
+        head_token = token.head
+        if head_token.dep_ == "nsubj" and head_token.head.lemma_ in {"be", "is", "am", "are", "was", "were"}:
+            # Check if head has possessive child and copula has attribute
+            has_possessive = any(child.dep_ == "poss" and child.text.lower() in {"my", "mine"} 
+                               for child in head_token.children)
+            has_attribute = any(child.dep_ in {"attr", "acomp"} 
+                              for child in head_token.head.children)
+            if has_possessive and has_attribute:
+                return  # Skip meaningless quality extraction
+        
         triples.append((head_entity, "quality", adj))
     
     def _extract_advmod(self, token, entity_map, triples, entities):
@@ -490,6 +557,15 @@ class HotMemory:
         
         if possessor in {"my", "mine"}:
             possessor = self.user_eid
+        
+        # Skip possessive extraction if this is part of a copula pattern ("My X is Y")
+        # Check if the possessed noun is the subject of a copula with an attribute
+        head_token = token.head
+        if head_token.dep_ == "nsubj" and head_token.head.lemma_ in {"be", "is", "am", "are", "was", "were"}:
+            # Check if there's an attribute - if so, skip this possessive extraction
+            for sibling in head_token.head.children:
+                if sibling.dep_ in {"attr", "acomp"}:
+                    return  # Skip extraction, will be handled by attribute extraction
         
         triples.append((possessor, "has", possessed))
         entities.add(possessed)
@@ -586,6 +662,74 @@ class HotMemory:
                     entities.add(oprd)
                 break
     
+    def _format_memory_bullet(self, s: str, r: str, d: str) -> str:
+        """Format a memory triple into a human-readable bullet point"""
+        # Handle pronouns and possessives more naturally
+        if s == "you":
+            if r == "name":
+                return f"• Your name is {d}"
+            elif r == "age":
+                # Avoid duplicating "years old" if already in destination
+                if "years old" in d.lower():
+                    return f"• You are {d}"
+                else:
+                    return f"• You are {d} years old"
+            elif r == "has":
+                return f"• You have {d}"
+            elif r == "is":
+                return f"• You are {d}"
+            elif r == "lives_in":
+                return f"• You live in {d}"
+            elif r == "works_at":
+                return f"• You work at {d}"
+            elif r == "friend_of":
+                return f"• You are a friend of {d}"
+            elif r.startswith("v:"):
+                verb = r[2:]
+                # Fix verb conjugation for "you"
+                if verb.endswith("s") and len(verb) > 2:
+                    verb = verb[:-1]  # "enjoys" -> "enjoy"
+                return f"• You {verb} {d}"
+            else:
+                relation = r.replace('_', ' ')
+                if relation in ["has", "is"]:
+                    return f"• You {relation} {d}"
+                else:
+                    return f"• Your {relation} is {d}"
+        else:
+            if r == "name":
+                return f"• {s.title()}'s name is {d}"
+            elif r == "age":
+                # Avoid duplicating "years old" if already in destination
+                if "years old" in d.lower():
+                    return f"• {s.title()} is {d}"
+                else:
+                    return f"• {s.title()} is {d} years old"
+            elif r == "has":
+                return f"• {s.title()} has {d}"
+            elif r == "is":
+                return f"• {s.title()} is {d}"
+            elif r == "lives_in":
+                return f"• {s.title()} lives in {d}"
+            elif r == "works_at":
+                return f"• {s.title()} works at {d}"
+            elif r == "friend_of":
+                return f"• {s.title()} is a friend of {d}"
+            elif r.startswith("v:"):
+                verb = r[2:]
+                return f"• {s.title()} {verb} {d}"
+            elif "_color" in r:
+                # Handle color relations more naturally
+                color_type = r.replace("_color", "")
+                return f"• {s.title()}'s {color_type} color is {d}"
+            else:
+                # Generic fallback with better formatting
+                relation = r.replace('_', ' ')
+                if relation in ["has", "is"]:
+                    return f"• {s.title()} {relation} {d}"
+                else:
+                    return f"• {s.title()}'s {relation} is {d}"
+    
     def _retrieve_context(self, query: str, entities: List[str], turn_id: int) -> List[str]:
         """
         Retrieve relevant memory bullets for context
@@ -637,7 +781,8 @@ class HotMemory:
                 for _pri, _ts, s, r, d in scored:
                     fact = f"{s} {r} {d}"
                     if fact not in seen:
-                        bullets.append(f"• {fact}")
+                        formatted = self._format_memory_bullet(s, r, d)
+                        bullets.append(formatted)
                         seen.add(fact)
                         if len(bullets) >= 3:
                             return bullets
@@ -646,18 +791,7 @@ class HotMemory:
         for item in reversed(list(self.recency_buffer)[-10:]):
             fact = f"{item.s} {item.r} {item.d}"
             if fact not in seen:
-                # Format fact nicely based on relation type
-                if item.r == "name":
-                    formatted = f"• {item.s}'s name is {item.d}"
-                elif item.r == "has":
-                    formatted = f"• {item.s} has {item.d}"
-                elif item.r == "is":
-                    formatted = f"• {item.s} is {item.d}"
-                elif item.r.startswith("v:"):
-                    formatted = f"• {item.s} {item.r[2:]} {item.d}"
-                else:
-                    formatted = f"• {item.s} {item.r.replace('_', ' ')} {item.d}"
-                
+                formatted = self._format_memory_bullet(item.s, item.r, item.d)
                 bullets.append(formatted)
                 seen.add(fact)
                 if len(bullets) >= 3:
@@ -763,7 +897,7 @@ class HotMemory:
                 seen.add(e)
         return uniq
 
-    def _refine_triples(self, text: str, triples: List[Tuple[str, str, str]], doc) -> List[Tuple[str, str, str]]:
+    def _refine_triples(self, text: str, triples: List[Tuple[str, str, str]], doc, intent=None) -> List[Tuple[str, str, str]]:
         t = (text or "").lower()
         refined: List[Tuple[str, str, str]] = []
 
@@ -941,5 +1075,53 @@ class HotMemory:
                 uniq.append(tr)
                 seen.add(tr)
         return uniq
+
+    def _extract_entities_light(self, text: str) -> List[str]:
+        """Lightweight entity extraction for reactions/questions (no full NLP)"""
+        # Simple pattern-based extraction for performance
+        entities = []
+        words = text.split()
+        
+        # Look for capitalized words (likely names/places)
+        for word in words:
+            if word and word[0].isupper() and len(word) > 2:
+                clean_word = _canon_entity_text(word)
+                if clean_word and clean_word not in entities:
+                    entities.append(clean_word)
+        
+        # Also look for lowercase words that exist in our entity index
+        # This catches common nouns like "dog", "cat", "car" that are stored entities
+        for word in words:
+            clean_word = _canon_entity_text(word)
+            if clean_word and len(clean_word) > 2 and clean_word not in entities:
+                # Check if this entity exists in our knowledge base
+                if clean_word in self.entity_index:
+                    entities.append(clean_word)
+        
+        # Add 'you' if self-referential
+        if any(p in text.lower() for p in [" i ", " my ", " me "]):
+            entities.append("you")
+            
+        return entities
+        
+    def _handle_fact_correction(self, s: str, r: str, d: str, confidence: float, now_ts: int):
+        """Handle fact corrections by demoting conflicting facts"""
+        # For functional relations like 'name' or 'age', demote old values
+        functional_relations = {"name", "age", "favorite_color", "lives_in", "works_at"}
+        
+        if r in functional_relations:
+            # Find existing facts with same subject and relation
+            existing_edges = self.entity_index.get(s, set())
+            for existing_s, existing_r, existing_d in existing_edges.copy():
+                if existing_s == s and existing_r == r and existing_d != d:
+                    # Demote the old fact
+                    self.store.negate_edge(s, r, existing_d, confidence, now_ts)
+                    logger.debug(f"Corrected fact: ({s}, {r}) {existing_d} -> {d}")
+                    # Remove from hot index
+                    self.entity_index[s].discard((existing_s, existing_r, existing_d))
+                    self.entity_index[existing_d].discard((existing_s, existing_r, existing_d))
+        
+        # Store the new corrected fact
+        self.store.observe_edge(s, r, d, confidence, now_ts)
 
     
