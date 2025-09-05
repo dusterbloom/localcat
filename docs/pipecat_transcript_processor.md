@@ -1,0 +1,143 @@
+
+AssistantTranscriptProcessor
+Integration Notes
+Pipeline Placement
+Event Handler Registration
+User and Bot Transcriptions
+TranscriptProcessor
+
+Copy page
+
+Factory for creating and managing conversation transcript processors with shared event handling
+
+​
+Overview
+The TranscriptProcessor is a factory class that creates and manages processors for handling conversation transcripts from both users and assistants. It provides unified access to transcript processors with shared event handling, making it easy to track and respond to conversation updates in real-time.
+The processor normalizes messages from various sources into a consistent TranscriptionMessage format and emits events when new messages are added to the conversation.
+​
+Constructor
+
+Copy
+
+Ask AI
+TranscriptProcessor()
+Creates a new transcript processor factory with no parameters.
+​
+Methods
+​
+user()
+
+Copy
+
+Ask AI
+def user(**kwargs) -> UserTranscriptProcessor
+Get or create the user transcript processor instance. This processor handles TranscriptionFrames from STT services.
+Parameters:
+**kwargs: Arguments passed to the UserTranscriptProcessor constructor
+Returns: UserTranscriptProcessor instance for processing user messages.
+​
+assistant()
+
+Copy
+
+Ask AI
+def assistant(**kwargs) -> AssistantTranscriptProcessor
+Get or create the assistant transcript processor instance. This processor handles TTSTextFrames from TTS services and aggregates them into complete utterances.
+Parameters:
+**kwargs: Arguments passed to the AssistantTranscriptProcessor constructor
+Returns: AssistantTranscriptProcessor instance for processing assistant messages.
+​
+event_handler()
+
+Copy
+
+Ask AI
+def event_handler(event_name: str)
+Decorator that registers event handlers for both user and assistant processors.
+Parameters:
+event_name: Name of the event to handle
+Returns: Decorator function that registers the handler with both processors.
+​
+Event Handlers
+​
+on_transcript_update
+Triggered when new messages are added to the conversation transcript.
+
+Copy
+
+Ask AI
+@transcript.event_handler("on_transcript_update")
+async def handle_transcript_update(processor, frame):
+    # Handle transcript updates
+    pass
+Parameters:
+processor: The specific processor instance that emitted the event (UserTranscriptProcessor or AssistantTranscriptProcessor)
+frame: TranscriptionUpdateFrame containing the new messages
+​
+Data Structures
+​
+TranscriptionMessage
+
+Copy
+
+Ask AI
+@dataclass
+class TranscriptionMessage:
+    role: Literal["user", "assistant"]
+    content: str
+    timestamp: str | None = None
+    user_id: str | None = None
+Fields:
+role: The message sender type (“user” or “assistant”)
+content: The transcribed text content
+timestamp: ISO 8601 timestamp when the message was created
+user_id: Optional user identifier (for user messages only)
+​
+TranscriptionUpdateFrame
+Frame containing new transcript messages, emitted by the on_transcript_update event.
+Properties:
+messages: List of TranscriptionMessage objects containing the new transcript content
+​
+Frames
+​
+UserTranscriptProcessor
+Input: TranscriptionFrame from STT services
+Output: TranscriptionMessage with role “user”
+​
+AssistantTranscriptProcessor
+Input: TTSTextFrame from TTS services
+Output: TranscriptionMessage with role “assistant”
+​
+Integration Notes
+​
+Pipeline Placement
+Place the processors at specific positions in your pipeline for accurate transcript collection:
+
+Copy
+
+Ask AI
+pipeline = Pipeline([
+    transport.input(),
+    stt,                        # Speech-to-text service
+    transcript.user(),          # Place after STT
+    context_aggregator.user(),
+    llm,
+    tts,                        # Text-to-speech service
+    transport.output(),
+    transcript.assistant(),     # Place after transport.output()
+    context_aggregator.assistant(),
+])
+​
+Event Handler Registration
+Event handlers are automatically applied to both user and assistant processors:
+
+Copy
+
+Ask AI
+transcript = TranscriptProcessor()
+
+# This handler will receive events from both processors
+@transcript.event_handler("on_transcript_update")
+async def handle_update(processor, frame):
+    for message in frame.messages:
+        print(f"{message.role}: {message.content}")

@@ -10,7 +10,7 @@ mlx-lm==0.20.2
 mlx-audio==0.2.5
 
 # Pipecat with specific extras
-pipecat-ai[openai,deepgram,rime,silero,mlx-whisper,mem0,local-smart-turn]>=0.0.80
+pipecat-ai[openai,deepgram,rime,silero,mlx-whisper,local-smart-turn]>=0.0.80
 
 # WebRTC
 aiortc==1.10.1
@@ -18,9 +18,12 @@ aiortc==1.10.1
 # NLP
 nltk==3.9.1
 
-# Memory system
-mem0ai==0.1.112
-ollama==0.5.3  # Required for Mem0 ollama provider
+# HotMem ultra-fast memory system
+lmdb==1.5.1
+msgpack==1.0.8
+rapidfuzz==3.9.6
+pycld3==0.22  # Language detection
+spacy==3.7.5  # UD parsing (download models separately)
 
 # ML dependencies (pinned for compatibility)
 scikit-learn==1.5.1  # Downgraded for coremltools compatibility

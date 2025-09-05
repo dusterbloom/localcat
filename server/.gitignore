@@ -51,3 +51,17 @@ examples/**/web-build/
 # Documentation
 docs/api/_build/
 docs/api/api
+
+graph.*
+test_graph.*
+
+# HotMem artifacts and test DBs
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+graph.lmdb/
+*.lmdb/
+memory.db
+test_*.db*
