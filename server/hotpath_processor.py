@@ -124,6 +124,8 @@ class HotPathMemoryProcessor(BaseProcessor):
         except Exception:
             self._bullets_max = 5
         self._trace_frames = os.getenv("HOTMEM_TRACE_FRAMES", "false").lower() in ("1", "true", "yes")
+        # Per-turn reasoning hint (injected as a system message when requested by user)
+        self._reasoning_hint_text: Optional[str] = None
         
         # Store context aggregator reference for direct context injection
         self._context_aggregator = context_aggregator
@@ -243,6 +245,13 @@ class HotPathMemoryProcessor(BaseProcessor):
                     t = text.strip().lower()
                     if any(kw in t for kw in ("recap", "summary", "summarize", "quick recap")):
                         await self._inject_summary_context(direction)
+                    # Reasoning-now command: on-demand brief rationale (no private CoT)
+                    reasoning_triggers = ("/think", "think step by step", "explain your reasoning", "reason step by step", "show your work")
+                    if any(kw in t for kw in reasoning_triggers):
+                        self._reasoning_hint_text = (
+                            "For this turn only, provide a brief high-level rationale (≤3 bullets), then the final answer. "
+                            "Do not reveal private chain-of-thought. Keep rationale under 80 words."
+                        )
                 except Exception as e:
                     logger.warning(f"[HotMem] Recap injection failed: {e}")
                 logger.info(f"[HotMem] Processing transcription (is_final={is_final}): '{text}'")
@@ -382,6 +391,7 @@ class HotPathMemoryProcessor(BaseProcessor):
                     budget_tokens=budget_tokens,
                     inject_role=self._inject_role,
                     inject_header=self._inject_header,
+                    system_hint=self._reasoning_hint_text,
                 )
                 try:
                     logger.info(
@@ -405,9 +415,11 @@ class HotPathMemoryProcessor(BaseProcessor):
                 header = f"{self._inject_header}\nMemory Context:"
                 memory_message = {"role": self._inject_role, "content": f"{header}\n{memory_content}"}
                 context.add_message(memory_message)
-            
+
             # Clear pending bullets after injection
             self._pending_bullets = []
+            # Clear per-turn reasoning hint after packing
+            self._reasoning_hint_text = None
             
         except Exception as e:
             logger.error(f"[HotMem] Failed to inject memory context: {e}")

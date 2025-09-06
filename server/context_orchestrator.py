@@ -65,6 +65,7 @@ def pack_context(
     budget_tokens: int,
     inject_role: str = "system",
     inject_header: str = "Use the following factual context if helpful.",
+    system_hint: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """Pack context with strict token budget and clear section order.
 
@@ -104,12 +105,15 @@ def pack_context(
     sum_msg = _build_summary_message(summary_text, inject_role)
 
     packed: List[Dict[str, Any]] = []
-    # 1) System (as-is)
+    # 1) System (as-is) + optional reasoning hint
     packed.extend(before)
+    if system_hint and system_hint.strip():
+        hint_msg = {"role": "system", "content": f"Reasoning Guidance:\n{system_hint.strip()}"}
+        packed.append(hint_msg)
 
     stats = {
         "tokens_total": 0,
-        "tokens_system": _estimate_tokens_from_messages(before),
+        "tokens_system": _estimate_tokens_from_messages(packed),
         "tokens_memory": 0,
         "tokens_summary": 0,
         "tokens_dialogue": 0,
@@ -152,4 +156,3 @@ def pack_context(
 
     stats["tokens_total"] = _estimate_tokens_from_messages(packed)
     return packed, stats
-
