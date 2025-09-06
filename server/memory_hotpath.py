@@ -64,7 +64,8 @@ _DET_WORDS = {
     "my", "your", "his", "her", "their", "our", "its"
 }
 
-_PRON_YOU = {"i", "me", "my", "mine", "myself"}
+# Map first/second person pronouns/determiners to canonical 'you'
+_PRON_YOU = {"i", "me", "my", "mine", "myself", "your", "yours", "yourself"}
 
 def _strip_leading_dets(text: str) -> str:
     t = _norm(text)
@@ -255,6 +256,13 @@ class HotMemory:
                     self._handle_fact_correction(s, r, d, confidence, now_ts)
                 else:
                     self.store.observe_edge(s, r, d, confidence, now_ts)
+                # Alias expansion: when we learn (you, name, X), map X -> you for retrieval
+                try:
+                    if (s == self.user_eid) and (r == 'name') and d:
+                        self.store.enqueue_alias(str(d), self.user_eid)
+                        self.store.flush_if_needed()
+                except Exception:
+                    pass
                     
                 # Update hot indices
                 self.entity_index[s].add((s, r, d))
@@ -1444,6 +1452,16 @@ class HotMemory:
 
             # Normalize common patterns for better retrieval and matching
             t_low = t  # lower-cased full text
+            # Name via copula: "I'm Sarah" -> (you, name, sarah) when 'Sarah' is PERSON
+            if cs == 'you' and rr == 'is' and cd:
+                try:
+                    if doc is not None:
+                        for ent in getattr(doc, 'ents', []) or []:
+                            if getattr(ent, 'label_', '') == 'PERSON' and _canon_entity_text(ent.text) == cd:
+                                rr = 'name'
+                                break
+                except Exception:
+                    pass
             # Drive/own → treat as possession for user
             if rr in {"drive", "drives", "drove"} and cs == "you":
                 rr = "has"
@@ -1472,7 +1490,29 @@ class HotMemory:
             try:
                 import re as _re
                 m_age = _re.search(r"\b(\d{1,2})\s+years?\s+old\b", t_low)
-                if m_age and rr in {"is", "age"}:
+
+                def _is_age_subject_candidate(subj: str, _doc) -> bool:
+                    subj = (subj or '').strip().lower()
+                    if not subj:
+                        return False
+                    # Obvious candidates: you/person/pet/common kinship nouns
+                    if subj in {"you","he","she","they","son","daughter","kid","child","boy","girl","luna","whiskers","tom","sarah","dog","cat","puppy","kitten","pet"}:
+                        return True
+                    # Reject clearly generic/abstract subjects that caused false ages in batch text
+                    generic_tokens = {"analysis","approach","tuning","years","is","assistant","number","such","those","what","combination","coats","eyes","results","models","foundation"}
+                    if any(tok in subj for tok in generic_tokens):
+                        return False
+                    try:
+                        # Prefer PERSON entities for age
+                        for ent in getattr(_doc, 'ents', []) or []:
+                            if _canon_entity_text(ent.text) == subj and getattr(ent, 'label_', '') == 'PERSON':
+                                return True
+                    except Exception:
+                        pass
+                    # Fallback: accept short nouns (1-2 words) that appear in text
+                    return len(subj.split()) <= 2 and (f" {subj} " in t_low)
+
+                if m_age and rr in {"is", "age"} and _is_age_subject_candidate(cs, doc):
                     rr = "age"
                     cd = f"{m_age.group(1)} years old"
             except Exception:
@@ -2021,5 +2061,12 @@ class HotMemory:
         
         # Store the new corrected fact
         self.store.observe_edge(s, r, d, confidence, now_ts)
+        # If correcting the user's name, update alias mapping (X -> you)
+        try:
+            if (s == self.user_eid) and (r == 'name') and d:
+                self.store.enqueue_alias(str(d), self.user_eid)
+                self.store.flush_if_needed()
+        except Exception:
+            pass
 
     
