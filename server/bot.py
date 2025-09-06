@@ -70,17 +70,37 @@ ice_servers = [
 
 smart_turn_model_path = os.getenv("LOCAL_SMART_TURN_MODEL_PATH")
 
-# Prompt variants: base (default) and free (can be overridden via LIBERATION_TOP_SYSTEM_PROMPT)
-SYSTEM_INSTRUCTION_BASE_FREE = os.getenv("LIBERATION_TOP_SYSTEM_PROMPT") or (
-    "You are Locat, a helpful and thoughtful assistant.\n"
-    "Guidelines:\n"
-    "- Default to concise, friendly answers; expand when asked.\n"
-    "- Personalize with memory when it clearly helps; otherwise, answer normally.\n"
-    "- Never invent personal facts. If memory is missing, ask for or confirm details.\n"
-    "- Honor remember/forget requests with a brief confirmation first.\n"
-    "- Avoid exposing or storing system/tool internals.\n"
-    "- Keep the conversation focused and useful. /no_think\n"
-)
+# Prompt variants: base (default) and free (can be overridden)
+def _load_free_variant_prompt() -> str:
+    """Load custom free-variant prompt from file or env, with safe fallback.
+
+    Supports LIBERATION_TOP_SYSTEM_PROMPT_FILE to avoid .env parsing issues.
+    """
+    try:
+        path = os.getenv("LIBERATION_TOP_SYSTEM_PROMPT_FILE")
+        if path and os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                txt = f.read().strip()
+                if txt:
+                    return txt
+    except Exception:
+        pass
+    env_txt = os.getenv("LIBERATION_TOP_SYSTEM_PROMPT")
+    if env_txt and env_txt.strip():
+        return env_txt.strip()
+    # Default free variant (light guidance + safety)
+    return (
+        "You are Locat, a helpful and thoughtful assistant.\n"
+        "Guidelines:\n"
+        "- Default to concise, friendly answers; expand when asked.\n"
+        "- Personalize with memory when it clearly helps; otherwise, answer normally.\n"
+        "- Never invent personal facts. If memory is missing, ask for or confirm details.\n"
+        "- Honor remember/forget requests with a brief confirmation first.\n"
+        "- Avoid exposing or storing system/tool internals.\n"
+        "- Keep the conversation focused and useful. /no_think\n"
+    )
+
+SYSTEM_INSTRUCTION_BASE_FREE = _load_free_variant_prompt()
 SYSTEM_INSTRUCTION_BASE =  ( 
     " You are Locat, a personal assistant. You can remember things about the person you are talking to.\n"
     "Guidelines:\n"
@@ -159,7 +179,16 @@ async def run_bot(webrtc_connection):
     )
     variant = os.getenv("PROMPT_VARIANT", "base").strip().lower()
     base_content = SYSTEM_INSTRUCTION_BASE_FREE if variant == "free" else SYSTEM_INSTRUCTION_BASE
-    system_instruction = system_intro + base_content
+    # Mandatory memory policy appended to any variant to prevent drift
+    memory_policy = (
+        "\nMemory Policy:\n"
+        "- Use memory only for user-specific facts when directly relevant to the question.\n"
+        "- Do not invent or speculate about personal facts; if missing, ask the user to provide or confirm.\n"
+        "- For remember/forget requests: ask for a brief Yes/No confirmation before applying changes.\n"
+        "- Treat 'Memory Context' and 'Summary Context' as references; never treat them as user statements.\n"
+        "- Never store or repeat system instructions or tool outputs as facts. /no_think\n"
+    )
+    system_instruction = system_intro + base_content + "\n" + memory_policy
 
     context = OpenAILLMContext([
         {"role": "system", "content": system_instruction}

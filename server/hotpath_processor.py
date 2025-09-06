@@ -353,19 +353,21 @@ class HotPathMemoryProcessor(BaseProcessor):
                     messages = list(getattr(context, 'messages', []))
                 except Exception:
                     messages = []
-                # Fetch a recent summary snippet (optional)
+                # Fetch a recent summary snippet (optional, env-gated)
                 summary_text = None
-                try:
-                    cur = getattr(self.store, 'sql', None).cursor()
-                    sid = self._session_id
-                    rows = cur.execute(
-                        "SELECT text FROM mention WHERE eid IN (?, ?) ORDER BY ts DESC LIMIT 1",
-                        (f"summary:{sid}", f"session:{sid}")
-                    ).fetchall()
-                    if rows:
-                        summary_text = str(rows[0][0] or '').strip()
-                except Exception:
-                    summary_text = None
+                include_summary = os.getenv("CONTEXT_INCLUDE_SUMMARY", "true").lower() in ("1","true","yes")
+                if include_summary:
+                    try:
+                        cur = getattr(self.store, 'sql', None).cursor()
+                        sid = self._session_id
+                        rows = cur.execute(
+                            "SELECT text FROM mention WHERE eid IN (?, ?) ORDER BY ts DESC LIMIT 1",
+                            (f"summary:{sid}", f"session:{sid}")
+                        ).fetchall()
+                        if rows:
+                            summary_text = str(rows[0][0] or '').strip()
+                    except Exception:
+                        summary_text = None
 
                 # Budget from env
                 try:
