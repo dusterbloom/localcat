@@ -67,14 +67,15 @@ def _build_summary_prompt(messages: List[Dict[str, Any]], max_messages: int = 16
             "(1) 3-5 factual bullet points from the last segment of conversation, "
             "(2) one brief narrative sentence describing what's happening, and "
             "(3) up to 2 follow-up items or open loops. "
-            "Never invent facts; only use the provided content. Keep under 120 words."
+            "Never invent facts; only use the provided content. Keep under 120 words. "
+            "Include key entities and facts verbatim (names, places, numbers) to aid downstream retrieval."
         ),
     }
 
     return [system] + trimmed
 
 
-def _http_chat_completion(base_url: str, api_key: str, model: str, messages: List[Dict[str, str]], max_tokens: int = 160) -> Optional[str]:
+def _http_chat_completion(base_url: str, api_key: str, model: str, messages: List[Dict[str, str]], max_tokens: int = 160, session_id: str = None) -> Optional[str]:
     """Minimal OpenAI-compatible chat.completions call using stdlib."""
     import urllib.request
     import urllib.error
@@ -86,6 +87,10 @@ def _http_chat_completion(base_url: str, api_key: str, model: str, messages: Lis
         "max_tokens": max_tokens,
         "temperature": 0.3,
     }
+    
+    # Add session isolation for LM Studio - prevents context pollution between sessions
+    if session_id:
+        payload["session_id"] = f"hotmem_{session_id}"
     # Reasoning controls for Ollama/OpenAI-compatible servers (best-effort)
     # Prefer a single "think" parameter supported by Ollama (true|false|low|medium|high)
     think_raw = (os.getenv("SUMMARIZER_THINK") or os.getenv("SUMMARIZER_REASONING_EFFORT") or "").strip().lower()
@@ -179,8 +184,10 @@ async def periodic_summarizer(context_aggregator, memory_processor, interval_sec
 
             prompt = _build_summary_prompt(msgs, max_messages=max_messages,
                                            include_user=include_user, include_assistant=include_assistant)
+            # Get session ID for isolation
+            session_id = getattr(memory_processor, '_session_id', 'default')
             summary = await asyncio.get_event_loop().run_in_executor(
-                None, _http_chat_completion, base_url, api_key, model, prompt, max_tokens
+                None, _http_chat_completion, base_url, api_key, model, prompt, max_tokens, session_id
             )
             if summary:
                 try:

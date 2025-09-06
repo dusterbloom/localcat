@@ -120,6 +120,9 @@ class HotMemory:
         self.leann_complexity = int(os.getenv("HOTMEM_LEANN_COMPLEXITY", "16"))
         self._leann_searcher = None
         self._leann_loaded_mtime = 0.0
+        # Retrieval fusion flags
+        self.retrieval_fusion = os.getenv("HOTMEM_RETRIEVAL_FUSION", "false").lower() in ("1", "true", "yes")
+        self.use_leann_summaries = os.getenv("HOTMEM_USE_LEANN_SUMMARIES", "false").lower() in ("1", "true", "yes")
         
         # Performance tracking
         self.metrics = defaultdict(list)
@@ -198,6 +201,28 @@ class HotMemory:
         conf_thresh = float(os.getenv("HOTMEM_CONFIDENCE_THRESHOLD", "0.3"))
         use_extra_conf = os.getenv("HOTMEM_EXTRA_CONFIDENCE", "false").lower() in ("1", "true", "yes")
 
+        # Confidence gating helpers
+        def _is_basic_fact(subj: str, rel: str, obj: str) -> bool:
+            subj = (subj or '').lower().strip()
+            rel = (rel or '').lower().strip()
+            obj = (obj or '').lower().strip()
+            basic_rels = {
+                'owns', 'name', 'age', 'lives_in', 'works_at',
+                'born_in', 'favorite_color', 'favorite_number', 'also_known_as'
+            }
+            pet_terms = {'dog', 'cat', 'puppy', 'kitten', 'pet'}
+            family_terms = {'son','daughter','child','kids','wife','husband','spouse','partner','brother','sister'}
+            asset_terms = {'car','bike','tesla'}
+            if rel in basic_rels:
+                return True
+            # Heuristic: (you, has, <pet/family>)
+            if subj == 'you' and rel == 'has' and (obj in pet_terms or obj in family_terms or obj in asset_terms):
+                return True
+            return False
+
+        bypass_basic = os.getenv('HOTMEM_BYPASS_CONFIDENCE_FOR_BASIC', 'true').lower() in ("1","true","yes")
+        basic_floor = float(os.getenv('HOTMEM_CONFIDENCE_FLOOR_BASIC', '0.6'))
+
         for s, r, d in triples:
             should_store, confidence = quality_filter.should_store_fact(s, r, d, intent)
             # Optional conservative complexity confidence
@@ -214,6 +239,16 @@ class HotMemory:
             confidence = max(0.0, min(1.0, confidence))
             if confidence < conf_thresh:
                 should_store = False
+
+            # Basic-fact override: store core personal facts even if quality filter is conservative
+            if bypass_basic and not should_store:
+                if _is_basic_fact(s, r, d) and not hedged and (neg_count == 0 or intent.intent == IntentType.CORRECTION):
+                    should_store = True
+                    confidence = max(confidence, basic_floor)
+                    try:
+                        logger.debug(f"[HotMem] Basic-fact override: storing ({s}, {r}, {d}) with confidence {confidence:.2f}")
+                    except Exception:
+                        pass
             if should_store:
                 # Handle corrections by demoting old facts
                 if intent.intent == IntentType.CORRECTION:
@@ -462,6 +497,8 @@ class HotMemory:
                                 triples.append((subj, "lives_in", obj))
                             elif verb == "work" and prep in {"at", "for"}:
                                 triples.append((subj, "works_at", obj))
+                            elif verb in {"teach", "teaches", "taught", "teaching"} and prep == "at":
+                                triples.append((subj, "teach_at", obj))
                             elif verb in {"go", "went"} and prep == "to":
                                 triples.append((subj, "went_to", obj))
                             elif verb in {"move", "moved"} and prep == "from":
@@ -727,10 +764,39 @@ class HotMemory:
                 entities.add(obj)
     
     def _extract_agent(self, token, entity_map, triples, entities):
-        """agent - agent (by-phrase in passive)"""
-        agent = self._get_entity(token, entity_map)
-        action = token.head.lemma_.lower()
-        triples.append((agent, "performed", action))
+        """agent - agent (by-phrase in passive)
+
+        Improve from (by, performed, action) → (agent_noun, verb, passive_subject)
+        Examples:
+          "presentation was delivered by Sarah" → (sarah, deliver, presentation)
+          "who was praised by her colleagues" → (colleagues, praise, who)
+        Coref later resolves 'who' to the person.
+        """
+        head = token.head
+        verb = head.lemma_.lower() if head is not None else ""
+        # Find the actual agent noun (pobj of 'by')
+        agent_ent = None
+        for ch in token.children:
+            if ch.dep_ in {"pobj", "pcomp", "obl"}:
+                agent_ent = self._get_entity(ch, entity_map)
+                break
+        agent_ent = agent_ent or self._get_entity(token, entity_map)
+        # Find the passive subject of the verb
+        patient = None
+        if head is not None:
+            for ch in head.children:
+                if ch.dep_ == "nsubjpass":
+                    patient = self._get_entity(ch, entity_map)
+                    break
+        # Build triple
+        if agent_ent and verb and patient:
+            triples.append((agent_ent, verb, patient))
+            entities.add(agent_ent)
+            entities.add(patient)
+        else:
+            # Fallback to previous generic form
+            action = verb or (head.text.lower() if head is not None else "")
+            triples.append((agent_ent, "performed", action))
     
     def _extract_oprd(self, token, entity_map, triples, entities):
         """oprd - object predicate"""
@@ -794,6 +860,10 @@ class HotMemory:
             elif r == "favorite_number":
                 return f"• {s.title()}'s favorite number is {d}"
             elif r == "has":
+                dl = d.lower(); sl = s.lower()
+                if dl.startswith(sl + "'s ") or dl.startswith(sl + "’s "):
+                    pretty = d[0].upper() + d[1:]
+                    return f"• {pretty}"
                 return f"• {s.title()} has {d}"
             elif r == "is":
                 return f"• {s.title()} is {d}"
@@ -803,6 +873,8 @@ class HotMemory:
                 return f"• {s.title()} works at {d}"
             elif r == "born_in":
                 return f"• {s.title()} was born in {d}"
+            elif r == "teach_at":
+                return f"• {s.title()} teaches at {d}"
             elif r == "friend_of":
                 return f"• {s.title()} is a friend of {d}"
             elif r.startswith("v:"):
@@ -812,6 +884,23 @@ class HotMemory:
                 # Handle color relations more naturally
                 color_type = r.replace("_color", "")
                 return f"• {s.title()}'s {color_type} color is {d}"
+            # Common verb phrasing templates
+            elif r in {"deliver", "delivered"}:
+                return f"• {s.title()} delivered {d}"
+            elif r in {"praise", "praised"}:
+                return f"• {s.title()} praised {d}"
+            elif r in {"represent", "represents"}:
+                return f"• {s.title()} represents {d}"
+            elif r in {"win", "won"}:
+                return f"• {s.title()} won {d}"
+            elif r in {"contain", "contains"}:
+                return f"• {s.title()} contains {d}"
+            elif r in {"lead_to", "leads_to", "led_to"}:
+                return f"• {s.title()} leads to {d}"
+            elif r in {"accept_for", "accepted_for"}:
+                return f"• {s.title()} was accepted for {d}"
+            elif r in {"join_as", "joined_as"}:
+                return f"• {s.title()} joined as {d}"
             else:
                 # Generic fallback with better formatting
                 relation = r.replace('_', ' ')
@@ -838,7 +927,7 @@ class HotMemory:
             return out
         qtok = _tokens(query)
 
-        # Optional: LEANN similarity scores map for this query
+        # Optional: LEANN similarity scores map for this query (KG triples only)
         leann_scores: Dict[Tuple[str, str, str], float] = {}
         if self.use_leann and query and len(query.strip()) >= 2:
             try:
@@ -854,6 +943,24 @@ class HotMemory:
         query_entities = non_you[:4]
         if include_you:
             query_entities.append("you")
+        # Expand aliases: if query mentions an alias (also_known_as), include its subject
+        try:
+            expanded = set(query_entities)
+            for ent in list(query_entities):
+                if ent in self.entity_index:
+                    for (s2, r2, d2) in self.entity_index[ent]:
+                        if r2 == 'also_known_as' and d2 == ent:
+                            expanded.add(s2)
+                # LMDB alias map (fast) → canonical ID
+                try:
+                    canon = self.store.resolve_alias(ent)
+                    if canon:
+                        expanded.add(canon)
+                except Exception:
+                    pass
+            query_entities = list(expanded)[:6]
+        except Exception:
+            pass
 
         # Gating: avoid injecting memory for generic questions that only mention "you/I"
         # unless the query contains attribute keywords or an explicit remember request.
@@ -875,6 +982,7 @@ class HotMemory:
         pred_pri = {
             "lives_in": 1.00,
             "works_at": 0.95,
+            "teach_at": 0.93,
             "born_in": 0.90,
             "moved_from": 0.85,
             "participated_in": 0.80,
@@ -887,7 +995,8 @@ class HotMemory:
         }
 
         # Weights (env tunable later)
-        alpha, beta, gamma, delta = 0.4, 0.2, 0.3, 0.1
+        # Temporal-first: recency heavily dominates to ensure fresh facts win
+        alpha, beta, gamma, delta = 0.15, 0.60, 0.20, 0.05
         recency_T_ms = 3 * 24 * 3600 * 1000  # 3 days
 
         # Intent-aware K limit
@@ -899,12 +1008,14 @@ class HotMemory:
         except Exception:
             pass
 
-        scored_all: List[Tuple[float, int, str, str, str]] = []
+        # Candidate pool: tuples of (score, ts, kind, payload)
+        # kind='kg' payload=(s,r,d) | kind='fts' payload=(text) | kind='sem_summary' payload=(text)
+        scored_all: List[Tuple[float, int, str, Any]] = []
         now_ms = int(time.time() * 1000)
         # Only inject from a safe canonical relation set; exclude question scaffolding/noise
         allowed_rels = {
             "name", "age", "favorite_color",
-            "lives_in", "works_at", "born_in", "moved_from",
+            "lives_in", "works_at", "teach_at", "born_in", "moved_from",
             "participated_in", "went_to",
             "friend_of", "owns", "has", "favorite_number",
         }
@@ -942,27 +1053,138 @@ class HotMemory:
                             sem = inter / union if union else 0.0
                     w = float(meta.get('weight', 0.3))
                     score = alpha * pri + beta * rec + gamma * sem + delta * w
-                    scored_all.append((score, ts, s, r, d))
+                    scored_all.append((score, ts, 'kg', (s, r, d)))
+
+        # Retrieval fusion: include FTS summary hits and (optional) LEANN summary hits
+        if self.retrieval_fusion and query and len(bullets) < K_max:
+            # FTS lexical search over summaries/mentions
+            try:
+                fts_results = self.store.search_fts_detailed(query, limit=12)
+            except Exception:
+                fts_results = []
+            # Tokenizer reused
+            for (text_fts, eid_fts, ts_fts) in fts_results:
+                if not text_fts:
+                    continue
+                # Prefer summaries
+                is_summary = isinstance(eid_fts, str) and (eid_fts.startswith('summary:') or eid_fts.startswith('session:'))
+                pri = 0.50 if is_summary else 0.40
+                rec = 0.0
+                if ts_fts and ts_fts > 0:
+                    age = max(0, now_ms - int(ts_fts))
+                    rec = math.exp(-age / max(1, recency_T_ms))
+                sem = 0.0
+                stok = _tokens(text_fts)
+                if qtok and stok:
+                    inter = len(qtok & stok)
+                    union = len(qtok | stok)
+                    sem = inter / union if union else 0.0
+                w = 0.3
+                sc = alpha * pri + beta * rec + gamma * sem + delta * w
+                scored_all.append((sc, int(ts_fts or 0), 'fts', text_fts))
+
+            # LEANN semantic search over summaries if enabled
+            if self.use_leann and self.use_leann_summaries and len(scored_all) < 32:
+                try:
+                    for (text_sem, sc_sem) in self._leann_summary_texts(query, top_k=8):
+                        if not text_sem:
+                            continue
+                        # Use the semantic score directly with small pri/rec bias
+                        pri = 0.45
+                        rec = 0.0
+                        w = 0.3
+                        sem = float(sc_sem)
+                        sc = alpha * pri + beta * rec + gamma * sem + delta * w
+                        scored_all.append((sc, 0, 'sem_summary', text_sem))
+                except Exception:
+                    pass
 
         # Threshold (τ) and diversity
         if scored_all:
             scored_all.sort(key=lambda x: (x[0], x[1]), reverse=True)
-            scores_only = [s for (s, _ts, _s, _r, _d) in scored_all]
+            scores_only = [s for (s, _ts, _k, _p) in scored_all]
             idx = max(0, int(len(scores_only) * 0.75) - 1)
             tau = scores_only[idx]
             eps = 0.05
-            by_rel: Dict[str, int] = defaultdict(int)
-            for score, _ts, s, r, d in scored_all:
-                if (s, r, d) in seen_triples:
-                    continue
-                # diversity: allow 1 per relation, or 2 if high-scoring
-                if by_rel[r] >= 1 and not (by_rel[r] < 2 and score >= (tau + eps)):
-                    continue
-                if score < tau and len(bullets) >= max(1, K_max // 2):
-                    continue
-                bullets.append(self._format_memory_bullet(s, r, d))
-                seen_triples.add((s, r, d))
-                by_rel[r] += 1
+
+            # MMR-based selection for diversity
+            lambda_rel = 0.75
+            selected: List[Tuple[float, int, str, Any]] = []
+
+            def _tokset(t: str) -> Set[str]:
+                return {w for w in (t or '').lower().split() if len(''.join(ch for ch in w if ch.isalnum())) >= 3}
+
+            def _sim(a: Tuple[str, Any], b: Tuple[str, Any]) -> float:
+                kind_a, pay_a = a
+                kind_b, pay_b = b
+                # KG vs KG: prefer different subject/relation
+                if kind_a == 'kg' and kind_b == 'kg':
+                    (s1, r1, d1) = pay_a
+                    (s2, r2, d2) = pay_b
+                    sim = 0.0
+                    if s1 == s2:
+                        sim += 0.6
+                    if r1 == r2:
+                        sim += 0.3
+                    if d1 == d2:
+                        sim += 0.1
+                    return sim
+                # Summary vs Summary: token overlap
+                if kind_a != 'kg' and kind_b != 'kg':
+                    ta = _tokset(str(pay_a))
+                    tb = _tokset(str(pay_b))
+                    if not ta or not tb:
+                        return 0.0
+                    inter = len(ta & tb)
+                    union = len(ta | tb)
+                    return 0.6 * (inter / union)
+                # Cross-type: light similarity based on token overlap of s r d vs text
+                if kind_a == 'kg' and kind_b != 'kg':
+                    (s1, r1, d1) = pay_a
+                    tb = _tokset(str(pay_b))
+                    ta = _tokset(f"{s1} {r1} {d1}")
+                else:
+                    (s1, r1, d1) = pay_b
+                    ta = _tokset(str(pay_a))
+                    tb = _tokset(f"{s1} {r1} {d1}")
+                if not ta or not tb:
+                    return 0.0
+                inter = len(ta & tb)
+                union = len(ta | tb)
+                return 0.4 * (inter / union)
+
+            pool = [(sc, ts, k, p) for (sc, ts, k, p) in scored_all if sc >= max(0.0, tau - eps)]
+            while pool and len(selected) < K_max:
+                best_idx = -1
+                best_mmr = -1.0
+                for i, (sc, ts, k, p) in enumerate(pool):
+                    if k == 'kg':
+                        (s, r, d) = p
+                        if (s, r, d) in seen_triples:
+                            continue
+                    # novelty penalty across types
+                    max_sim = 0.0
+                    for (_sc2, _ts2, k2, p2) in selected:
+                        max_sim = max(max_sim, _sim((k, p), (k2, p2)))
+                    mmr = lambda_rel * sc - (1 - lambda_rel) * max_sim
+                    if mmr > best_mmr:
+                        best_mmr = mmr
+                        best_idx = i
+                if best_idx == -1:
+                    break
+                chosen = pool.pop(best_idx)
+                selected.append(chosen)
+                _sc, _ts, k, p = chosen
+                if k == 'kg':
+                    s, r, d = p
+                    bullets.append(self._format_memory_bullet(s, r, d))
+                    seen_triples.add((s, r, d))
+                else:
+                    # Clean one-line snippet for summaries
+                    txt = str(p).replace('\n', ' ').strip()
+                    if len(txt) > 220:
+                        txt = txt[:220].rstrip() + '…'
+                    bullets.append(f"• {txt}")
                 if len(bullets) >= K_max:
                     return bullets
 
@@ -1011,6 +1233,39 @@ class HotMemory:
             except Exception:
                 continue
         return scores
+
+    def _leann_summary_texts(self, query: str, top_k: int = 8) -> List[Tuple[str, float]]:
+        """Return (text, score) for summary-like entries from LEANN index.
+
+        Requires the index to contain such entries (see utils/rebuild_leann.py with --include-summaries).
+        """
+        out: List[Tuple[str, float]] = []
+        searcher = self._ensure_leann_searcher()
+        if not searcher:
+            return out
+        try:
+            results = searcher.search(query, top_k=top_k, complexity=self.leann_complexity)
+        except Exception:
+            return out
+        for rank, res in enumerate(results or []):
+            try:
+                meta = getattr(res, 'metadata', None) or {}
+                s = meta.get('src'); r = meta.get('rel'); d = meta.get('dst')
+                # Skip KG-encoded items; only return free-text summaries/mentions
+                if s and r and d:
+                    continue
+                text = getattr(res, 'text', None)
+                if not text:
+                    continue
+                sc = getattr(res, 'score', None)
+                if sc is None:
+                    sc = getattr(res, 'similarity', None)
+                if sc is None:
+                    sc = 1.0 - (rank / float(top_k + 1))
+                out.append((str(text), float(sc)))
+            except Exception:
+                continue
+        return out
     
     def _detect_language(self, text: str) -> str:
         """Detect language using env override or pycld3"""
@@ -1180,6 +1435,48 @@ class HotMemory:
                 cd = "you"
 
             rr = r
+            # Strip relative scaffolding prefixes from entities for readability
+            for pref in ("whose ", "which ", "who ", "that "):
+                if cs.startswith(pref):
+                    cs = cs[len(pref):].strip()
+                if cd.startswith(pref):
+                    cd = cd[len(pref):].strip()
+
+            # Normalize common patterns for better retrieval and matching
+            t_low = t  # lower-cased full text
+            # Drive/own → treat as possession for user
+            if rr in {"drive", "drives", "drove"} and cs == "you":
+                rr = "has"
+            # Teaching normalization: prefer (X, teach_at, ORG)
+            if rr in {"teach", "teaches", "teaching"}:
+                chosen_org: Optional[str] = None
+                try:
+                    # Prefer an ORG entity from the doc if present
+                    if doc is not None:
+                        for ent in getattr(doc, 'ents', []) or []:
+                            if getattr(ent, 'label_', '') in {"ORG"}:
+                                chosen_org = _canon_entity_text(ent.text)
+                                break
+                except Exception:
+                    chosen_org = None
+                # If surface contains "teach at" and we have an ORG, promote to teach_at
+                if (" teach at " in t_low or " at " in t_low) and chosen_org:
+                    rr = "teach_at"
+                    cd = chosen_org
+                elif " teach at " in t_low:
+                    # Fallback to teach_at if pattern explicit, but avoid subjects like 'philosophy'
+                    bad_subjects = {"philosophy", "math", "mathematics", "physics", "chemistry", "history", "biology", "english"}
+                    if cd not in bad_subjects:
+                        rr = "teach_at"
+            # Age normalization: "X is N years old"
+            try:
+                import re as _re
+                m_age = _re.search(r"\b(\d{1,2})\s+years?\s+old\b", t_low)
+                if m_age and rr in {"is", "age"}:
+                    rr = "age"
+                    cd = f"{m_age.group(1)} years old"
+            except Exception:
+                pass
             # Fix generic preposition rels if the verb is inferable from surface text
             if r in {"_in", "_at", "_from", "_to"}:
                 if " live" in t or t.startswith("live") or " living" in t:
@@ -1436,20 +1733,84 @@ class HotMemory:
                         cand = _canon_entity_text(ent.text)
                 return cand
             except Exception:
-            return None
+                return None
 
-        def is_pronoun_like(tok: str) -> bool:
+        # A/B detection mode for pronouns: 'string' (default), 'ud', 'hybrid'
+        pron_mode = os.getenv('HOTMEM_PRONOUN_DETECT', 'string').lower()
+
+        def is_pronoun_like_string(tok: str) -> bool:
             p = (tok or '').strip().lower()
             return p in {
                 'he','him','his','she','her','hers','they','them','their','theirs',
                 'it','this','that','who','whom','which','whose'
             }
 
-        def pronoun_kind(tok: str) -> str:
+        def pronoun_kind_string(tok: str) -> str:
             p = (tok or '').strip().lower()
             if p in {'he','him','his','she','her','hers','who','whom','whose','they','them','their','theirs'}:
                 return 'person'
             return 'thing'
+
+        def _find_token_index_for_text(token_text: str) -> Optional[int]:
+            try:
+                tnorm = _canon_entity_text(token_text)
+                for tok in doc:  # type: ignore[attr-defined]
+                    if _canon_entity_text(tok.text) == tnorm:
+                        return int(tok.i)
+            except Exception:
+                return None
+            return None
+
+        def is_pronoun_like_idx_ud(idx: Optional[int]) -> bool:
+            try:
+                if idx is None:
+                    return False
+                tok = doc[idx]  # type: ignore[index]
+                if tok.pos_ not in {'PRON', 'DET'}:
+                    return False
+                m = tok.morph.to_dict()
+                pt = m.get('PronType')
+                return pt in {'Rel', 'Prs', 'Dem', 'Int'}
+            except Exception:
+                return False
+
+        def pronoun_kind_idx_ud(idx: Optional[int]) -> str:
+            """Return 'person' or 'thing' heuristic based on morph.
+            Personal pronouns → person; Relative/demonstrative → prefer person if left PERSON anchor exists.
+            """
+            try:
+                if idx is None:
+                    return 'thing'
+                tok = doc[idx]  # type: ignore[index]
+                m = tok.morph.to_dict()
+                pt = m.get('PronType')
+                if pt == 'Prs':
+                    return 'person'
+                if pt in {'Rel', 'Dem', 'Int'}:
+                    # Guess person if there is a left PERSON anchor in the sentence
+                    anchor = _sentence_person_anchor(idx)
+                    return 'person' if anchor else 'thing'
+            except Exception:
+                pass
+            return 'thing'
+
+        def is_pronoun_like(tok: str) -> bool:
+            if pron_mode == 'string':
+                return is_pronoun_like_string(tok)
+            if pron_mode == 'ud':
+                return is_pronoun_like_idx_ud(_find_token_index_for_text(tok))
+            # hybrid
+            return is_pronoun_like_string(tok) or is_pronoun_like_idx_ud(_find_token_index_for_text(tok))
+
+        def pronoun_kind(tok: str) -> str:
+            if pron_mode == 'string':
+                return pronoun_kind_string(tok)
+            if pron_mode == 'ud':
+                return pronoun_kind_idx_ud(_find_token_index_for_text(tok))
+            # hybrid
+            if is_pronoun_like_string(tok):
+                return pronoun_kind_string(tok)
+            return pronoun_kind_idx_ud(_find_token_index_for_text(tok))
 
         # --- Deterministic pronoun anchoring helpers ---
         from collections import defaultdict, deque as _deque
@@ -1510,6 +1871,38 @@ class HotMemory:
                 return None
             return None
 
+        def _relative_anchor(idx: Optional[int]) -> Optional[str]:
+            """Anchor a relative pronoun to its head noun/proper if available.
+
+            Strategy: climb up to a few ancestors to find a NOUN/PROPN in-sentence;
+            if found, return its noun chunk span text; else fallback to left noun chunk.
+            """
+            try:
+                if idx is None:
+                    return None
+                tok = doc[idx]  # type: ignore[index]
+                sent = tok.sent
+                cur = tok.head
+                hops = 0
+                while cur is not None and hops < 4:
+                    if cur.i < sent.start or cur.i >= sent.end:
+                        break
+                    if cur.pos_ in {'NOUN', 'PROPN'}:
+                        # Find noun chunk whose root is cur
+                        for chunk in getattr(sent, 'noun_chunks', []) or []:
+                            if chunk.root.i == cur.i:
+                                return _canon_entity_text(chunk.text)
+                        return _canon_entity_text(cur.text)
+                    nxt = cur.head
+                    if nxt is cur:
+                        break
+                    cur = nxt
+                    hops += 1
+                # Fallback to nearest noun chunk to the left
+                return _sentence_noun_chunk_anchor(idx)
+            except Exception:
+                return None
+
         def _is_person_like(name: str) -> bool:
             if not name or name == 'you':
                 return False
@@ -1532,25 +1925,41 @@ class HotMemory:
             # Resolve subjects (only when pronoun-like)
             if s not in {'you'} and is_pronoun_like(s):
                 kind = pronoun_kind(s)
-                pron_idx = _next_idx_for(s)
+                pron_idx = _find_token_index_for_text(s)
                 cand = None
-                if kind == 'person':
-                    # Prefer PERSON anchor within same sentence, then nearest PERSON before index
-                    cand = _sentence_person_anchor(pron_idx) or nearest_person_before(s) or prefer_recent_person() or (last_entity if last_entity and last_entity != 'you' else None)
-                else:
-                    # Map which/it/this/that to nearest noun chunk to the left
-                    cand = _sentence_noun_chunk_anchor(pron_idx) or (last_entity if last_entity and last_entity != 'you' else None)
+                # UD-relative: anchor to head noun if available
+                if pron_mode in {'ud', 'hybrid'} and pron_idx is not None:
+                    try:
+                        tok = doc[pron_idx]
+                        if 'Rel' in tok.morph.get('PronType'):
+                            cand = _relative_anchor(pron_idx)
+                    except Exception:
+                        pass
+                if cand is None:
+                    if kind == 'person':
+                        cand = _sentence_person_anchor(pron_idx) or nearest_person_before(s) or prefer_recent_person() or (last_entity if last_entity and last_entity != 'you' else None)
+                    else:
+                        cand = _sentence_noun_chunk_anchor(pron_idx) or (last_entity if last_entity and last_entity != 'you' else None)
                 if cand:
                     rs = cand
             # Resolve objects (only when pronoun-like)
             if d not in {'you'} and is_pronoun_like(d):
                 kind = pronoun_kind(d)
-                pron_idx = _next_idx_for(d)
+                pron_idx = _find_token_index_for_text(d)
                 cand = None
-                if kind == 'person':
-                    cand = _sentence_person_anchor(pron_idx) or nearest_person_before(d) or prefer_recent_person() or (last_entity if last_entity and last_entity != 'you' else None)
-                else:
-                    cand = _sentence_noun_chunk_anchor(pron_idx) or (last_entity if last_entity and last_entity != 'you' else None)
+                # UD-relative: anchor to head noun if available
+                if pron_mode in {'ud', 'hybrid'} and pron_idx is not None:
+                    try:
+                        tok = doc[pron_idx]
+                        if 'Rel' in tok.morph.get('PronType'):
+                            cand = _relative_anchor(pron_idx)
+                    except Exception:
+                        pass
+                if cand is None:
+                    if kind == 'person':
+                        cand = _sentence_person_anchor(pron_idx) or nearest_person_before(d) or prefer_recent_person() or (last_entity if last_entity and last_entity != 'you' else None)
+                    else:
+                        cand = _sentence_noun_chunk_anchor(pron_idx) or (last_entity if last_entity and last_entity != 'you' else None)
                 if cand:
                     rd = cand
 

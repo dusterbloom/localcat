@@ -269,12 +269,20 @@ class HotPathMemoryProcessor(BaseProcessor):
         start = time.perf_counter()
         
         try:
+            # Check for correction intent before normal processing
+            correction_result = await self._handle_correction_intent(text)
+            
             # Extract facts and retrieve relevant memories
             bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id)
             
             # Log what we extracted
             if triples:
                 logger.info(f"[HotMem] Extracted {len(triples)} facts (showing up to 3): {triples[:3]}")
+            
+            # Add correction feedback to bullets if correction was applied
+            if correction_result and correction_result.get('success'):
+                correction_bullet = f"• ✅ Correction applied: {correction_result.get('explanation', 'Memory updated')}"
+                bullets = [correction_bullet] + bullets[:4]  # Keep within 5 bullet limit
             
             # Stash bullets to inject just before the aggregated user message
             if bullets:
@@ -293,6 +301,36 @@ class HotPathMemoryProcessor(BaseProcessor):
         except Exception as e:
             logger.error(f"Memory processing failed: {e}")
             # Don't crash the pipeline on memory errors
+    
+    async def _handle_correction_intent(self, text: str) -> Optional[Dict[str, Any]]:
+        """Handle correction intent detection and application"""
+        try:
+            from memory_correction import get_corrector
+            corrector = get_corrector()
+            
+            # Detect correction intent
+            instruction = corrector.detect_correction_intent(text)
+            if not instruction:
+                return None
+                
+            logger.info(f"[HotMem] Detected {instruction.correction_type.value} correction in {instruction.language}")
+            
+            # Apply correction to memory
+            result = corrector.apply_correction(instruction, self.hot)
+            
+            if result.get('success'):
+                logger.info(f"[HotMem] Correction applied: {result.get('explanation')}")
+            else:
+                logger.warning(f"[HotMem] Correction failed: {result.get('error')}")
+                
+            return result
+            
+        except ImportError:
+            logger.warning("[HotMem] Correction system not available - spaCy not installed")
+            return None
+        except Exception as e:
+            logger.error(f"[HotMem] Correction handling failed: {e}")
+            return None
     
     async def _inject_memory_context(self, direction: FrameDirection):
         """Inject memory bullets directly into the context aggregator's context"""

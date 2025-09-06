@@ -427,14 +427,34 @@ class MemoryStore:
     
     # ---------- Search operations ----------
     def search_fts(self, query: str, limit: int = 10) -> List[Tuple[str, str]]:
-        """Full-text search using SQLite FTS5"""
+        """Full-text search using SQLite FTS5 (text, eid).
+
+        Kept stable for existing callers. See `search_fts_detailed` to also get timestamps.
+        """
         cur = self.sql.cursor()
-        results = []
+        results: List[Tuple[str, str]] = []
         for (text, eid) in cur.execute(
             "SELECT text, eid FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?",
             (query, limit)
         ):
-            results.append((text, eid))
+            results.append((str(text or ''), str(eid or '')))
+        return results
+
+    def search_fts_detailed(self, query: str, limit: int = 10) -> List[Tuple[str, str, int]]:
+        """Full-text search returning (text, eid, ts).
+
+        Uses the same FTS table which stores `ts` as an UNINDEXED column.
+        """
+        cur = self.sql.cursor()
+        results: List[Tuple[str, str, int]] = []
+        for (text, eid, ts) in cur.execute(
+            "SELECT text, eid, ts FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?",
+            (query, limit)
+        ):
+            try:
+                results.append((str(text or ''), str(eid or ''), int(ts or 0)))
+            except Exception:
+                results.append((str(text or ''), str(eid or ''), 0))
         return results
     
     def get_metrics(self) -> Dict[str, Any]:
