@@ -63,6 +63,18 @@ npm run start      # Start production server
 npm run lint       # Run ESLint
 ```
 
+### Code Analysis and Refactoring
+```bash
+# Use ast-grep for advanced code search and refactoring
+ast-grep --pattern '$PATTERN' --lang python server/    # Search Python patterns in server
+ast-grep --pattern '$PATTERN' --lang typescript client/ # Search TypeScript patterns in client
+
+# Example patterns:
+ast-grep --pattern 'async def $FUNC($ARGS)' --lang python server/  # Find async functions
+ast-grep --pattern 'useEffect($_, [$DEPS])' --lang typescript client/  # Find useEffect hooks
+ast-grep --pattern 'class $CLASS' --lang python server/  # Find class definitions
+```
+
 ### Model Preparation
 Before first run, cache TTS models to avoid delays:
 ```bash

@@ -86,11 +86,11 @@ Implementation Notes (later):
 
 2.2 Scoring Function
 - Score triple t given query q:
-  - score(t) = α·pred_priority(r) + β·recency(ts) + γ·lexical_overlap(q, s,r,d) + δ·edge_weight
-  - Default weights: α=0.4, β=0.2, γ=0.3, δ=0.1 (tunable via env)
+  - score(t) = α·pred_priority(r) + β·recency(ts) + γ·leann_similarity(q, fact_text) + δ·edge_weight
+  - Default weights: α=0.3, β=0.2, γ=0.4, δ=0.1 (tunable via env)
 - `pred_priority`: keep current biases, extend for other canonical relations.
 - `recency(ts)`: normalize by exponential decay over last N hours/days.
-- `lexical_overlap`: token overlap between query and s/r/d; optionally mix in FTS rank from `search_fts(q)` for top-K entity terms.
+- `leann_similarity`: LEANN graph-based semantic similarity between query and fact text (replaces lexical overlap).
 - `edge_weight`: from hot index.
 
 2.3 Diversity and Novelty
@@ -145,28 +145,37 @@ Two approaches (choose A for simplicity, B later if needed):
 - `HOTMEM_HINT_WINDOW`: default `10`
 - `HOTMEM_BULLETS_MAX`: default `5`
 - `HOTMEM_NOVELTY_TURNS`: default `3`
-- `HOTMEM_SCORE_WEIGHTS`: e.g., `0.4,0.2,0.3,0.1` for α,β,γ,δ
+- `HOTMEM_SCORE_WEIGHTS`: e.g., `0.3,0.2,0.4,0.1` for α,β,γ,δ (updated for LEANN)
+- `HOTMEM_USE_LEANN`: default `true`
+- `HOTMEM_LEANN_COMPLEXITY`: default `16` (search complexity for <50ms queries)
 
 ### 6) Data Model Touches (minimal)
 - In-memory only (preferred): add `edge_meta[(s,r,d)] = {ts, weight}` in `HotMemory`; populate during observe/negate and rebuild.
 - Optional (if needed): expose `edge.updated_at` in `MemoryStore.get_all_edges()` for rebuild to seed `ts` without extra queries.
 
-### 6.1) Embedding Storage Extensions (Phase 1.5)
-- **SQLite schema**: Add `embedding BLOB` and `embedding_version TEXT DEFAULT 'embeddinggemma-308m-v1'` columns to edge table
-- **LMDB hot cache**: Extend `edge_meta[(s,r,d)]` to include:
+### 6.1) LEANN Vector Storage (Phase 1.5)
+- **LEANN index**: Graph-based vector storage for semantic retrieval (97% storage savings vs traditional embeddings)
+- **Integration**:
   ```python
-  edge_meta[(s,r,d)] = {
-      'ts': last_update_timestamp,
-      'weight': edge_weight,
-      'last_accessed': access_timestamp,
-      'last_injected_turn': turn_id,
-      'embedding_hash': str,  # MD5 of fact text for cache invalidation
-      'embedding': Optional[np.ndarray]  # 768-dim cached if recently accessed
-  }
+  from leann import LEANN
+  
+  # Initialize LEANN for fact retrieval
+  vector_store = LEANN(
+      storage_path="memory_vectors.leann",
+      search_complexity=16,  # Tuned for <50ms queries
+      chunk_size=128  # Fact-sized chunks
+  )
+  
+  # Store facts during extraction
+  def store_fact_vector(src, rel, dst, weight, ts):
+      fact_text = f"{src} {rel} {dst}"
+      vector_store.add_document(
+          text=fact_text,
+          metadata={'src': src, 'rel': rel, 'dst': dst, 'weight': weight, 'ts': ts}
+      )
   ```
-- **RAM LRU cache**: 1K most accessed embeddings (~3MB) for sub-15ms lookup
-- **Rebuild logic**: Populate missing embeddings during hot cache rebuild
-- **Memory budget**: +263MB total (+30MB SQLite BLOBs, +30MB LMDB vectors, +3MB RAM cache, +200MB model)
+- **Retrieval integration**: Replace lexical_overlap with LEANN similarity scoring
+- **Memory budget**: +2MB total (~1.5MB LEANN index, ~0.5MB graph structures, no model overhead)
 
 ## Testing Plan
 - Update/extend 27-pattern tests to validate taxonomy mapping, multi-fact segmentation, and multilingual surface forms.
@@ -179,15 +188,20 @@ Two approaches (choose A for simplicity, B later if needed):
 - Phase 1 (Retrieval/Injection):
   - Implement scoring, novelty/diversity, system-role injection, rotating message window.
   - Add metrics and env toggles. Ship behind feature flags.
-- Phase 1.5 (Semantic Embeddings):
-  - Deploy EmbeddingGemma model and extend storage for embeddings.
-  - Implement hybrid scoring (semantic + lexical + predicate + recency).
-  - A/B test semantic vs. lexical retrieval quality.
-- Phase 2 (Extraction):
+- Phase 1.5 (Semantic Retrieval):
+  - Integrate LEANN vector database for graph-based semantic search.
+  - Implement enhanced scoring (semantic + predicate + recency + weight).
+  - A/B test LEANN similarity vs. lexical retrieval quality.
+- Phase 2 (Enhanced Extraction): **[COMPLETED]**
   - Relation taxonomy and coref-lite; hedging/negation adjustments.
   - Multilingual normalization maps and loaders.
 - Phase 3 (Tuning):
   - Adjust weights/thresholds based on telemetry; refine bullet NLG.
+- Phase 4 (Complex Sentence Handling):
+  - Document-level coreference resolution: Cross-sentence entity tracking, pronoun resolution across sentences.
+  - Confidence score calibration: Adjust thresholds based on sentence complexity and entity count.
+  - Multi-clause segmentation: Break compound sentences into atomic fact statements.
+  - Context-aware filtering: Separate factual from hypothetical content within same document.
 
 ## Risks & Mitigations
 - spaCy model availability for non-EN languages → fallback to blank model + regex refinements; log once, continue.
@@ -198,7 +212,7 @@ Two approaches (choose A for simplicity, B later if needed):
 - `server/memory_hotpath.py`
   - Add coref-lite mention stack; refine taxonomy mappings; extend `_refine_triples` with multilingual aliases.
   - Maintain `edge_meta` and use it in `_retrieve_context` instead of per-candidate `neighbors()` calls.
-  - Implement scoring function with lexical overlap; add diversity/novelty; dynamic K.
+  - Integrate LEANN for semantic similarity; implement enhanced scoring function; add diversity/novelty; dynamic K.
   - Tighten bullet formatter for new relations.
 - `server/hotpath_processor.py`
   - Switch default inject role to `system`; add gating and rotating system message maintenance.
