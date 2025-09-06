@@ -1438,6 +1438,19 @@ class HotMemory:
             except Exception:
                 return None
 
+        def is_pronoun_like(tok: str) -> bool:
+            p = (tok or '').strip().lower()
+            return p in {
+                'he','him','his','she','her','hers','they','them','their','theirs',
+                'it','this','that','who','whom','which','whose'
+            }
+
+        def pronoun_kind(tok: str) -> str:
+            p = (tok or '').strip().lower()
+            if p in {'he','him','his','she','her','hers','who','whom','whose','they','them','their','theirs'}:
+                return 'person'
+            return 'thing'
+
         def _is_person_like(name: str) -> bool:
             if not name or name == 'you':
                 return False
@@ -1457,24 +1470,24 @@ class HotMemory:
         for s, r, d in triples:
             rs = s
             rd = d
-            # Resolve subjects
-            if s not in {'you'}:
-                rp = self._resolve_pronoun(s, stack)
-                if rp:
-                    rs = rp
+            # Resolve subjects (only when pronoun-like)
+            if s not in {'you'} and is_pronoun_like(s):
+                kind = pronoun_kind(s)
+                if kind == 'person':
+                    cand = prefer_recent_person() or nearest_person_before(s) or (last_entity if last_entity and last_entity != 'you' else None)
                 else:
-                    cand = prefer_recent_person() or nearest_person_before(s) or (last_entity if last_entity != 'you' else None)
-                    if cand:
-                        rs = cand
-            # Resolve objects
-            if d not in {'you'}:
-                rp = self._resolve_pronoun(d, stack)
-                if rp:
-                    rd = rp
+                    cand = (last_entity if last_entity and last_entity != 'you' else None)
+                if cand:
+                    rs = cand
+            # Resolve objects (only when pronoun-like)
+            if d not in {'you'} and is_pronoun_like(d):
+                kind = pronoun_kind(d)
+                if kind == 'person':
+                    cand = prefer_recent_person() or nearest_person_before(d) or (last_entity if last_entity and last_entity != 'you' else None)
                 else:
-                    cand = prefer_recent_person() or nearest_person_before(d) or (last_entity if last_entity != 'you' else None)
-                    if cand:
-                        rd = cand
+                    cand = (last_entity if last_entity and last_entity != 'you' else None)
+                if cand:
+                    rd = cand
 
             out.append((rs, r, rd))
 
