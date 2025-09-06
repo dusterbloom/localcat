@@ -1436,7 +1436,7 @@ class HotMemory:
                         cand = _canon_entity_text(ent.text)
                 return cand
             except Exception:
-                return None
+            return None
 
         def is_pronoun_like(tok: str) -> bool:
             p = (tok or '').strip().lower()
@@ -1450,6 +1450,65 @@ class HotMemory:
             if p in {'he','him','his','she','her','hers','who','whom','whose','they','them','their','theirs'}:
                 return 'person'
             return 'thing'
+
+        # --- Deterministic pronoun anchoring helpers ---
+        from collections import defaultdict, deque as _deque
+        pronoun_positions: Dict[str, _deque] = defaultdict(_deque)
+        try:
+            for i, tok in enumerate(doc):  # type: ignore[attr-defined]
+                t = tok.text.lower()
+                if t in {'he','him','his','she','her','hers','they','them','their','theirs','it','this','that','who','whom','which','whose'}:
+                    pronoun_positions[t].append(i)
+        except Exception:
+            pass
+
+        def _next_idx_for(token_text: str) -> Optional[int]:
+            try:
+                dq = pronoun_positions.get((token_text or '').lower())
+                if dq and len(dq) > 0:
+                    return int(dq.popleft())
+            except Exception:
+                return None
+            return None
+
+        def _sentence_person_anchor(idx: int) -> Optional[str]:
+            try:
+                if idx is None:
+                    return None
+                sent = doc[idx].sent  # type: ignore[attr-defined]
+                # Prefer PERSON entities ending before idx (closest to the left)
+                best = None
+                best_end = -1
+                for ent in getattr(sent, 'ents', []) or []:
+                    if getattr(ent, 'label_', '') == 'PERSON' and ent.end <= idx and ent.end > best_end:
+                        best = ent
+                        best_end = ent.end
+                if best is not None:
+                    return _canon_entity_text(best.text)
+                # Fallback: any PERSON in the sentence (leftmost)
+                for ent in getattr(sent, 'ents', []) or []:
+                    if getattr(ent, 'label_', '') == 'PERSON':
+                        return _canon_entity_text(ent.text)
+            except Exception:
+                return None
+            return None
+
+        def _sentence_noun_chunk_anchor(idx: int) -> Optional[str]:
+            try:
+                if idx is None:
+                    return None
+                sent = doc[idx].sent  # type: ignore[attr-defined]
+                best = None
+                best_end = -1
+                for chunk in getattr(sent, 'noun_chunks', []) or []:
+                    if chunk.end <= idx and chunk.end > best_end:
+                        best = chunk
+                        best_end = chunk.end
+                if best is not None:
+                    return _canon_entity_text(best.text)
+            except Exception:
+                return None
+            return None
 
         def _is_person_like(name: str) -> bool:
             if not name or name == 'you':
@@ -1473,19 +1532,25 @@ class HotMemory:
             # Resolve subjects (only when pronoun-like)
             if s not in {'you'} and is_pronoun_like(s):
                 kind = pronoun_kind(s)
+                pron_idx = _next_idx_for(s)
+                cand = None
                 if kind == 'person':
-                    cand = prefer_recent_person() or nearest_person_before(s) or (last_entity if last_entity and last_entity != 'you' else None)
+                    # Prefer PERSON anchor within same sentence, then nearest PERSON before index
+                    cand = _sentence_person_anchor(pron_idx) or nearest_person_before(s) or prefer_recent_person() or (last_entity if last_entity and last_entity != 'you' else None)
                 else:
-                    cand = (last_entity if last_entity and last_entity != 'you' else None)
+                    # Map which/it/this/that to nearest noun chunk to the left
+                    cand = _sentence_noun_chunk_anchor(pron_idx) or (last_entity if last_entity and last_entity != 'you' else None)
                 if cand:
                     rs = cand
             # Resolve objects (only when pronoun-like)
             if d not in {'you'} and is_pronoun_like(d):
                 kind = pronoun_kind(d)
+                pron_idx = _next_idx_for(d)
+                cand = None
                 if kind == 'person':
-                    cand = prefer_recent_person() or nearest_person_before(d) or (last_entity if last_entity and last_entity != 'you' else None)
+                    cand = _sentence_person_anchor(pron_idx) or nearest_person_before(d) or prefer_recent_person() or (last_entity if last_entity and last_entity != 'you' else None)
                 else:
-                    cand = (last_entity if last_entity and last_entity != 'you' else None)
+                    cand = _sentence_noun_chunk_anchor(pron_idx) or (last_entity if last_entity and last_entity != 'you' else None)
                 if cand:
                     rd = cand
 
