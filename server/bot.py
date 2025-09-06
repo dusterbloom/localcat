@@ -45,6 +45,7 @@ from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, Ice
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 
 from tts_mlx_isolated import TTSMLXIsolated
+from summarizer import start_periodic_summarizer
 
 
 # Load env from server/.env explicitly to ensure consistent paths
@@ -77,6 +78,12 @@ SYSTEM_INSTRUCTION_BASE =  (
     "- If the user asks you to remember something, remember it.\n"
     "- Greet the user by their name if you know it.\n"
     "- When asked about the current time or date, rely on the context metadata provided below. If it seems stale, say so.\n"
+    "- Use memory only for user-specific facts (e.g., name, where they live, favorites, family, pets, work).\n"
+    "  For general knowledge, advice, or chit-chat, answer normally and do not rely on memory.\n"
+    "- Do not propose remembering vague thoughts or feelings. Only store facts when the user explicitly asks (e.g., \"remember this\").\n"
+    "- Never fabricate facts. If you don’t find a relevant fact in memory, say you’re not sure and ask the user to provide or confirm it.\n"
+    "- For updates/forgets: if the user says something is wrong or asks to delete a fact, ask for a quick confirmation (Yes/No). Only after confirmation, update or delete the fact.\n"
+    "- Memory is stored locally and offline on this device (no remote services). /no_think\n"
 )
 
 
@@ -105,14 +112,14 @@ async def run_bot(webrtc_connection):
 
 
 
+    # Allow enabling Ollama "thinking" / reasoning for conversation model via env
+    openai_think_env = os.getenv("OPENAI_THINK", "false").lower() in ("1", "true", "yes")
     llm = OpenAILLMService(
         api_key=os.getenv("OPENAI_API_KEY"),
-        model=os.getenv("OPENAI_MODEL"),  # Small model. Uses ~4GB of RAM.
-        # model="google/gemma-3-12b",  # Medium-sized model. Uses ~8.5GB of RAM.
-        # model="mlx-community/Qwen3-235B-A22B-Instruct-2507-3bit-DWQ", # Large model. Uses ~110GB of RAM!
+        model=os.getenv("OPENAI_MODEL"),
         base_url=os.getenv("OPENAI_BASE_URL"), 
         max_tokens=4096,
-        extra_body={"think": False},  # Disable thinking for main conversation model
+        extra_body={"think": openai_think_env},
     )
 
     # Build dynamic system instruction with IDs and current local time
@@ -162,6 +169,15 @@ async def run_bot(webrtc_connection):
         enable_metrics=True,  # Log performance metrics
         context_aggregator=context_aggregator  # Pass context aggregator for injection
     )
+
+    # Start periodic summarizer if enabled
+    summarizer_task = None
+    try:
+        if os.getenv("SUMMARIZER_ENABLED", "true").lower() in ("1", "true", "yes"):
+            interval = float(os.getenv("SUMMARIZER_INTERVAL_SECS", "30"))
+            summarizer_task = start_periodic_summarizer(context_aggregator, memory, int(interval))
+    except Exception as e:
+        logger.warning(f"Failed to start summarizer: {e}")
 
     #
     # RTVI events for Pipecat client UI
@@ -213,11 +229,78 @@ async def run_bot(webrtc_connection):
     @transport.event_handler("on_participant_left")
     async def on_participant_left(transport, participant, reason):
         print(f"Participant left: {participant}")
+        # Stop summarizer
+        try:
+            if summarizer_task:
+                summarizer_task.cancel()
+        except Exception:
+            pass
+        # Build and persist session summary for retrieval
+        try:
+            summary_text = memory.persist_session_summary()
+            if summary_text:
+                logger.info("Session summary generated and stored")
+        except Exception as e:
+            logger.warning(f"Session summary failed: {e}")
+
+        # Optional: trigger LEANN rebuild at session end
+        try:
+            use_leann = os.getenv("HOTMEM_USE_LEANN", "false").lower() in ("1", "true", "yes")
+            rebuild_on_end = os.getenv("REBUILD_LEANN_ON_SESSION_END", "true").lower() in ("1", "true", "yes")
+            if use_leann and rebuild_on_end:
+                from leann_adapter import rebuild_leann_index
+                # Collect docs from edges (s r d) for semantic index
+                docs = []
+                for s, r, d, w in memory.store.get_all_edges():
+                    docs.append({
+                        'text': f"{s} {r} {d}",
+                        'metadata': {'src': s, 'rel': r, 'dst': d, 'weight': w}
+                    })
+                # Include session summary too if available
+                if summary_text:
+                    docs.append({'text': summary_text, 'metadata': {'type': 'session_summary'}})
+                index_path = os.getenv("LEANN_INDEX_PATH", os.path.join(os.path.dirname(__file__), '..', 'data', 'memory_vectors.leann'))
+                logger.info(f"Rebuilding LEANN index with {len(docs)} docs at {index_path}")
+                await rebuild_leann_index(index_path, docs)
+        except Exception as e:
+            logger.warning(f"LEANN rebuild skipped/failed: {e}")
         await task.cancel()
 
     runner = PipelineRunner(handle_sigint=False)
 
-    await runner.run(task)
+    try:
+        await runner.run(task)
+    finally:
+        # Stop summarizer
+        try:
+            if summarizer_task:
+                summarizer_task.cancel()
+        except Exception:
+            pass
+        # As a safety net, attempt to persist a session summary when the pipeline ends
+        try:
+            summary_text = memory.persist_session_summary()
+            if summary_text:
+                logger.info("Session summary generated and stored (pipeline end)")
+        except Exception as e:
+            logger.warning(f"Session summary at pipeline end failed: {e}")
+
+        # Also rebuild LEANN at pipeline end (mirrors on_participant_left), best-effort
+        try:
+            use_leann = os.getenv("HOTMEM_USE_LEANN", "false").lower() in ("1", "true", "yes")
+            rebuild_on_end = os.getenv("REBUILD_LEANN_ON_SESSION_END", "true").lower() in ("1", "true", "yes")
+            if use_leann and rebuild_on_end:
+                from leann_adapter import rebuild_leann_index
+                docs = []
+                for s, r, d, w in memory.store.get_all_edges():
+                    docs.append({'text': f"{s} {r} {d}", 'metadata': {'src': s, 'rel': r, 'dst': d, 'weight': w}})
+                if summary_text:
+                    docs.append({'text': summary_text, 'metadata': {'type': 'session_summary'}})
+                index_path = os.getenv("LEANN_INDEX_PATH", os.path.join(os.path.dirname(__file__), '..', 'data', 'memory_vectors.leann'))
+                logger.info(f"Rebuilding LEANN index (finalizer) with {len(docs)} docs at {index_path}")
+                await rebuild_leann_index(index_path, docs)
+        except Exception as e:
+            logger.warning(f"LEANN rebuild (finalizer) skipped/failed: {e}")
 
 
 @app.post("/api/offer")
