@@ -1438,27 +1438,55 @@ class HotMemory:
             except Exception:
                 return None
 
+        def _is_person_like(name: str) -> bool:
+            if not name or name == 'you':
+                return False
+            if name in person_set:
+                return True
+            try:
+                ln = _canon_entity_text(name)
+                for tok in doc:  # type: ignore[attr-defined]
+                    if _canon_entity_text(tok.text) == ln:
+                        # Treat PROPN with title-case or PERSON ent as person-like
+                        if getattr(tok, 'ent_type_', '') == 'PERSON' or getattr(tok, 'pos_', '') == 'PROPN':
+                            return True
+                return False
+            except Exception:
+                return False
+
         for s, r, d in triples:
             rs = s
             rd = d
             # Resolve subjects
-            if s not in {'you'} and self._resolve_pronoun(s, stack):
-                cand = prefer_recent_person() or nearest_person_before(s) or (last_entity if last_entity != 'you' else None)
-                if cand:
-                    rs = cand
+            if s not in {'you'}:
+                rp = self._resolve_pronoun(s, stack)
+                if rp:
+                    rs = rp
+                else:
+                    cand = prefer_recent_person() or nearest_person_before(s) or (last_entity if last_entity != 'you' else None)
+                    if cand:
+                        rs = cand
             # Resolve objects
-            if d not in {'you'} and self._resolve_pronoun(d, stack):
-                cand = prefer_recent_person() or nearest_person_before(d) or (last_entity if last_entity != 'you' else None)
-                if cand:
-                    rd = cand
+            if d not in {'you'}:
+                rp = self._resolve_pronoun(d, stack)
+                if rp:
+                    rd = rp
+                else:
+                    cand = prefer_recent_person() or nearest_person_before(d) or (last_entity if last_entity != 'you' else None)
+                    if cand:
+                        rd = cand
 
             out.append((rs, r, rd))
 
             # Update trackers after resolution
             if rs and rs != 'you':
                 last_entity = rs
-                if rs in person_set:
+                if _is_person_like(rs):
                     last_person = rs
+            # Also update from destination if it looks like a person
+            if rd and rd != 'you' and _is_person_like(rd):
+                last_person = rd
+                last_entity = last_entity or rd
 
         return out
 
