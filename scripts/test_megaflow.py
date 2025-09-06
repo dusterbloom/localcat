@@ -8,23 +8,33 @@ so existing commands keep working after archiving.
 import os
 import sys
 import asyncio
+import importlib.util
 
 
 def main():
     base = os.path.dirname(__file__)
-    archived_pkg = os.path.join(base, '..', 'server', 'archive', 'hotmem_evolution_phase2')
-    # Ensure package path for fully-qualified import
-    sys.path.append(os.path.abspath(os.path.join(base, '..')))
-    # Import archived runner using package path
-    try:
-        from server.archive.hotmem_evolution_phase2.scripts.test_megaflow import main as archived_main  # type: ignore
-    except Exception as e:
-        print(f"ERROR: Could not import archived megaflow runner: {e}")
-        print(f"Expected at: {archived_pkg}")
-        raise
-    return asyncio.run(archived_main())
+    arch_scripts = os.path.abspath(os.path.join(base, '..', 'server', 'archive', 'hotmem_evolution_phase2', 'scripts'))
+    arch_file = os.path.join(arch_scripts, 'test_megaflow.py')
+    # Ensure local server/ is importable for archived modules (memory_store, etc.)
+    sys.path.append(os.path.abspath(os.path.join(base, '..', 'server')))
+    # Make archived scripts importable as top-level modules for their local imports
+    sys.path.insert(0, arch_scripts)
+    if not os.path.exists(arch_file):
+        print(f"ERROR: Archived megaflow runner not found at: {arch_file}")
+        raise SystemExit(2)
+    # Load the archived module from file location to avoid name clash
+    spec = importlib.util.spec_from_file_location("archived_test_megaflow", arch_file)
+    if spec is None or spec.loader is None:
+        print("ERROR: Could not load archived megaflow module spec")
+        raise SystemExit(2)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[arg-type]
+    # Expect archived module to define `main()`
+    if not hasattr(mod, 'main'):
+        print("ERROR: archived test_megaflow.py does not define main()")
+        raise SystemExit(2)
+    return asyncio.run(mod.main())
 
 
 if __name__ == '__main__':
     main()
-
