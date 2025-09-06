@@ -1381,7 +1381,10 @@ class HotMemory:
         p = (token_text or '').strip().lower()
         if not p:
             return None
-        third = {'he', 'him', 'his', 'she', 'her', 'hers', 'they', 'them', 'their', 'theirs', 'it', 'this', 'that'}
+        third = {
+            'he', 'him', 'his', 'she', 'her', 'hers', 'they', 'them', 'their', 'theirs',
+            'it', 'this', 'that', 'who', 'whom', 'which', 'whose'
+        }
         if p in third:
             # Return most recent stack entry not 'you'
             for cand in reversed(stack):
