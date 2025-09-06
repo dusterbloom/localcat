@@ -22,6 +22,7 @@ from pipecat.processors.frame_processor import FrameProcessor as BaseProcessor, 
 
 from memory_store import MemoryStore, Paths
 from memory_hotpath import HotMemory
+from context_orchestrator import pack_context
 
 # Ensure we only add a file sink once per process
 _HOTMEM_LOG_SINK_ADDED = False
@@ -342,28 +343,9 @@ class HotPathMemoryProcessor(BaseProcessor):
             # Only inject bullets relevant to this turn (no sliding window)
             bullets_final = self._pending_bullets[: self._bullets_max]
 
-            # Compose content with freshness header in human-friendly local format
-            from datetime import datetime
-            now = datetime.now().astimezone()
-            def _ordinal(n: int) -> str:
-                if 10 <= n % 100 <= 20:
-                    suf = "th"
-                else:
-                    suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-                return f"{n}{suf}"
-            time_str = now.strftime('%I:%M %p').lstrip('0').lower()
-            weekday = now.strftime('%A')
-            month = now.strftime('%B')
-            day_ordinal = _ordinal(now.day)
-            year = now.year
-            human_updated = f"{time_str}, {weekday} {day_ordinal} {month} {year}"
-            memory_content = "\n".join(bullets_final)
-            header = f"{self._inject_header}\nContext for this turn (updated: {human_updated}):"
-            memory_message = {"role": self._inject_role, "content": f"{header}\n{memory_content}"}
+            logger.info(f"[HotMem] Packing context with {len(bullets_final)} bullets")
 
-            logger.info(f"[HotMem] Injecting rotating memory context with {len(bullets_final)} bullets")
-
-            # Option B: Replace/update single tagged system message via update frame if available
+            # Replace/update message list via update frame if available
             if LLMMessagesUpdateFrame is not None:
                 context = self._context_aggregator.user().context
                 # Read current messages
@@ -371,29 +353,55 @@ class HotPathMemoryProcessor(BaseProcessor):
                     messages = list(getattr(context, 'messages', []))
                 except Exception:
                     messages = []
-                # Remove any prior HotMem message
-                filtered = []
-                for m in messages:
-                    if isinstance(m, dict) and m.get('role') == self._inject_role:
-                        content = m.get('content', '') or ''
-                        if isinstance(content, str) and content.startswith(self._inject_header):
-                            continue
-                    filtered.append(m)
-                # Insert memory_message right after the first system message so it precedes conversation
-                insert_idx = 0
-                for i, m in enumerate(filtered):
-                    if isinstance(m, dict) and m.get('role') == 'system':
-                        insert_idx = i + 1
-                        break
-                new_messages = filtered[:insert_idx] + [memory_message] + filtered[insert_idx:]
+                # Fetch a recent summary snippet (optional)
+                summary_text = None
+                try:
+                    cur = getattr(self.store, 'sql', None).cursor()
+                    sid = self._session_id
+                    rows = cur.execute(
+                        "SELECT text FROM mention WHERE eid IN (?, ?) ORDER BY ts DESC LIMIT 1",
+                        (f"summary:{sid}", f"session:{sid}")
+                    ).fetchall()
+                    if rows:
+                        summary_text = str(rows[0][0] or '').strip()
+                except Exception:
+                    summary_text = None
+
+                # Budget from env
+                try:
+                    budget_tokens = int(os.getenv('CONTEXT_BUDGET_TOKENS', '4096'))
+                except Exception:
+                    budget_tokens = 4096
+
+                new_messages, stats = pack_context(
+                    messages=messages,
+                    memory_bullets=bullets_final,
+                    summary_text=summary_text,
+                    budget_tokens=budget_tokens,
+                    inject_role=self._inject_role,
+                    inject_header=self._inject_header,
+                )
+                try:
+                    logger.info(
+                        f"[HotMem] Pack stats: total={stats.get('tokens_total',0)} sys={stats.get('tokens_system',0)} mem={stats.get('tokens_memory',0)} sum={stats.get('tokens_summary',0)} dlg={stats.get('tokens_dialogue',0)}"
+                    )
+                except Exception:
+                    pass
                 try:
                     await self.push_frame(LLMMessagesUpdateFrame(new_messages), direction)
                 except Exception as e:
                     logger.warning(f"[HotMem] LLMMessagesUpdateFrame failed ({e}); falling back to add_message")
+                    # Fallback: just add memory message
+                    memory_content = "\n".join(bullets_final)
+                    header = f"{self._inject_header}\nMemory Context:"
+                    memory_message = {"role": self._inject_role, "content": f"{header}\n{memory_content}"}
                     context.add_message(memory_message)
             else:
                 # Fallback: simply add a new message (may accumulate)
                 context = self._context_aggregator.user().context
+                memory_content = "\n".join(bullets_final)
+                header = f"{self._inject_header}\nMemory Context:"
+                memory_message = {"role": self._inject_role, "content": f"{header}\n{memory_content}"}
                 context.add_message(memory_message)
             
             # Clear pending bullets after injection

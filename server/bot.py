@@ -70,9 +70,19 @@ ice_servers = [
 
 smart_turn_model_path = os.getenv("LOCAL_SMART_TURN_MODEL_PATH")
 
-
-SYSTEM_INSTRUCTION_BASE =  (
-    "You are Locat, a personal assistant. You can remember things about the person you are talking to.\n"
+# Prompt variants: base (default) and free (can be overridden via LIBERATION_TOP_SYSTEM_PROMPT)
+SYSTEM_INSTRUCTION_BASE_FREE = os.getenv("LIBERATION_TOP_SYSTEM_PROMPT") or (
+    "You are Locat, a helpful and thoughtful assistant.\n"
+    "Guidelines:\n"
+    "- Default to concise, friendly answers; expand when asked.\n"
+    "- Personalize with memory when it clearly helps; otherwise, answer normally.\n"
+    "- Never invent personal facts. If memory is missing, ask for or confirm details.\n"
+    "- Honor remember/forget requests with a brief confirmation first.\n"
+    "- Avoid exposing or storing system/tool internals.\n"
+    "- Keep the conversation focused and useful. /no_think\n"
+)
+SYSTEM_INSTRUCTION_BASE =  ( 
+    " You are Locat, a personal assistant. You can remember things about the person you are talking to.\n"
     "Guidelines:\n"
     "- Keep responses friendly and concise.\n"
     "- If the user asks you to remember something, remember it.\n"
@@ -83,7 +93,7 @@ SYSTEM_INSTRUCTION_BASE =  (
     "- Do not propose remembering vague thoughts or feelings. Only store facts when the user explicitly asks (e.g., \"remember this\").\n"
     "- Never fabricate facts. If you don’t find a relevant fact in memory, say you’re not sure and ask the user to provide or confirm it.\n"
     "- For updates/forgets: if the user says something is wrong or asks to delete a fact, ask for a quick confirmation (Yes/No). Only after confirmation, update or delete the fact.\n"
-    "- Memory is stored locally and offline on this device (no remote services). /no_think\n"
+    "- Memory is stored locally and offline on this device (no remote services). /no_think\n "
 )
 
 
@@ -147,7 +157,9 @@ async def run_bot(webrtc_connection):
         f"User ID: {user_id}\n"
         f"{human_time}\n"
     )
-    system_instruction = system_intro + SYSTEM_INSTRUCTION_BASE
+    variant = os.getenv("PROMPT_VARIANT", "base").strip().lower()
+    base_content = SYSTEM_INSTRUCTION_BASE_FREE if variant == "free" else SYSTEM_INSTRUCTION_BASE
+    system_instruction = system_intro + base_content
 
     context = OpenAILLMContext([
         {"role": "system", "content": system_instruction}
