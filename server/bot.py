@@ -46,6 +46,7 @@ from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 
 from tts_mlx_isolated import TTSMLXIsolated
 from summarizer import start_periodic_summarizer
+from sanitizer_processor import SanitizerProcessor
 
 
 # Load env from server/.env explicitly to ensure consistent paths
@@ -233,6 +234,7 @@ async def run_bot(webrtc_connection):
             memory,  # Move HotMem BEFORE context_aggregator so it sees TranscriptionFrames
             context_aggregator.user(),
             llm,
+            SanitizerProcessor(),  # Strip control tags from assistant text before TTS
             tts,
             transport.output(),
             context_aggregator.assistant(),
