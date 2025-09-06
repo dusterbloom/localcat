@@ -19,6 +19,14 @@ from spacy.tokens import Token
 
 from memory_store import MemoryStore
 from memory_intent import get_intent_classifier, get_quality_filter, IntentType
+try:
+    from memory_decomposer import decompose as _decompose_clauses  # type: ignore
+except Exception:
+    _decompose_clauses = None  # Optional
+try:
+    from memory_quality import calculate_extraction_confidence as _extra_confidence  # type: ignore
+except Exception:
+    _extra_confidence = None  # Optional
 
 # Try to import language detection
 try:
@@ -187,15 +195,24 @@ class HotMemory:
         hedge_terms = ("maybe", "i think", "probably", "kinda", "sort of", "not sure", "perhaps", "possibly")
         hedged = any(ht in t_lower for ht in hedge_terms)
 
+        conf_thresh = float(os.getenv("HOTMEM_CONFIDENCE_THRESHOLD", "0.3"))
+        use_extra_conf = os.getenv("HOTMEM_EXTRA_CONFIDENCE", "false").lower() in ("1", "true", "yes")
+
         for s, r, d in triples:
             should_store, confidence = quality_filter.should_store_fact(s, r, d, intent)
+            # Optional conservative complexity confidence
+            if use_extra_conf and _extra_confidence is not None:
+                try:
+                    confidence = min(confidence, float(_extra_confidence(doc, (s, r, d))))
+                except Exception:
+                    pass
             # Adjust confidence for hedging/negation context
             if hedged:
                 confidence -= 0.2
             if neg_count > 0 and intent.intent != IntentType.CORRECTION:
                 confidence -= 0.2
             confidence = max(0.0, min(1.0, confidence))
-            if confidence < 0.3:
+            if confidence < conf_thresh:
                 should_store = False
             if should_store:
                 # Handle corrections by demoting old facts
@@ -239,26 +256,53 @@ class HotMemory:
     
     def _extract(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any]:
         """
-        Extract entities and relations using USGS 27-pattern approach
-        Returns: (entities, triples, negation_count, doc)
+        Extract entities and relations using USGS 27-pattern approach.
+        Optionally decompose complex sentences into clause spans when enabled.
+        Returns: (entities, triples, negation_count, original_doc)
         """
         nlp = _load_nlp(lang)
-        
         if not nlp:
             return [], [], 0, None
-        
+
         doc = nlp(text)
+
+        use_decomp = os.getenv("HOTMEM_DECOMPOSE_CLAUSES", "false").lower() in ("1", "true", "yes")
+        if use_decomp and _decompose_clauses is not None:
+            try:
+                spans = _decompose_clauses(doc)
+            except Exception:
+                spans = []
+            if spans:
+                ents_all: Set[str] = set()
+                trips_all: List[Tuple[str, str, str]] = []
+                neg_total = 0
+                for sp in spans:
+                    try:
+                        subdoc = sp.as_doc()
+                    except Exception:
+                        subdoc = doc
+                    ents, trips, negc = self._extract_from_doc(subdoc)
+                    ents_all.update(ents)
+                    trips_all.extend(trips)
+                    neg_total += negc
+                return list(ents_all), trips_all, neg_total, doc
+
+        ents, trips, negc = self._extract_from_doc(doc)
+        return ents, trips, negc, doc
+
+    def _extract_from_doc(self, doc) -> Tuple[List[str], List[Tuple[str, str, str]], int]:
+        """Internal: 27-pattern extraction over a spaCy Doc."""
         entities = set()
-        triples = []
+        triples: List[Tuple[str, str, str]] = []
         neg_count = 0
-        
+
         # Stage 1: Build entity map
         entity_map = self._build_entity_map(doc, entities)
-        
+
         # Stage 2: Process all 27 dependency types
         for token in doc:
             dep = token.dep_
-            
+
             # Core grammatical relations
             if dep in {"nsubj", "nsubjpass"}:
                 self._extract_subject(token, entity_map, triples, entities)
@@ -270,7 +314,7 @@ class HotMemory:
                 self._extract_attribute(token, entity_map, triples, entities)
             elif dep == "acomp":
                 self._extract_acomp(token, entity_map, triples, entities)
-            
+
             # Modifiers
             elif dep == "amod":
                 self._extract_amod(token, entity_map, triples, entities)
@@ -280,7 +324,7 @@ class HotMemory:
                 self._extract_nummod(token, entity_map, triples, entities)
             elif dep == "nmod":
                 self._extract_nmod(token, entity_map, triples, entities)
-            
+
             # Structural
             elif dep == "compound":
                 self._extract_compound(token, entity_map, triples, entities)
@@ -294,7 +338,7 @@ class HotMemory:
                 self._extract_prep(token, entity_map, triples, entities)
             elif dep == "pobj":
                 pass  # Handled by prep
-            
+
             # Clausal
             elif dep == "acl":
                 self._extract_acl(token, entity_map, triples, entities)
@@ -306,18 +350,18 @@ class HotMemory:
                 self._extract_csubj(token, entity_map, triples, entities)
             elif dep == "xcomp":
                 self._extract_xcomp(token, entity_map, triples, entities)
-            
+
             # Special
             elif dep == "agent":
                 self._extract_agent(token, entity_map, triples, entities)
             elif dep == "oprd":
                 self._extract_oprd(token, entity_map, triples, entities)
-            
+
             # Count negations
             elif dep == "neg":
                 neg_count += 1
-        
-        return list(entities), triples, neg_count, doc
+
+        return list(entities), triples, neg_count
     
     def _build_entity_map(self, doc, entities: Set[str]) -> Dict[int, str]:
         """Build entity map from document"""
