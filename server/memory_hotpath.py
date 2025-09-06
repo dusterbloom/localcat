@@ -1458,11 +1458,11 @@ class HotMemory:
                 return True
             try:
                 ln = _canon_entity_text(name)
-                for tok in doc:  # type: ignore[attr-defined]
-                    if _canon_entity_text(tok.text) == ln:
-                        # Treat PROPN with title-case or PERSON ent as person-like
-                        if getattr(tok, 'ent_type_', '') == 'PERSON' or getattr(tok, 'pos_', '') == 'PROPN':
-                            return True
+                # Only treat as person-like if NER labels it PERSON;
+                # do NOT fallback to generic PROPN to avoid ORG/LOC pollution (e.g., Microsoft, Seattle)
+                for ent in getattr(doc, 'ents', []) or []:  # type: ignore[attr-defined]
+                    if _canon_entity_text(ent.text) == ln and getattr(ent, 'label_', '') == 'PERSON':
+                        return True
                 return False
             except Exception:
                 return False
@@ -1496,10 +1496,7 @@ class HotMemory:
                 last_entity = rs
                 if _is_person_like(rs):
                     last_person = rs
-            # Also update from destination if it looks like a person
-            if rd and rd != 'you' and _is_person_like(rd):
-                last_person = rd
-                last_entity = last_entity or rd
+            # Do not update last_person from destination objects; they often are ORG/LOC.
 
         return out
 
