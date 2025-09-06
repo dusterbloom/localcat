@@ -104,6 +104,14 @@ class HotMemory:
         self.recency_buffer = deque(maxlen=max_recency)  # Recent interactions
         self.entity_cache = {}  # Canonical entity mapping
         self.edge_meta: Dict[Tuple[str, str, str], Dict[str, Any]] = {}  # (s,r,d) -> {ts, weight}
+        # Optional LEANN semantic search
+        self.use_leann = os.getenv("HOTMEM_USE_LEANN", "false").lower() in ("1", "true", "yes")
+        self.leann_index_path = os.getenv("LEANN_INDEX_PATH", os.path.join(os.path.dirname(__file__), '..', 'data', 'memory_vectors.leann'))
+        if self.leann_index_path and not os.path.isabs(self.leann_index_path):
+            self.leann_index_path = os.path.abspath(os.path.join(os.path.dirname(__file__), self.leann_index_path))
+        self.leann_complexity = int(os.getenv("HOTMEM_LEANN_COMPLEXITY", "16"))
+        self._leann_searcher = None
+        self._leann_loaded_mtime = 0.0
         
         # Performance tracking
         self.metrics = defaultdict(list)
@@ -778,6 +786,14 @@ class HotMemory:
             return out
         qtok = _tokens(query)
 
+        # Optional: LEANN similarity scores map for this query
+        leann_scores: Dict[Tuple[str, str, str], float] = {}
+        if self.use_leann and query and len(query.strip()) >= 2:
+            try:
+                leann_scores = self._leann_query_scores(query, top_k=64)
+            except Exception:
+                leann_scores = {}
+
         # 1) Prefer fact bullets based on query entities
         #    Put non-'you' entities first; then 'you' if present.
         ent_set = [e for e in entities if e]
@@ -786,6 +802,22 @@ class HotMemory:
         query_entities = non_you[:4]
         if include_you:
             query_entities.append("you")
+
+        # Gating: avoid injecting memory for generic questions that only mention "you/I"
+        # unless the query contains attribute keywords or an explicit remember request.
+        t = (query or "").lower()
+        attr_keywords = (
+            "name", "age", "live", "lives", "hometown", "from",
+            "work", "works", "job", "company", "employer",
+            "favorite", "colour", "color", "pet", "dog", "cat",
+            "spouse", "partner", "wife", "husband", "child", "kid", "kids"
+        )
+        remember_request = ("remember" in t) or ("save this" in t) or ("note this" in t)
+        has_attr = any(kw in t for kw in attr_keywords)
+        if include_you and not non_you:
+            # you-only reference
+            if not has_attr and not remember_request:
+                return []
 
         # Predicate priority (normalized 0..1)
         pred_pri = {
@@ -841,15 +873,18 @@ class HotMemory:
                     age = max(0, now_ms - ts)
                     rec = math.exp(-age / max(1, recency_T_ms)) if ts > 0 else 0.0
                     pri = pred_pri.get(r, 0.5)
-                    # Lexical overlap
-                    stok = _tokens(s) | _tokens(r) | _tokens(d)
-                    lex = 0.0
-                    if qtok and stok:
-                        inter = len(qtok & stok)
-                        union = len(qtok | stok)
-                        lex = inter / union if union else 0.0
+                    # Similarity (LEANN or lexical)
+                    sem = 0.0
+                    if leann_scores:
+                        sem = float(leann_scores.get((s, r, d), 0.0))
+                    else:
+                        stok = _tokens(s) | _tokens(r) | _tokens(d)
+                        if qtok and stok:
+                            inter = len(qtok & stok)
+                            union = len(qtok | stok)
+                            sem = inter / union if union else 0.0
                     w = float(meta.get('weight', 0.3))
-                    score = alpha * pri + beta * rec + gamma * lex + delta * w
+                    score = alpha * pri + beta * rec + gamma * sem + delta * w
                     scored_all.append((score, ts, s, r, d))
 
         # Threshold (τ) and diversity
@@ -876,6 +911,49 @@ class HotMemory:
 
         # No recency fallback: only inject facts relevant to current turn
         return bullets[:K_max]
+
+    # ---- LEANN helpers ----
+    def _ensure_leann_searcher(self):
+        if not self.use_leann:
+            return None
+        try:
+            import os as _os
+            mtime = _os.path.getmtime(self.leann_index_path)
+        except Exception:
+            return None
+        try:
+            if (self._leann_searcher is None) or (mtime > self._leann_loaded_mtime):
+                from leann.api import LeannSearcher  # type: ignore
+                self._leann_searcher = LeannSearcher(self.leann_index_path)
+                self._leann_loaded_mtime = mtime
+        except Exception:
+            self._leann_searcher = None
+        return self._leann_searcher
+
+    def _leann_query_scores(self, query: str, top_k: int = 32) -> Dict[Tuple[str, str, str], float]:
+        scores: Dict[Tuple[str, str, str], float] = {}
+        searcher = self._ensure_leann_searcher()
+        if not searcher:
+            return scores
+        try:
+            results = searcher.search(query, top_k=top_k, complexity=self.leann_complexity)
+        except Exception:
+            return scores
+        # Map by metadata if available; else fallback to rank-based score
+        for rank, res in enumerate(results or []):
+            try:
+                meta = getattr(res, 'metadata', None) or {}
+                s = meta.get('src'); r = meta.get('rel'); d = meta.get('dst')
+                if s and r and d:
+                    sc = getattr(res, 'score', None)
+                    if sc is None:
+                        sc = getattr(res, 'similarity', None)
+                    if sc is None:
+                        sc = 1.0 - (rank / float(top_k + 1))
+                    scores[(str(s), str(r), str(d))] = float(sc)
+            except Exception:
+                continue
+        return scores
     
     def _detect_language(self, text: str) -> str:
         """Detect language using env override or pycld3"""
