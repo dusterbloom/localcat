@@ -81,10 +81,13 @@ class HotPathMemoryProcessor(BaseProcessor):
                 logger.warning(f"HotMem file logging not enabled: {e}")
         
         # Initialize storage
-        paths = Paths(
-            sqlite_path=sqlite_path,
-            lmdb_dir=lmdb_dir
-        )
+        # Canonicalize storage paths relative to this file when relative
+        base_dir = os.path.dirname(__file__)
+        if sqlite_path and not os.path.isabs(sqlite_path):
+            sqlite_path = os.path.abspath(os.path.join(base_dir, sqlite_path))
+        if lmdb_dir and not os.path.isabs(lmdb_dir):
+            lmdb_dir = os.path.abspath(os.path.join(base_dir, lmdb_dir))
+        paths = Paths(sqlite_path=sqlite_path, lmdb_dir=lmdb_dir)
         self.store = MemoryStore(paths)
         try:
             logger.info(f"HotMem storage: sqlite={self.store.paths.sqlite_path} lmdb={self.store.paths.lmdb_dir}")
@@ -131,6 +134,63 @@ class HotPathMemoryProcessor(BaseProcessor):
         self._last_metrics_log = time.time()
         
         logger.info(f"HotPathMemoryProcessor initialized for user: {user_id}")
+
+    def _human_time_str(self, ts_ms: int) -> str:
+        try:
+            from datetime import datetime
+            dt = datetime.fromtimestamp(ts_ms / 1000).astimezone()
+            def _ord(n: int) -> str:
+                if 10 <= n % 100 <= 20:
+                    suf = "th"
+                else:
+                    suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+                return f"{n}{suf}"
+            time_str = dt.strftime('%I:%M %p').lstrip('0').lower()
+            return f"{time_str}, {dt.strftime('%A')} {_ord(dt.day)} {dt.strftime('%B')} {dt.year}"
+        except Exception:
+            return str(ts_ms)
+
+    def build_session_summary(self, max_bullets: int = 5) -> str:
+        """Build a compact, human-readable session summary from recent facts.
+
+        Returns a multi-line string suitable for FTS/semantic indexing.
+        """
+        items = list(self.hot.recency_buffer)
+        if not items:
+            return ""
+        start_ts = items[0].timestamp
+        end_ts = items[-1].timestamp
+        # Deduplicate triples preserving recency
+        seen = set()
+        bullets = []
+        for it in reversed(items):
+            key = (it.s, it.r, it.d)
+            if key in seen:
+                continue
+            seen.add(key)
+            bullets.append(self.hot._format_memory_bullet(it.s, it.r, it.d))
+            if len(bullets) >= max_bullets:
+                break
+        bullets = list(reversed(bullets))
+        header = f"Session summary ({self._human_time_str(start_ts)} → {self._human_time_str(end_ts)}):"
+        body = "\n".join(bullets)
+        return f"{header}\n{body}"
+
+    def persist_session_summary(self) -> Optional[str]:
+        """Persist the session summary into FTS via mention; return text if written."""
+        try:
+            text = self.build_session_summary()
+            if not text:
+                return None
+            now_ts = int(time.time() * 1000)
+            eid = f"session:{self._session_id}"
+            self.store.enqueue_mention(eid=eid, text=text, ts=now_ts, sid=self._session_id, tid=self._turn_id)
+            self.store.flush()
+            logger.info("[HotMem] Persisted session summary to FTS")
+            return text
+        except Exception as e:
+            logger.warning(f"[HotMem] Failed to persist session summary: {e}")
+            return None
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """
@@ -177,6 +237,13 @@ class HotPathMemoryProcessor(BaseProcessor):
             logger.info(f"[HotMem] TranscriptionFrame received: is_final={is_final} text_len={len(text)} text='{text[:120]}'")
             # WhisperSTTServiceMLX doesn't set is_final, so treat None as final (non-streaming)
             if is_final is True or is_final is None:
+                # Recap-now command: inject latest summary on demand
+                try:
+                    t = text.strip().lower()
+                    if any(kw in t for kw in ("recap", "summary", "summarize", "quick recap")):
+                        await self._inject_summary_context(direction)
+                except Exception as e:
+                    logger.warning(f"[HotMem] Recap injection failed: {e}")
                 logger.info(f"[HotMem] Processing transcription (is_final={is_final}): '{text}'")
                 await self._process_transcription(frame, direction)
                 
@@ -296,6 +363,55 @@ class HotPathMemoryProcessor(BaseProcessor):
             
         except Exception as e:
             logger.error(f"[HotMem] Failed to inject memory context: {e}")
+
+    async def _inject_summary_context(self, direction: FrameDirection):
+        """Fetch and inject the latest periodic/session summary as a system hint."""
+        try:
+            # Fetch latest summary from mention table
+            cur = getattr(self.store, 'sql', None).cursor()
+            sid = self._session_id
+            rows = cur.execute(
+                """
+                SELECT text FROM mention
+                WHERE eid IN (?, ?)
+                ORDER BY ts DESC LIMIT 1
+                """,
+                (f"summary:{sid}", f"session:{sid}")
+            ).fetchall()
+            if not rows:
+                return
+            summary_text = str(rows[0][0] or '').strip()
+            if not summary_text:
+                return
+            # Insert as a system message right after the first system
+            context = self._context_aggregator.user().context
+            try:
+                messages = list(getattr(context, 'messages', []))
+            except Exception:
+                messages = []
+            recap_header = "Recap from recent conversation:" 
+            recap_message = {"role": "system", "content": f"{recap_header}\n{summary_text}"}
+            # Remove any prior recap
+            filtered = []
+            for m in messages:
+                if isinstance(m, dict) and m.get('role') == 'system':
+                    content = m.get('content', '') or ''
+                    if isinstance(content, str) and content.startswith(recap_header):
+                        continue
+                filtered.append(m)
+            insert_idx = 0
+            for i, m in enumerate(filtered):
+                if isinstance(m, dict) and m.get('role') == 'system':
+                    insert_idx = i + 1
+                    break
+            new_messages = filtered[:insert_idx] + [recap_message] + filtered[insert_idx:]
+            if LLMMessagesUpdateFrame is not None:
+                await self.push_frame(LLMMessagesUpdateFrame(new_messages), direction)
+            else:
+                context.add_message(recap_message)
+            logger.info("[HotMem] Injected recap summary into context")
+        except Exception as e:
+            logger.warning(f"[HotMem] Failed to inject recap: {e}")
     
     def _log_metrics(self, elapsed_ms: float):
         """Log performance metrics periodically"""

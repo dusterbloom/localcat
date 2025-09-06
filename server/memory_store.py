@@ -63,6 +63,13 @@ class MemoryStore:
     
     def _init_databases(self):
         """Initialize SQLite and LMDB databases"""
+        # Ensure directory for SQLite file exists
+        try:
+            sql_dir = os.path.dirname(self.paths.sqlite_path or '')
+            if sql_dir:
+                os.makedirs(sql_dir, exist_ok=True)
+        except Exception:
+            pass
         # SQLite with optimal settings for write performance
         self.sql = sqlite3.connect(self.paths.sqlite_path, check_same_thread=False)
         self.sql.executescript("""
