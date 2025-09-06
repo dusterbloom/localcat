@@ -30,16 +30,17 @@ def run():
     # Favor clause decomposition during eval
     os.environ.setdefault('HOTMEM_DECOMPOSE_CLAUSES', 'true')
     os.environ.setdefault('HOTMEM_EXTRA_CONFIDENCE', 'false')
-    os.environ.setdefault('HOTMEM_CONFIDENCE_THRESHOLD', '0.0')
+    # Keep default threshold to avoid storing noisy facts during eval
+    # Override via env if needed
     with tempfile.TemporaryDirectory() as tdir:
         store = MemoryStore(Paths(sqlite_path=os.path.join(tdir, 'memory.db'), lmdb_dir=os.path.join(tdir, 'graph.lmdb')))
-        hot = HotMemory(store)
-        hot.prewarm('en')
-
         print("HotMem Extraction Evaluation (complex sentences)\n" + "="*60)
         clf = get_intent_classifier()
 
         for i, (name, text) in enumerate(TEST_CASES, 1):
+            # Fresh HotMemory per case to avoid cross-case coref bleed-through
+            hot = HotMemory(store)
+            hot.prewarm('en')
             bullets, triples = hot.process_turn(text, session_id="eval", turn_id=i)
             print(f"\n{i}. {name}")
             print(f"Input: {text}")

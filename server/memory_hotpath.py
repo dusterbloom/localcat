@@ -910,10 +910,15 @@ class HotMemory:
         }
         blocked_tokens = {"system prompt", "what time", "no-"}
 
+        pronoun_skip = {"he","she","they","him","her","them","who","whom","whose","which"}
+
         for entity in query_entities:
             if entity in self.entity_index:
                 candidates = list(self.entity_index[entity])
                 for s, r, d in candidates:
+                    # Skip bullets where subject is a pronoun-like placeholder
+                    if s in pronoun_skip:
+                        continue
                     # Filter out low-value relations and question scaffolding for injection
                     if r not in allowed_rels:
                         continue
@@ -1414,17 +1419,36 @@ class HotMemory:
                     return cand
             return None
 
+        def nearest_person_before(token_text: str) -> Optional[str]:
+            """Find nearest PERSON mention occurring before the first token match of token_text."""
+            try:
+                target = None
+                tnorm = _canon_entity_text(token_text)
+                for tok in doc:  # type: ignore[attr-defined]
+                    if _canon_entity_text(tok.text) == tnorm:
+                        target = tok.i
+                        break
+                if target is None:
+                    return None
+                cand = None
+                for ent in getattr(doc, 'ents', []) or []:
+                    if getattr(ent, 'label_', '') == 'PERSON' and ent.end <= target:
+                        cand = _canon_entity_text(ent.text)
+                return cand
+            except Exception:
+                return None
+
         for s, r, d in triples:
             rs = s
             rd = d
             # Resolve subjects
             if s not in {'you'} and self._resolve_pronoun(s, stack):
-                cand = prefer_recent_person() or (last_entity if last_entity != 'you' else None)
+                cand = prefer_recent_person() or nearest_person_before(s) or (last_entity if last_entity != 'you' else None)
                 if cand:
                     rs = cand
             # Resolve objects
             if d not in {'you'} and self._resolve_pronoun(d, stack):
-                cand = prefer_recent_person() or (last_entity if last_entity != 'you' else None)
+                cand = prefer_recent_person() or nearest_person_before(d) or (last_entity if last_entity != 'you' else None)
                 if cand:
                     rd = cand
 
