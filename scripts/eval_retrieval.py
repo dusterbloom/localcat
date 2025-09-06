@@ -35,8 +35,9 @@ def main():
     with tempfile.TemporaryDirectory() as tdir:
         store = MemoryStore(Paths(sqlite_path=os.path.join(tdir, 'memory.db'), lmdb_dir=os.path.join(tdir, 'graph.lmdb')))
         hot = HotMemory(store)
-        hot.rebuild_from_store()
+        # Seed first, then rebuild hot indices from store so retrieval can find facts
         seed(store)
+        hot.rebuild_from_store()
 
         bullets, _ = hot.process_turn(args.query, session_id='eval', turn_id=1)
         print("Query:", args.query)
@@ -47,4 +48,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

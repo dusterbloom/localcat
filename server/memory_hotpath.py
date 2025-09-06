@@ -762,6 +762,8 @@ class HotMemory:
                 return f"• You live in {d}"
             elif r == "works_at":
                 return f"• You work at {d}"
+            elif r == "born_in":
+                return f"• You were born in {d}"
             elif r == "friend_of":
                 return f"• You are a friend of {d}"
             elif r.startswith("v:"):
@@ -795,6 +797,8 @@ class HotMemory:
                 return f"• {s.title()} lives in {d}"
             elif r == "works_at":
                 return f"• {s.title()} works at {d}"
+            elif r == "born_in":
+                return f"• {s.title()} was born in {d}"
             elif r == "friend_of":
                 return f"• {s.title()} is a friend of {d}"
             elif r.startswith("v:"):

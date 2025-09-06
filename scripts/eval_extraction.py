@@ -13,6 +13,7 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'server'))
 
 from memory_hotpath import HotMemory
+from memory_intent import get_intent_classifier
 from memory_store import MemoryStore, Paths
 
 
@@ -26,17 +27,39 @@ TEST_CASES = [
 
 
 def run():
+    # Favor clause decomposition during eval
+    os.environ.setdefault('HOTMEM_DECOMPOSE_CLAUSES', 'true')
+    os.environ.setdefault('HOTMEM_EXTRA_CONFIDENCE', 'false')
+    os.environ.setdefault('HOTMEM_CONFIDENCE_THRESHOLD', '0.0')
     with tempfile.TemporaryDirectory() as tdir:
         store = MemoryStore(Paths(sqlite_path=os.path.join(tdir, 'memory.db'), lmdb_dir=os.path.join(tdir, 'graph.lmdb')))
         hot = HotMemory(store)
         hot.prewarm('en')
 
         print("HotMem Extraction Evaluation (complex sentences)\n" + "="*60)
+        clf = get_intent_classifier()
+
         for i, (name, text) in enumerate(TEST_CASES, 1):
             bullets, triples = hot.process_turn(text, session_id="eval", turn_id=i)
             print(f"\n{i}. {name}")
             print(f"Input: {text}")
-            print(f"Triples ({len(triples)}):")
+            # Also show raw/refined extraction independent of quality gating
+            try:
+                lang = hot._detect_language(text)
+                ents_raw, triples_raw, _neg, doc = hot._extract(text, lang)
+                intent = clf.analyze(text, lang)
+                triples_refined = hot._refine_triples(text, triples_raw, doc, intent, lang)
+            except Exception:
+                triples_raw = []
+                triples_refined = []
+
+            print(f"Raw triples ({len(triples_raw)}):")
+            for j, (s, r, d) in enumerate(triples_raw, 1):
+                print(f"  {j}. ({s}) -[{r}]-> ({d})")
+            print(f"Refined triples ({len(triples_refined)}):")
+            for j, (s, r, d) in enumerate(triples_refined, 1):
+                print(f"  {j}. ({s}) -[{r}]-> ({d})")
+            print(f"Stored triples ({len(triples)}):")
             for j, (s, r, d) in enumerate(triples, 1):
                 print(f"  {j}. ({s}) -[{r}]-> ({d})")
             print(f"Bullets ({len(bullets)}):")
@@ -46,4 +69,3 @@ def run():
 
 if __name__ == '__main__':
     run()
-
