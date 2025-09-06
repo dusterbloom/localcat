@@ -266,29 +266,33 @@ class HotMemory:
 
         doc = nlp(text)
 
+        # Always extract from the full doc first
+        ents_doc, trips_doc, neg_doc = self._extract_from_doc(doc)
+
+        # Optionally add clause spans (extractions merged/deduped)
+        ents_all: Set[str] = set(ents_doc)
+        trips_all: List[Tuple[str, str, str]] = list(trips_doc)
+        neg_total = int(neg_doc)
+
         use_decomp = os.getenv("HOTMEM_DECOMPOSE_CLAUSES", "false").lower() in ("1", "true", "yes")
         if use_decomp and _decompose_clauses is not None:
             try:
                 spans = _decompose_clauses(doc)
             except Exception:
                 spans = []
-            if spans:
-                ents_all: Set[str] = set()
-                trips_all: List[Tuple[str, str, str]] = []
-                neg_total = 0
-                for sp in spans:
-                    try:
-                        subdoc = sp.as_doc()
-                    except Exception:
-                        subdoc = doc
-                    ents, trips, negc = self._extract_from_doc(subdoc)
-                    ents_all.update(ents)
-                    trips_all.extend(trips)
-                    neg_total += negc
-                return list(ents_all), trips_all, neg_total, doc
+            for sp in spans or []:
+                try:
+                    subdoc = sp.as_doc()
+                except Exception:
+                    subdoc = doc
+                ents, trips, negc = self._extract_from_doc(subdoc)
+                ents_all.update(ents)
+                for t in trips:
+                    if t not in trips_all:
+                        trips_all.append(t)
+                neg_total += int(negc)
 
-        ents, trips, negc = self._extract_from_doc(doc)
-        return ents, trips, negc, doc
+        return list(ents_all), trips_all, neg_total, doc
 
     def _extract_from_doc(self, doc) -> Tuple[List[str], List[Tuple[str, str, str]], int]:
         """Internal: 27-pattern extraction over a spaCy Doc."""
@@ -1354,17 +1358,12 @@ class HotMemory:
     def _build_mention_stack(self, doc) -> List[str]:
         stack: List[str] = []
         try:
-            # Noun chunks and proper nouns in order of appearance
+            # Prefer named entities in order of appearance; avoid per-token PROPN noise.
             if doc is not None:
-                for chunk in getattr(doc, 'noun_chunks', []):
-                    txt = _canon_entity_text(chunk.text)
+                for ent in getattr(doc, 'ents', []) or []:
+                    txt = _canon_entity_text(ent.text)
                     if txt and txt not in stack:
                         stack.append(txt)
-                for tok in doc:
-                    if tok.pos_ == 'PROPN':
-                        txt = _canon_entity_text(tok.text)
-                        if txt and txt not in stack:
-                            stack.append(txt)
         except Exception:
             pass
         # Add recent entities from recency_buffer
@@ -1394,19 +1393,49 @@ class HotMemory:
 
     def _apply_coref_lite(self, triples: List[Tuple[str, str, str]], doc) -> List[Tuple[str, str, str]]:
         stack = self._build_mention_stack(doc)
+        # Build PERSON set for preference when resolving he/she/who/whose
+        person_set: Set[str] = set()
+        try:
+            for ent in getattr(doc, 'ents', []) or []:
+                if getattr(ent, 'label_', '') == 'PERSON':
+                    person_set.add(_canon_entity_text(ent.text))
+        except Exception:
+            pass
+
         out: List[Tuple[str, str, str]] = []
+        last_entity: Optional[str] = None
+        last_person: Optional[str] = None
+
+        def prefer_recent_person() -> Optional[str]:
+            if last_person:
+                return last_person
+            for cand in reversed(stack):
+                if cand in person_set and cand != 'you':
+                    return cand
+            return None
+
         for s, r, d in triples:
             rs = s
             rd = d
-            if s not in {'you'}:
-                rs2 = self._resolve_pronoun(s, stack)
-                if rs2:
-                    rs = rs2
-            if d not in {'you'}:
-                rd2 = self._resolve_pronoun(d, stack)
-                if rd2:
-                    rd = rd2
+            # Resolve subjects
+            if s not in {'you'} and self._resolve_pronoun(s, stack):
+                cand = prefer_recent_person() or (last_entity if last_entity != 'you' else None)
+                if cand:
+                    rs = cand
+            # Resolve objects
+            if d not in {'you'} and self._resolve_pronoun(d, stack):
+                cand = prefer_recent_person() or (last_entity if last_entity != 'you' else None)
+                if cand:
+                    rd = cand
+
             out.append((rs, r, rd))
+
+            # Update trackers after resolution
+            if rs and rs != 'you':
+                last_entity = rs
+                if rs in person_set:
+                    last_person = rs
+
         return out
 
     def _extract_entities_light(self, text: str) -> List[str]:
