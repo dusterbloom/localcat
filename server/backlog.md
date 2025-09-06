@@ -70,9 +70,70 @@
 
 ---
 
-## 🧩 New Task: Modularize HotMem + Reduce Technical Debt (post-integration)
+## 🎯 CURRENT PRIORITIES: HotMem Evolution Phase 2 (2025-09-06)
 
-Start this once `docs/hotmem_idea.md` is functionally validated with `server/memory_extraction_usgs.py` in the pipeline.
+### Critical Issues Identified from User Testing
+
+**Status**: Three key problems preventing production readiness
+
+### 1. 🚨 URGENT: Complex Sentence Extraction Failures
+
+**Problem**: HotMem struggles with longer, more complex sentences 
+- **Impact**: Critical facts missed from natural conversation patterns
+- **Examples**: 
+  - Complex queries like "Did I tell you that Potola is five years old?" 
+  - Multi-clause sentences with embedded facts
+  - Conditional/hypothetical statements confusing the parser
+- **Root Cause**: UD parsing limitations on conversational complexity
+- **Priority**: URGENT - blocks evolution
+- **Effort**: 1-2 days
+
+**Solution Approach**:
+- Profile spaCy parsing performance on complex sentences
+- Implement sentence decomposition for multi-clause handling  
+- Add confidence scoring for extraction quality
+- Consider hybrid approach: UD + LLM for complex cases
+
+### 2. 🔍 HIGH: Summary Storage & Retrieval Verification
+
+**Problem**: Summarizer functionality unclear - summaries may not be searchable
+- **Impact**: Session insights potentially lost, no long-term memory consolidation
+- **Current Status**: 
+  - ✅ `summarizer.py` exists and stores summaries to FTS
+  - ⚠️ No verification that summaries are retrievable via search
+  - ⚠️ No testing of summary quality or relevance
+- **Priority**: HIGH - affects long-term memory
+- **Effort**: 4-6 hours
+
+**Verification Needed**:
+- Test summary generation in real conversations
+- Verify summaries appear in memory search results  
+- Validate summary quality and relevance
+- Ensure proper FTS indexing and retrieval
+
+### 3. 🤔 MEDIUM: LEANN Integration Assessment
+
+**Problem**: LEANN semantic search value unclear - no index files generated
+- **Impact**: Missing potential semantic retrieval capabilities
+- **Current Status**:
+  - ✅ LEANN adapter exists (`leann_adapter.py`)
+  - ✅ Environment configured: `HOTMEM_USE_LEANN=true`
+  - ❌ No `.leann` files found in data directory
+  - ❌ `REBUILD_LEANN_ON_SESSION_END=false` - disabled
+- **Priority**: MEDIUM - potential enhancement
+- **Effort**: 1 day
+
+**Assessment Tasks**:
+- Enable LEANN rebuilding: `REBUILD_LEANN_ON_SESSION_END=true`
+- Test LEANN index generation and semantic search
+- Compare LEANN results vs. FTS-only retrieval
+- Measure performance impact vs. semantic benefits
+
+---
+
+## 🧩 DEFERRED: Modularize HotMem + Reduce Technical Debt (post-evolution)
+
+Start this once Phase 2 evolution issues are resolved.
 
 ### Goal
 Modularize the new memory subsystem and delete duplication to lower maintenance cost and enable pluggable extractors.

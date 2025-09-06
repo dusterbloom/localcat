@@ -13,11 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Universal Dependencies (UD) based extraction using spaCy
   - USGS Grammar-to-Graph 27-pattern coverage for comprehensive fact extraction
   - Real-time memory bullet injection directly into Pipecat context system
+- **Periodic Summarizer**: Real-time session summarization with configurable intervals
+  - 30-second periodic summaries stored in FTS for long-term memory
+  - Support for dedicated LM Studio endpoint configuration
+  - Configurable windowing modes (delta, turn_pairs, tail)
+  - Ollama thinking mode controls and reasoning parameters
+- **LEANN Semantic Search Integration**: Optional semantic vector search capability
+  - HNSW backend for fast similarity search
+  - Async index rebuilding with configurable complexity
+  - Integration with HotMem for enhanced retrieval
 - Comprehensive extraction testing and evaluation framework
-- **HotPathMemoryProcessor**: Pipecat-integrated processor for seamless memory injection
+- **HotPathMemoryProcessor**: Pipecat-integrated processor for seamless memory injection  
 - **Enhanced logging and debugging**: Frame tracing, performance metrics, extraction visibility
 - Reference materials: Grammar-to-Graph XML, USGS patterns, test datasets
 - Comprehensive technical debt documentation and cleanup guidelines
+- **Environment Variable Documentation**: Added ast-grep usage examples and thinking mode controls
 
 ### Changed
 - **Complete Memory Architecture Overhaul**: Replaced mem0 (2s latency) with HotMem (<200ms)
@@ -36,6 +46,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Empty Relation Extraction**: Fixed spaCy lemmatizer being disabled causing empty predicates
 - **Pipecat Frame Lifecycle**: Proper StartFrame handling and frame forwarding compliance
 - **Audio Frame Flooding**: Filtered audio frames from debug logs for readable output
+
+### Known Issues (2025-09-06)
+- **Complex Sentence Extraction**: UD parsing struggles with multi-clause/conditional sentences
+- **Summary Retrieval Verification**: Summarizer storage confirmed but retrieval testing needed
+- **LEANN Index Generation**: No `.leann` files generated (rebuild disabled by default)
 
 ### Removed
 - Removed automated startup script (start_osaurus.sh) in favor of manual setup

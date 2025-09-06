@@ -9,39 +9,42 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 
 ## Current Technical Debt
 
-### 🚀 HotMem Evolution Requirements (NEW - 2025-09-05)
+### 🎯 HotMem Evolution Phase 2 Issues (NEW - 2025-09-06)
 
-**Critical Performance Regression**  
-- **Issue**: 1041ms spike on complex question parsing ("Did I tell you that Potola is five years old?")
-- **Impact**: Breaks 200ms budget, blocks evolution features
-- **Root Cause**: Likely spaCy model loading or complex parsing inefficiency  
-- **Solution**: Profile parsing pipeline, optimize or cache expensive operations
-- **Priority**: URGENT
-- **Effort**: 2-4 hours
-
-**Poor Extraction Quality on Real Conversations**
-- **Issue**: 6.9/10 average quality, missing key facts, extracting useless relations
-- **Impact**: Degraded user experience, irrelevant memory bullets
+**Complex Sentence Extraction Failures**  
+- **Issue**: UD parsing struggles with multi-clause sentences and embedded facts
+- **Impact**: Missing critical information from natural conversation patterns
 - **Examples**: 
-  - `('you', 'tell', 'you')` instead of `('Potola', 'age', 'five years old')`
-  - Extracting facts from hypothetical statements ("If I had a cat...")
-- **Solution**: Intent classification + quality filtering + temporal awareness
-- **Priority**: High  
+  - Complex queries: "Did I tell you that Potola is five years old?"
+  - Multi-clause with embedded facts
+  - Conditional/hypothetical statements confusing parser
+- **Root Cause**: spaCy UD limitations on conversational complexity
+- **Solution**: Sentence decomposition, confidence scoring, hybrid UD+LLM approach
+- **Priority**: URGENT - blocks production use
 - **Effort**: 1-2 days
 
-**No Context-Aware Memory Intelligence**
-- **Issue**: No reinforcement for repeated facts, no temporal distinctions, no fact updates
-- **Impact**: Missed opportunity for intelligent memory that learns and adapts
-- **Solution**: Confidence scoring, temporal parsing, fact consolidation system  
-- **Priority**: High
-- **Effort**: 2-3 days
+**Summary Storage & Retrieval Unverified**
+- **Issue**: Summarizer stores to FTS but retrieval testing incomplete
+- **Impact**: Long-term memory consolidation potentially broken
+- **Current Status**: 
+  - ✅ `summarizer.py` stores summaries every 30 seconds
+  - ❌ No testing that summaries appear in search results
+  - ❌ No validation of summary quality/relevance
+- **Solution**: End-to-end testing of summary generation → storage → retrieval
+- **Priority**: HIGH - affects session continuity
+- **Effort**: 4-6 hours
 
-**Lack of Advanced Semantic Features**
-- **Issue**: Basic UD parsing without semantic clustering or entity disambiguation
-- **Impact**: Cannot leverage remaining 49ms budget for advanced features
-- **Solution**: Implement semantic clustering, cross-conversation threading, entity linking
-- **Priority**: Medium
-- **Effort**: 3-5 days
+**LEANN Integration Value Unknown**
+- **Issue**: LEANN semantic search configured but not generating indices
+- **Impact**: Missing potential semantic retrieval improvements
+- **Current Status**:
+  - ✅ `leann_adapter.py` exists, LEANN installed
+  - ✅ `HOTMEM_USE_LEANN=true` configured
+  - ❌ `REBUILD_LEANN_ON_SESSION_END=false` (disabled)
+  - ❌ No `.leann` files found in data directory
+- **Solution**: Enable LEANN rebuilding, benchmark semantic vs FTS performance
+- **Priority**: MEDIUM - enhancement opportunity
+- **Effort**: 1 day
 
 ### ⚠️ Remaining Startup Warnings
 
@@ -103,10 +106,11 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 
 ### 🔄 Error Handling
 
-**Silent Fallbacks**
-- **Issue**: Memory operations fail silently and continue with empty responses
-- **Impact**: User unaware of memory system failures, debugging difficulties
-- **Solution**: Proper error reporting, health checks, monitoring
+**Silent Fallbacks** [PARTIALLY RESOLVED - 2025-09-06]
+- **Issue**: ~~Memory operations fail silently and continue with empty responses~~ 
+- **Status**: ✅ HotMem has comprehensive logging and error handling
+- **Remaining**: Need health checks for external services (Ollama, LM Studio)
+- **Solution**: Service health monitoring, automatic restart mechanisms
 - **Priority**: Medium
 - **Effort**: 1 week
 
@@ -187,13 +191,13 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 
 | Issue | Impact | Effort | Priority |
 |-------|--------|--------|----------|
+| **HotMem Evolution Phase 2 (2025-09-06)** | | | |
+| Complex Sentence Extraction Failures | High | Medium | URGENT |
+| Summary Storage & Retrieval Unverified | Medium | Low | HIGH |
+| LEANN Integration Value Unknown | Low | Medium | MEDIUM |
 | **Remaining Warnings (External)** | | | |
 | WebSockets Legacy API (uvicorn) | Low | N/A | Low |
 | AudioOp Deprecation (pipecat) | Low | N/A | Low |
-| **Core System Issues** | | | |
-| LM Studio Context Accumulation | High | Low | High |
-| Memory Performance Degradation | High | Low | High |
-| Silent Fallbacks | Medium | Medium | Medium |
 | **Infrastructure** | | | |
 | Manual Osaurus Setup | Medium | Medium | Medium |
 | Environment Config Complexity | Medium | Medium | Medium |
@@ -201,7 +205,6 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 | No Integration Tests | Medium | High | Medium |
 | Process Management | Low | Medium | Low |
 | Mixed Dependencies | Low | High | Low |
-| Custom mem0 Service | Low | High | Low |
 
 ---
 
