@@ -374,10 +374,14 @@ class TestFramework:
             entities = immediate_results[i]['entities']
             triples = []
             
-            # Real LLM relation extraction via API call
+            # Real LLM relation extraction via sync HTTP call (non-blocking w.r.t. outer event loop)
             try:
-                relations = asyncio.run(self._extract_relations_real_llm(text, entities))
-                for rel in relations:
+                t0 = time.perf_counter()
+                relations = self._extract_relations_real_llm_sync(text, entities)
+                dt_ms = (time.perf_counter() - t0) * 1000
+                if relations:
+                    print(f"    ↳ LLM relations: {len(relations)} ( {dt_ms:.0f}ms )")
+                for rel in relations or []:
                     subj = rel.get('subject', '')
                     pred = rel.get('predicate', '')
                     obj = rel.get('object', '')
@@ -555,6 +559,96 @@ Entities found: {entity_list}"""
                     print(f"LM Studio error: {response.status_code}: {response.text}")
                     return []
                     
+        except Exception as e:
+            print(f"LLM request failed: {e}")
+            return []
+
+    def _extract_relations_real_llm_sync(self, text: str, entities: List[str]) -> List[Dict]:
+        """Synchronous version of relation extraction for environments with a running event loop."""
+        import json
+        import urllib.request
+        import urllib.error
+
+        if not entities:
+            return []
+
+        entity_list = ', '.join(entities[:5])
+        prompt = f"""You are an expert knowledge graph builder. Extract ALL factual relationships from text.
+
+Examples:
+Text: \"My dog Rex is brown\"
+Relations: [
+  {{\"subject\": \"user\", \"predicate\": \"has_pet\", \"object\": \"Rex\", \"confidence\": 0.9}},
+  {{\"subject\": \"Rex\", \"predicate\": \"is_a\", \"object\": \"dog\", \"confidence\": 1.0}},
+  {{\"subject\": \"Rex\", \"predicate\": \"has_color\", \"object\": \"brown\", \"confidence\": 1.0}}
+]
+
+Text: \"I work at Microsoft in Seattle\"
+Relations: [
+  {{\"subject\": \"user\", \"predicate\": \"works_at\", \"object\": \"Microsoft\", \"confidence\": 0.9}},
+  {{\"subject\": \"Microsoft\", \"predicate\": \"located_in\", \"object\": \"Seattle\", \"confidence\": 0.9}},
+  {{\"subject\": \"user\", \"predicate\": \"works_in\", \"object\": \"Seattle\", \"confidence\": 0.8}}
+]
+
+RULES:
+- \"I\", \"my\", \"me\" → \"user\" entity
+- Extract ownership, locations, occupations, names, attributes, relationships
+- Use predicates: has_pet, works_at, is_a, has_name, located_in, owns, employed_by, lives_in, is_named, has_color, has_occupation, etc.
+
+Now extract from: \"{text}\"
+Entities found: {entity_list}"""
+
+        request_data = {
+            "model": os.getenv("HOTMEM_LLM_ASSISTED_MODEL", os.getenv("SUMMARIZER_MODEL", os.getenv("OPENAI_MODEL", "qwen3:4b"))),
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 300,
+            "temperature": 0.0,
+            "stream": False,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "relation_extraction",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "relations": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "subject": {"type": "string"},
+                                        "predicate": {"type": "string"},
+                                        "object": {"type": "string"},
+                                        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+                                    },
+                                    "required": ["subject", "predicate", "object", "confidence"],
+                                    "additionalProperties": False
+                                }
+                            }
+                        },
+                        "required": ["relations"],
+                        "additionalProperties": False
+                    }
+                }
+            }
+        }
+
+        base_url = os.getenv("SUMMARIZER_BASE_URL") or os.getenv("OPENAI_BASE_URL", "http://127.0.0.1:11434/v1")
+        url = base_url.rstrip('/') + "/chat/completions"
+        data = json.dumps(request_data).encode('utf-8')
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY','')}"}
+        req = urllib.request.Request(url, data=data, headers=headers, method='POST')
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                body = resp.read().decode('utf-8')
+                obj = json.loads(body)
+                raw = ((obj.get('choices') or [{}])[0].get('message') or {}).get('content') or ''
+                try:
+                    parsed = json.loads(raw)
+                    return parsed.get('relations', []) if isinstance(parsed, dict) else []
+                except json.JSONDecodeError:
+                    print(f"JSON parse error, raw: {raw[:100]}")
+                    return []
         except Exception as e:
             print(f"LLM request failed: {e}")
             return []

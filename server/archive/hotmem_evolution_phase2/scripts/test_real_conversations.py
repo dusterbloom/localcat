@@ -129,7 +129,9 @@ def run():
         sid = "real-e2e"
 
         messages: List[Dict[str, str]] = []
+        assisted_on = os.getenv('HOTMEM_LLM_ASSISTED','false').lower() in ('1','true','yes')
         print("\n===== Real Conversation E2E with True Summaries =====")
+        print(f"Assisted extractor: {'ON' if assisted_on else 'OFF'}")
 
         for i, m in enumerate(CONVO, start=1):
             messages.append(m)
@@ -184,6 +186,18 @@ def run():
                     print("   ⤷", s[:200].replace('\n',' ') + ("..." if len(s) > 200 else ""))
             if not kg and not fts:
                 print("  (no results — ensure facts and summaries were stored)")
+
+        # Print assisted metrics if enabled
+        try:
+            m = hot.get_metrics()
+            if assisted_on:
+                calls = m.get('assisted_calls', 0)
+                succ = m.get('assisted_success', 0)
+                ms = (m.get('assisted_ms') or {}).get('mean', 0)
+                p95 = (m.get('assisted_ms') or {}).get('p95', 0)
+                print(f"\nAssisted stats: calls={calls} success={succ} mean_ms={ms:.1f} p95_ms={p95:.1f}")
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
