@@ -9,7 +9,7 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 
 ## Current Technical Debt
 
-### 🎯 HotMem Evolution Phase 2 Issues (NEW - 2025-09-06)
+### 🎯 HotMem Evolution Phase 2/3 Issues (Updated - 2025-09-06)
 
 **Complex Sentence Extraction Failures**  
 - **Issue**: UD parsing struggles with multi-clause sentences and embedded facts
@@ -23,16 +23,16 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 - **Priority**: URGENT - blocks production use
 - **Effort**: 1-2 days
 
-**Summary Storage & Retrieval Unverified**
+**Summary Storage & Retrieval Hardening**
 - **Issue**: Summarizer stores to FTS but retrieval testing incomplete
 - **Impact**: Long-term memory consolidation potentially broken
 - **Current Status**: 
   - ✅ `summarizer.py` stores summaries every 30 seconds
-  - ❌ No testing that summaries appear in search results
-  - ❌ No validation of summary quality/relevance
-- **Solution**: End-to-end testing of summary generation → storage → retrieval
+  - ✅ Fusion path can include summary snippets; orchestrator has `CONTEXT_INCLUDE_SUMMARY`
+  - ❌ Strict formatting missing; snippets can be noisy
+- **Solution**: Strict prompt (“Key Facts / Topics / Open Loops”), TTL/pruning, simple quality gate before write
 - **Priority**: HIGH - affects session continuity
-- **Effort**: 4-6 hours
+- **Effort**: 6–10 hours
 
 **LEANN Integration Value Unknown**
 - **Issue**: LEANN semantic search configured but not generating indices
@@ -45,6 +45,20 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 - **Solution**: Enable LEANN rebuilding, benchmark semantic vs FTS performance
 - **Priority**: MEDIUM - enhancement opportunity
 - **Effort**: 1 day
+
+**Per-turn Context Packing on All Turns**
+- **Issue**: Orchestrator currently runs packing on turns with memory bullets; dialogue-only turns can grow
+- **Impact**: Risk of exceeding soft token budgets on long chit-chat
+- **Solution**: Always pack per final transcription; skip memory/summary sections if empty
+- **Priority**: MEDIUM
+- **Effort**: 2–4 hours
+
+**Deterministic Utilities**
+- **Issue**: Trivial questions (e.g., count letters) still go to LLM
+- **Impact**: Occasional accuracy drift
+- **Solution**: Add pre-LLM deterministic guards for counts/dates/simple math when high confidence
+- **Priority**: MEDIUM
+- **Effort**: 2–4 hours
 
 ### ⚠️ Remaining Startup Warnings
 
@@ -109,7 +123,7 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 **Silent Fallbacks** [PARTIALLY RESOLVED - 2025-09-06]
 - **Issue**: ~~Memory operations fail silently and continue with empty responses~~ 
 - **Status**: ✅ HotMem has comprehensive logging and error handling
-- **Remaining**: Need health checks for external services (Ollama, LM Studio)
+- **Remaining**: Need health checks with exponential backoff for external services (Ollama, LM Studio); degrade banners
 - **Solution**: Service health monitoring, automatic restart mechanisms
 - **Priority**: Medium
 - **Effort**: 1 week
@@ -216,7 +230,7 @@ When addressing technical debt:
 3. Document the solution in changelog.md
 4. Consider if the fix creates new technical debt
 
-Last updated: 2025-09-05
+Last updated: 2025-09-06
 
 ## 🎉 Recent Success: Major Cleanup Complete!
 

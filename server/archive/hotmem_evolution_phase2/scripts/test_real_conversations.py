@@ -79,6 +79,46 @@ def search_summaries(store: MemoryStore, query: str, limit: int = 3) -> List[str
     return [text for (text, eid) in res if eid.startswith('summary:')]
 
 
+def build_leann_index_for_summaries(store: MemoryStore, session_id: str, index_path: str) -> int:
+    try:
+        from leann.api import LeannBuilder  # type: ignore
+    except Exception:
+        return 0
+    cur = store.sql.cursor()
+    rows = cur.execute(
+        "SELECT text FROM mention WHERE eid=? ORDER BY ts ASC",
+        (f"summary:{session_id}",)
+    ).fetchall()
+    if not rows:
+        return 0
+    os.makedirs(os.path.dirname(index_path), exist_ok=True)
+    builder = LeannBuilder(backend_name=os.getenv('LEANN_BACKEND','hnsw'))
+    count = 0
+    for (text,) in rows:
+        if text:
+            builder.add_text(str(text), {'type': 'summary', 'sid': session_id})
+            count += 1
+    builder.build_index(index_path)
+    return count
+
+
+def semantic_search_summaries(index_path: str, query: str, k: int = 3) -> List[str]:
+    try:
+        from leann.api import LeannSearcher  # type: ignore
+    except Exception:
+        return []
+    if not os.path.exists(index_path):
+        return []
+    s = LeannSearcher(index_path)
+    results = s.search(query, top_k=k, complexity=int(os.getenv('HOTMEM_LEANN_COMPLEXITY','16')))
+    out = []
+    for r in results:
+        t = getattr(r, 'text', None)
+        if t:
+            out.append(str(t))
+    return out
+
+
 def run():
     with tempfile.TemporaryDirectory() as tdir:
         store = MemoryStore(Paths(
@@ -108,7 +148,15 @@ def run():
         print("\n📋 Generating final summary")
         generate_and_store_summary(messages, store, sid, len(CONVO))
 
-        # Retrieval across KG + Summaries
+        # Optionally build semantic index over summaries
+        use_sem = os.getenv('HOTMEM_USE_LEANN_SUMMARIES','true').lower() in ('1','true','yes')
+        idx_path = os.path.join(tdir, 'summary_vectors.leann')
+        if use_sem:
+            n = build_leann_index_for_summaries(store, sid, idx_path)
+            if n:
+                print(f"🔧 Built LEANN summary index with {n} summaries")
+
+        # Retrieval across KG + Summaries (lexical + optional semantic)
         queries = [
             "who works at microsoft",
             "what car does sarah drive",
@@ -120,6 +168,7 @@ def run():
             ents = [w.lower() for w in q.split() if len(w) > 2 and w.isalpha()][:6]
             kg = hot._retrieve_context(q, ents, turn_id=999, intent=None)
             fts = search_summaries(store, q, limit=2)
+            sem = semantic_search_summaries(idx_path, q, k=2) if use_sem else []
             print(f"\n🔎 Query: {q}")
             if kg:
                 print("  KG Bullets:")
@@ -129,10 +178,13 @@ def run():
                 print("  Summary Hits:")
                 for s in fts:
                     print("   ⤷", s[:200].replace('\n',' ') + ("..." if len(s) > 200 else ""))
+            if sem:
+                print("  Semantic Summary Hits:")
+                for s in sem:
+                    print("   ⤷", s[:200].replace('\n',' ') + ("..." if len(s) > 200 else ""))
             if not kg and not fts:
                 print("  (no results — ensure facts and summaries were stored)")
 
 
 if __name__ == '__main__':
     run()
-

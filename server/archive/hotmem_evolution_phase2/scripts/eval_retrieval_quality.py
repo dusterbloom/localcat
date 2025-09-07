@@ -46,14 +46,15 @@ def seed_kg(store: MemoryStore):
 Query = Tuple[str, List[str]]  # (query, relevant substrings)
 
 GOLD: List[Query] = [
-    ("who works at microsoft", ["works at microsoft", "work at microsoft"]),
+    ("who works at microsoft", ["works at microsoft", "work at microsoft", "you work at microsoft"]),
     ("where does tom live", ["lives in portland", "tom lives in portland", "brother lives in portland"]),
-    ("what is my dog's name", ["luna", "dog's name is luna"]),
+    ("what is my dog's name", ["dog's name is luna", "luna"]),
     ("how old is luna", ["3 years", "3 years old"]),
-    ("what car do i drive", ["tesla model 3", "have tesla"]),
-    ("what is my favorite color", ["favorite color is purple", "purple"]),
-    ("what is my lucky number", ["favorite number is 7", "number is 7", "7"]),
+    ("what car do i drive", ["tesla model 3", "you have tesla", "you have tesla model 3"]),
+    ("what is my favorite color", ["favorite color is purple", "your favorite color is purple", "purple"]),
+    ("what is my lucky number", ["favorite number is 7", "your favorite number is 7", "number is 7", "7"]),
     ("where does my brother teach", ["teach at reed", "reed college"]),
+    ("tell me about my dog luna", ["dog's name is luna", "luna", "you have dog"]),
 ]
 
 
@@ -68,7 +69,8 @@ def score_run(hot: HotMemory, K: int = 5) -> Dict[str, float]:
     for (q, rel_subs) in GOLD:
         t0 = time.perf_counter()
         # Heuristic entity selection: choose entity_index keys that fuzzy-match query tokens
-        toks = [w.lower() for w in q.split() if len(w) > 2]
+        import re
+        toks = re.findall(r"[a-z0-9]+", q.lower())
         keys = list(hot.entity_index.keys())
         ents = []
         for k in keys:
@@ -124,7 +126,7 @@ def score_run(hot: HotMemory, K: int = 5) -> Dict[str, float]:
                     break
         diversity_counts.append(len(uniq))
 
-    return {
+    metrics = {
         'P@5': sum(hits)/len(hits),
         'MRR': sum(rr_list)/len(rr_list),
         'MAP': sum(ap_list)/len(ap_list),
@@ -132,6 +134,10 @@ def score_run(hot: HotMemory, K: int = 5) -> Dict[str, float]:
         'Diversity': sum(diversity_counts)/len(diversity_counts),
         'Latency_ms': sum(lat_ms)/len(lat_ms),
     }
+    # Optional per-query breakdown
+    if os.getenv('RETRIEVAL_EVAL_VERBOSE', 'false').lower() in ('1','true','yes'):
+        print(f"Evaluated {len(GOLD)} queries; avg latency {metrics['Latency_ms']:.2f}ms")
+    return metrics
 
 
 def run_ab(leann: bool) -> Dict[str, float]:

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Prompt & Context Orchestrator (2025-09-06)
+- Budgeted context packing with ordered sections: System → Memory → Summary → Dialogue
+- Section trimming with token-budget slices via `CONTEXT_BUDGET_TOKENS`
+- Env-driven A/B prompts via `PROMPT_VARIANT=base|free`
+- Optional file-based prompt override: `LIBERATION_TOP_SYSTEM_PROMPT_FILE`
+- Mandatory Memory Policy appended to any variant to prevent fact fabrication and drift
+
+### Added - Retrieval Fusion & Normalizations (2025-09-06)
+- Retrieval fusion across KG + FTS + LEANN (optional) with MMR relation diversity
+- Query synonym expansion (drive→has, teach→teach_at, work→works_at) and vehicle heuristics
+- Normalizations: `(you, name, X)` alias mapping; teach_at (ORG bias); age guard; drive→has
+
+### Added - On-demand Reasoning & Output Sanitizer (2025-09-06)
+- Per-turn reasoning hint (“/think”, “think step by step”) for brief public rationale (≤3 bullets), no private CoT
+- SanitizerProcessor strips control tokens like `/no_think` from assistant output before TTS
+
+### Config
+- New envs: `PROMPT_VARIANT`, `CONTEXT_BUDGET_TOKENS`, `CONTEXT_INCLUDE_SUMMARY`, `LIBERATION_TOP_SYSTEM_PROMPT_FILE`
+
 ### Added - HotMem Evolution Phase 2 (2025-09-06)
 - **Real-Time Correction System**: Language-agnostic fact correction achieving 67%+ success rate
   - Universal Dependencies-based correction across 27 extraction patterns
@@ -47,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Environment Variable Documentation**: Added ast-grep usage examples and thinking mode controls
 
 ### Changed
+- Memory injection now uses context orchestrator packing; Sanitizer inserted between LLM and TTS
 - **Complete Memory Architecture Overhaul**: Replaced mem0 (2s latency) with HotMem (<200ms)
 - **Proper Pipecat Integration**: HotMem now uses context aggregator for memory injection
 - **Pipeline Optimization**: Moved memory processor before context aggregator for correct frame flow
@@ -58,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Session Management**: Enhanced isolation across all components (memory, summarizer, correction)
 
 ### Fixed - Phase 2 Critical Issues (2025-09-06)
+- Alias mapping on `(you,name,X)` enables correct car possession retrieval (“what car does Sarah drive”)
 - **Session Context Pollution**: Added session_id parameter to LM Studio API calls  
 - **Model Cache Interference**: Implemented cache clearing between correction test scenarios
 - **Correction Pattern Recognition**: Replaced generic regex with 27-pattern UD-based extraction

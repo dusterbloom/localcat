@@ -191,6 +191,68 @@ SUMMARIZER_LOG_SUMMARIES=true  # Enable for testing
 
 This plan directly addresses the two critical issues identified while maintaining the <200ms performance budget and building on the existing HotMem architecture.
 
+---
+
+## ✅ COMPLETED: Prompt + Context Orchestrator (2025-09-06)
+
+### Deliverables
+- Budgeted context packing with strict order: System → Memory (KG) → Summary → Dialogue
+- Section headers and trimming with token budget slices (env-driven)
+- Env toggles:
+  - `PROMPT_VARIANT=base|free`
+  - `CONTEXT_BUDGET_TOKENS=4096|8192|16384`
+  - `CONTEXT_INCLUDE_SUMMARY=true|false`
+  - `LIBERATION_TOP_SYSTEM_PROMPT_FILE` (safe file-based custom prompt)
+- Mandatory Memory Policy appended to any variant (prevents drift and fact fabrication)
+- Test harness updates and scripts archived under `server/archive/hotmem_evolution_phase2/`
+
+### Rationale
+Keeps long conversations fast and relevant under a hard token cap; ensures the LLM sees the right facts first with predictable ordering.
+
+---
+
+## ✅ COMPLETED: Retrieval Fusion + Extraction Normalizations (2025-09-06)
+
+### Enhancements
+- Fusion of KG + FTS + (optional) LEANN summaries with MMR diversity
+- Query synonym expansion (drive→has, teach→teach_at, work→works_at)
+- Predicate priority calibration (contextual boost for `has` on car/drive queries)
+- Vehicle heuristic bump for `has` triples with car-like objects
+- Normalizations: `(you, name, X)` alias mapping; teach_at (ORG-biased); age guard for “N years old”; drive→has
+
+### Outcomes
+- “what car does Sarah drive” now hits `(you, has, tesla model 3)` via alias
+- “how old is Luna” stabilized (no batch-text false positives)
+
+---
+
+## ✅ COMPLETED: Output Sanitization + On-demand Reasoning (2025-09-06)
+
+### Added
+- `SanitizerProcessor` between LLM and TTS to strip control tags like `/no_think` from assistant output
+- Per-turn reasoning hint: user can say “/think” or “think step by step” to receive a brief, public rationale (≤3 bullets) for that turn only; no private chain-of-thought
+
+---
+
+## NEXT: Summarizer Hardening & Health (Phase 3)
+
+### Hardening
+- Update summarizer prompt to strict “Key Facts / Topics / Open Loops” format; gate write with a simple quality heuristic
+- TTL/Pruning: `SUMMARIZER_TTL_DAYS`, `SUMMARIZER_KEEP_PER_SESSION`
+- Keep `CONTEXT_INCLUDE_SUMMARY=false` during tuning; re-enable once format is strict
+
+### Health & Degrade
+- Periodic health checks for `OPENAI_BASE_URL` and `SUMMARIZER_BASE_URL` with exponential backoff
+- Emit a one-line degrade banner and skip gracefully when offline
+
+### Retrieval Calibration
+- Cap ≤1 bullet per relation unless score gap is high; run A/B via `eval_retrieval_quality.py`
+
+### Tooling & Determinism
+- Add short tool snippets section in pack order (future)
+- Pre-LLM deterministic guards for simple queries (e.g., “how many X in Y”) for perfect accuracy
+
+
 ## ✅ COMPLETED: HotMem Ultra-Fast Memory System (2025-09-05)
 
 ### 🎉 Major Success - Replaced mem0 with HotMem

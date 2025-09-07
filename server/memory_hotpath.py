@@ -260,6 +260,10 @@ class HotMemory:
                 try:
                     if (s == self.user_eid) and (r == 'name') and d:
                         self.store.enqueue_alias(str(d), self.user_eid)
+                        # Also persist an explicit alias edge for immediate in-memory expansion
+                        self.store.observe_edge(self.user_eid, 'also_known_as', str(d), max(confidence, 0.6), now_ts)
+                        self.entity_index[self.user_eid].add((self.user_eid, 'also_known_as', str(d)))
+                        self.entity_index[str(d)].add((self.user_eid, 'also_known_as', str(d)))
                         self.store.flush_if_needed()
                 except Exception:
                     pass
@@ -934,6 +938,17 @@ class HotMemory:
                     out.add(w)
             return out
         qtok = _tokens(query)
+        # Query synonym expansion to improve lexical recall
+        try:
+            ql = (query or '').lower()
+            if any(w in qtok for w in {'drive', 'drives', 'driving'}):
+                qtok.add('has')  # driving often implies possession in our KB
+            if any(w in qtok for w in {'teach', 'teaches', 'teaching'}):
+                qtok.add('teach_at')
+            if 'work' in qtok or 'works' in qtok:
+                qtok.add('works_at')
+        except Exception:
+            pass
 
         # Optional: LEANN similarity scores map for this query (KG triples only)
         leann_scores: Dict[Tuple[str, str, str], float] = {}
@@ -1001,6 +1016,9 @@ class HotMemory:
             "has": 0.60,
             "is": 0.55,
         }
+        # Contextual boost for possession if query asks about cars/driving
+        if any(tok in qtok for tok in {"car", "drive", "drives", "driving"}):
+            pred_pri["has"] = max(pred_pri.get("has", 0.6), 0.88)
 
         # Weights (env tunable later)
         # Temporal-first: recency heavily dominates to ensure fresh facts win
@@ -1059,6 +1077,15 @@ class HotMemory:
                             inter = len(qtok & stok)
                             union = len(qtok | stok)
                             sem = inter / union if union else 0.0
+                    # Heuristic: if query is about cars/driving and this is a possession that looks like a vehicle, boost semantic
+                    if r == 'has' and any(tok in qtok for tok in {'car','drive','drives','driving'}):
+                        dl = (d or '').lower()
+                        vehicle_cues = {
+                            'tesla','model','bmw','audi','ford','toyota','honda','subaru','mercedes','volkswagen','vw',
+                            'volvo','kia','hyundai','jeep','chevy','chevrolet','porsche','mustang','civic','accord','camry','prius','sedan','suv','hatchback','coupe'
+                        }
+                        if any(cue in dl for cue in vehicle_cues):
+                            sem = min(1.0, sem + 0.20)
                     w = float(meta.get('weight', 0.3))
                     score = alpha * pri + beta * rec + gamma * sem + delta * w
                     scored_all.append((score, ts, 'kg', (s, r, d)))
@@ -1377,6 +1404,7 @@ class HotMemory:
 
     def _refine_triples(self, text: str, triples: List[Tuple[str, str, str]], doc, intent=None, lang: str = "en") -> List[Tuple[str, str, str]]:
         t = (text or "").lower()
+        orig = text or ""
         refined: List[Tuple[str, str, str]] = []
 
         # Name patterns from raw text (more reliable than dep combos alone)
@@ -1389,6 +1417,17 @@ class HotMemory:
         if m:
             name = _canon_entity_text(m.group(1))
             refined.append(("you", "name", name))
+
+        # 1b) I'm X / I am X → treat X as a name (fallback without NER)
+        m_iam = None
+        try:
+            m_iam = __import__("re").search(r"\bI(?:'m| am)\s+([A-Z][A-Za-z\-']{1,30})\b", orig)
+        except Exception:
+            m_iam = None
+        if m_iam:
+            nm = _canon_entity_text(m_iam.group(1))
+            if nm and nm not in {"i", "am"}:
+                refined.append(("you", "name", nm))
 
         # 2) My dog's name is X
         md = None
