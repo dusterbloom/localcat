@@ -8,11 +8,16 @@ so existing commands keep working after archiving.
 import os
 import sys
 import asyncio
+from dotenv import load_dotenv
 import importlib.util
 
 
 def main():
     base = os.path.dirname(__file__)
+    # Load server/.env so tests pick up LM Studio / assisted settings
+    env_path = os.path.abspath(os.path.join(base, '..', 'server', '.env'))
+    if os.path.exists(env_path):
+        load_dotenv(env_path, override=True)
     arch_scripts = os.path.abspath(os.path.join(base, '..', 'server', 'archive', 'hotmem_evolution_phase2', 'scripts'))
     arch_file = os.path.join(arch_scripts, 'test_megaflow.py')
     # Ensure local server/ is importable for archived modules (memory_store, etc.)
