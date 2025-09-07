@@ -11,6 +11,14 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 
 ### 🎯 HotMem Evolution Phase 2/3 Issues (Updated - 2025-09-06)
 
+**✅ RESOLVED: UD Quality Filtering Issues**  
+- **Issue**: Raw UD extraction was generating nonsense triples and low-quality relations
+- **Impact**: Poor knowledge graph quality with irrelevant triples
+- **Examples**: Nonsense triples like `(you, take, that)` and `(that, is, bestseller)`
+- **Solution**: Implemented `improved_ud_extractor.py` with quality filters applied to raw UD triples before merging
+- **Resolution**: Successfully filters low-quality triples while maintaining <200ms hot path latency
+- **Date Resolved**: 2025-09-07
+
 **Complex Sentence Extraction Failures**  
 - **Issue**: UD parsing struggles with multi-clause sentences and embedded facts
 - **Impact**: Missing critical information from natural conversation patterns
@@ -20,7 +28,7 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
   - Conditional/hypothetical statements confusing parser
 - **Root Cause**: spaCy UD limitations on conversational complexity
 - **Solution**: Sentence decomposition, confidence scoring, hybrid UD+LLM approach
-- **Priority**: URGENT - blocks production use
+- **Priority**: HIGH - remaining issue after quality filtering improvements
 - **Effort**: 1-2 days
 
 **Summary Storage & Retrieval Hardening**

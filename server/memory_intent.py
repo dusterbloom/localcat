@@ -245,8 +245,8 @@ class QualityFilter:
         # Score based on relation quality
         confidence = 0.5  # Base score
         
-        # Boost for specific relations
-        if r in {"name", "age", "lives_in", "works_at", "favorite_color"}:
+        # Boost for specific relations (high-value, low-ambiguity)
+        if r in {"name", "age", "lives_in", "works_at", "teach_at", "born_in", "moved_from", "went_to", "favorite_color", "favorite_number", "also_known_as", "owns"}:
             confidence += 0.3
         elif r.startswith("v:") and len(r) > 3:  # Specific verbs
             confidence += 0.2

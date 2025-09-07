@@ -125,6 +125,89 @@ Memory is automatically:
 
 See `backlog.md` for development notes and `changelog.md` for version history.
 
+## HotMem SRL Mode (Experimental)
+
+HotMem can enrich extraction with a semantic-role layer for better language-agnostic meaning:
+
+- Universal roles: agent, patient, destination, source, location, temporal, cause
+- Cross-lingual relation normalization via sentence-transformers (optional)
+- Language-agnostic graph patterns based on UD dependencies, not surface forms
+
+Enable with env vars in `server/.env`:
+
+```
+# Prefer SRL-first extraction and fuse with UD patterns
+HOTMEM_USE_SRL=true
+
+# Optional: multilingual relation embed model for relation labels
+# Defaults to paraphrase-multilingual-MiniLM-L12-v2
+HOTMEM_REL_EMBED_MODEL=paraphrase-multilingual-MiniLM-L12-v2
+```
+
+Install optional deps:
+
+```
+pip install -r requirements.txt  # includes sentence-transformers
+```
+
+SRL is fused with existing UD 27-pattern extraction for robustness. If the embed model is unavailable, SRL falls back to heuristics for relation names or the predicate lemma.
+
+### ONNX NER / SRL (Advanced)
+
+For the highest-quality, fully local extraction, you can add ONNX models:
+
+- NER: Per-token BIO tagger (e.g., B-PER/I-LOC) enriches entity mapping with precise spans.
+- SRL: BIO SRL tagger (e.g., B-V, B-ARG0, B-ARG1, B-ARGM-TMP) yields predicate roles directly.
+
+Config in `server/.env`:
+
+```
+# NER
+HOTMEM_USE_ONNX_NER=true
+HOTMEM_ONNX_NER_MODEL=/abs/path/to/ner.onnx
+HOTMEM_ONNX_NER_LABELS=/abs/path/to/ner_labels.txt  # one label per line
+HOTMEM_ONNX_NER_TOKENIZER=bert-base-cased
+
+# SRL
+HOTMEM_USE_ONNX_SRL=true
+HOTMEM_ONNX_SRL_MODEL=/abs/path/to/srl.onnx
+HOTMEM_ONNX_SRL_LABELS=/abs/path/to/srl_labels.txt  # one label per line
+HOTMEM_ONNX_SRL_TOKENIZER=bert-base-cased
+```
+
+Requirements are included in `requirements.txt` (onnxruntime, transformers). Models must be local; no network calls are made.
+
+How it integrates:
+- NER spans map to spaCy tokens via char offsets, enriching the `entity_map` used by UD extraction.
+- SRL tagger runs first when enabled, producing universal roles → canonical relations; then UD and (optional) SRL heuristics fuse results.
+
+### ReLiK (Optional)
+
+ReLiK provides fast, high‑quality relation extraction via HF models.
+Enable it (off by default) to add a high‑recall relation layer.
+
+```
+HOTMEM_USE_RELIK=true
+HOTMEM_RELIK_MODEL_ID=relik-ie/relik-relation-extraction-small   # or "...-large"
+HOTMEM_RELIK_DEVICE=cpu                                         # or cuda
+```
+
+Integration details:
+- Uses a local HF model to extract triples. If an official ReLiK Python API is available, you can swap the adapter easily.
+- The adapter canonicalizes common relations (works_at, lives_in, teach_at, born_in, moved_from, went_to, married_to) and fuses with SRL/UD.
+- Facts from ReLiK get provenance "relik" and are scored accordingly in retrieval.
+
+### Neural Coreference (Optional)
+
+Enable a small, local neural coref model to improve pronoun/relative resolution:
+
+```
+HOTMEM_USE_COREF=true
+HOTMEM_COREF_DEVICE=cpu   # or cuda if available
+```
+
+This runs fastcoref locally and only touches triples when a clear non‑pronoun antecedent exists (keeps `you` intact). It improves multi‑clause discourse and cross‑sentence references.
+
 ### Critical FrameProcessor Implementation Rules
 
 NEVER ignore these patterns when creating custom processors:

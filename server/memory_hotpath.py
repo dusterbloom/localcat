@@ -12,13 +12,54 @@ import math
 import heapq
 from dataclasses import dataclass
 import statistics
+import json
+import urllib.request
+import urllib.error
 
 from loguru import logger
 import spacy
 from spacy.tokens import Token
+try:
+    from unidecode import unidecode  # type: ignore
+except Exception:
+    def unidecode(s: str) -> str:  # type: ignore
+        return s
 
 from memory_store import MemoryStore
 from memory_intent import get_intent_classifier, get_quality_filter, IntentType
+try:
+    from semantic_roles import SRLExtractor  # type: ignore
+except Exception:
+    SRLExtractor = None  # Optional SRL layer
+try:
+    from onnx_nlp import OnnxTokenNER, OnnxSRLTagger  # type: ignore
+except Exception:
+    OnnxTokenNER = None
+    OnnxSRLTagger = None
+try:
+    from hotmem_extractor import HotMemExtractor  # type: ignore
+except Exception:
+    HotMemExtractor = None
+try:
+    from enhanced_hotmem_extractor import EnhancedHotMemExtractor  # type: ignore
+except Exception:
+    EnhancedHotMemExtractor = None
+try:
+    from hybrid_spacy_llm_extractor import HybridRelationExtractor  # type: ignore
+except Exception:
+    HybridRelationExtractor = None
+try:
+    from enhanced_bullet_formatter import EnhancedBulletFormatter  # type: ignore
+except Exception:
+    EnhancedBulletFormatter = None
+try:
+    from improved_ud_extractor import ImprovedUDExtractor  # type: ignore
+except Exception:
+    ImprovedUDExtractor = None
+try:
+    from fastcoref import FCoref  # type: ignore
+except Exception:
+    FCoref = None
 try:
     from memory_decomposer import decompose as _decompose_clauses  # type: ignore
 except Exception:
@@ -113,6 +154,12 @@ class HotMemory:
         self.recency_buffer = deque(maxlen=max_recency)  # Recent interactions
         self.entity_cache = {}  # Canonical entity mapping
         self.edge_meta: Dict[Tuple[str, str, str], Dict[str, Any]] = {}  # (s,r,d) -> {ts, weight}
+        # Enhanced bullet formatter
+        self.bullet_formatter = EnhancedBulletFormatter() if EnhancedBulletFormatter else None
+        
+        # Improved UD extractor for quality filtering
+        self.ud_processor = ImprovedUDExtractor() if ImprovedUDExtractor else None
+        
         # Optional LEANN semantic search
         self.use_leann = os.getenv("HOTMEM_USE_LEANN", "false").lower() in ("1", "true", "yes")
         self.leann_index_path = os.getenv("LEANN_INDEX_PATH", os.path.join(os.path.dirname(__file__), '..', 'data', 'memory_vectors.leann'))
@@ -121,6 +168,24 @@ class HotMemory:
         self.leann_complexity = int(os.getenv("HOTMEM_LEANN_COMPLEXITY", "16"))
         self._leann_searcher = None
         self._leann_loaded_mtime = 0.0
+        
+        # Optional LLM-assisted micro-refiner (tiny model) for hard extractions
+        self.assisted_enabled = os.getenv("HOTMEM_LLM_ASSISTED", "false").lower() in ("1","true","yes")
+        self.assisted_model = os.getenv("HOTMEM_LLM_ASSISTED_MODEL", "google/gemma-3-270m")
+        # Prefer explicit assisted base URL; else reuse summarizer base (LM Studio) if set; else OPENAI_BASE_URL (e.g., Ollama)
+        self.assisted_base_url = (
+            os.getenv("HOTMEM_LLM_ASSISTED_BASE_URL")
+            or os.getenv("SUMMARIZER_BASE_URL")
+            or os.getenv("OPENAI_BASE_URL", "http://127.0.0.1:11434/v1")
+        )
+        try:
+            self.assisted_timeout_ms = int(os.getenv("HOTMEM_LLM_ASSISTED_TIMEOUT_MS", "120"))
+        except Exception:
+            self.assisted_timeout_ms = 120
+        try:
+            self.assisted_max_triples = int(os.getenv("HOTMEM_LLM_ASSISTED_MAX_TRIPLES", "3"))
+        except Exception:
+            self.assisted_max_triples = 3
         # Retrieval fusion flags
         self.retrieval_fusion = os.getenv("HOTMEM_RETRIEVAL_FUSION", "false").lower() in ("1", "true", "yes")
         self.use_leann_summaries = os.getenv("HOTMEM_USE_LEANN_SUMMARIES", "false").lower() in ("1", "true", "yes")
@@ -128,11 +193,111 @@ class HotMemory:
         # Performance tracking
         self.metrics = defaultdict(list)
         self.max_metric_size = 1000
+        self._assisted_calls = 0
+        self._assisted_success = 0
+        self._pending_edge_props = {}
+        if self.assisted_enabled:
+            try:
+                logger.info(f"[HotMem Assisted] enabled model={self.assisted_model} base={self.assisted_base_url}")
+            except Exception:
+                pass
+
+        # SRL integration (optional, off by default)
+        self.use_srl = os.getenv("HOTMEM_USE_SRL", "false").lower() in ("1", "true", "yes")
+        self._srl: Optional[Any] = None
+        # ONNX NER/SRL (optional, off by default)
+        self.use_onnx_ner = os.getenv("HOTMEM_USE_ONNX_NER", "false").lower() in ("1", "true", "yes") and (OnnxTokenNER is not None)
+        self.use_onnx_srl = os.getenv("HOTMEM_USE_ONNX_SRL", "false").lower() in ("1", "true", "yes") and (OnnxSRLTagger is not None)
+        self._onnx_ner = None
+        self._onnx_srl = None
+        # ReLiK (optional)
+        self.use_relik = os.getenv("HOTMEM_USE_RELIK", "false").lower() in ("1", "true", "yes") and (HotMemExtractor is not None)
+        self._relik = None
+        # Neural coreference (optional)
+        self.use_coref = os.getenv("HOTMEM_USE_COREF", "false").lower() in ("1", "true", "yes") and (FCoref is not None)
+        self._coref_model = None
 
     def prewarm(self, lang: str = "en") -> None:
         """Load NLP resources up-front to avoid first-turn latency."""
         try:
             _load_nlp(lang)
+            if self.use_srl and SRLExtractor is not None:
+                # Initialize SRL and preload relation normalizer embeddings
+                if self._srl is None:
+                    self._srl = SRLExtractor(use_normalizer=True)
+                try:
+                    # Touch the normalizer once to load the model
+                    if getattr(self._srl, 'normalizer', None) is not None:
+                        self._srl.normalizer._ensure_model()
+                except Exception:
+                    pass
+            # ONNX NER prewarm
+            if self.use_onnx_ner and self._onnx_ner is None:
+                try:
+                    ner_model = os.getenv("HOTMEM_ONNX_NER_MODEL", "")
+                    ner_labels = os.getenv("HOTMEM_ONNX_NER_LABELS", "")
+                    base_dir = os.path.dirname(__file__)
+                    if ner_model and not os.path.isabs(ner_model):
+                        ner_model = os.path.abspath(os.path.join(base_dir, ner_model))
+                    if ner_labels and not os.path.isabs(ner_labels):
+                        ner_labels = os.path.abspath(os.path.join(base_dir, ner_labels))
+                    ner_tok = os.getenv("HOTMEM_ONNX_NER_TOKENIZER", "bert-base-cased")
+                    self._onnx_ner = OnnxTokenNER(ner_model, ner_labels, tokenizer_name=ner_tok)
+                    logger.info("[HotMem ONNX] NER ready")
+                except Exception as e:
+                    logger.warning(f"[HotMem ONNX] NER unavailable: {e}")
+                    self._onnx_ner = None
+            # ONNX SRL prewarm
+            if self.use_onnx_srl and self._onnx_srl is None:
+                try:
+                    srl_model = os.getenv("HOTMEM_ONNX_SRL_MODEL", "")
+                    srl_labels = os.getenv("HOTMEM_ONNX_SRL_LABELS", "")
+                    srl_tok = os.getenv("HOTMEM_ONNX_SRL_TOKENIZER", "bert-base-cased")
+                    self._onnx_srl = OnnxSRLTagger(srl_model, srl_labels, tokenizer_name=srl_tok)
+                    logger.info("[HotMem ONNX] SRL ready")
+                except Exception as e:
+                    logger.warning(f"[HotMem ONNX] SRL unavailable: {e}")
+                    self._onnx_srl = None
+            # ReLiK prewarm - Try hybrid extractor first, then enhanced, then original
+            if self.use_relik and self._relik is None:
+                try:
+                    # Try hybrid spaCy+LLM extractor first (best quality)
+                    if HybridRelationExtractor is not None:
+                        relik_dev = os.getenv("HOTMEM_RELIK_DEVICE", "cpu")
+                        self._relik = HybridRelationExtractor(device=relik_dev)
+                        logger.info(f"[HotMem ReLiK] Using hybrid spaCy+LLM extractor")
+                    # Try enhanced replacement second
+                    elif EnhancedHotMemExtractor is not None:
+                        relik_dev = os.getenv("HOTMEM_RELIK_DEVICE", "cpu")
+                        self._relik = EnhancedHotMemExtractor(device=relik_dev)
+                        logger.info(f"[HotMem] Using enhanced HotMem extractor")
+                    elif HotMemExtractor is not None:
+                        # Fallback to original ReLiK
+                        # Encourage MPS fallback to avoid hard crashes
+                        try:
+                            if os.getenv('HOTMEM_RELIK_DEVICE', '').lower() == 'mps':
+                                os.environ.setdefault('PYTORCH_ENABLE_MPS_FALLBACK', '1')
+                        except Exception:
+                            pass
+                        relik_id = os.getenv("HOTMEM_RELIK_MODEL_ID", "relik-ie/relik-relation-extraction-small")
+                        relik_dev = os.getenv("HOTMEM_RELIK_DEVICE", "cpu")
+                        self._relik = HotMemExtractor(model_id=relik_id, device=relik_dev)
+                        logger.info(f"[HotMem ReLiK] ready: {relik_id}")
+                    else:
+                        logger.warning("[HotMem ReLiK] No extractor available")
+                        self._relik = None
+                except Exception as e:
+                    logger.warning(f"[HotMem ReLiK] unavailable: {e}")
+                    self._relik = None
+            # Neural coref prewarm
+            if self.use_coref and self._coref_model is None:
+                try:
+                    device = os.getenv("HOTMEM_COREF_DEVICE", "cpu")
+                    self._coref_model = FCoref(device=device)
+                    logger.info("[HotMem Coref] Neural coref ready")
+                except Exception as e:
+                    logger.warning(f"[HotMem Coref] unavailable: {e}")
+                    self._coref_model = None
         except Exception:
             pass
 
@@ -173,14 +338,51 @@ class HotMemory:
         entities, triples, neg_count, doc = self._extract(text, lang)
         self.metrics['extraction_ms'].append((time.perf_counter() - extract_start) * 1000)
         
+        # Stage 1b: Optional LLM-assisted micro-refiner (only for hard cases)
+        if self._should_assist(text, triples, doc):
+            assist_start = time.perf_counter()
+            assisted = []
+            try:
+                # Provide UD entities to the micro-refiner for relation linking only
+                assisted = self._assist_extract(text, entities, triples, session_id=session_id)
+            except Exception as e:
+                logger.debug(f"[HotMem Assisted] error: {e}")
+                assisted = []
+            ms = (time.perf_counter() - assist_start) * 1000
+            self.metrics['assisted_ms'].append(ms)
+            self._assisted_calls += 1
+            if assisted:
+                self._assisted_success += 1
+                # Merge and de-dup
+                try:
+                    seen = set(map(tuple, triples))
+                    for tr in assisted:
+                        if tuple(tr) not in seen:
+                            triples.append(tuple(tr))
+                            seen.add(tuple(tr))
+                except Exception:
+                    pass
+                logger.info(f"[HotMem Assisted] triggered (ms={ms:.0f}, triples={len(assisted)})")
+            else:
+                logger.info(f"[HotMem Assisted] triggered (ms={ms:.0f}, triples=0)")
+
         # Stage 2: Refine triples with intent-aware processing
         refine_start = time.perf_counter()
         triples = self._refine_triples(text, triples, doc, intent, lang)
-        # Apply light coreference resolution for third-person pronouns
-        try:
-            triples = self._apply_coref_lite(triples, doc)
-        except Exception:
-            pass
+        # Apply neural coreference if enabled, otherwise light coref
+        if self.use_coref and self._coref_model is not None and doc is not None and len(triples) <= 24:
+            try:
+                triples = self._apply_coref_neural(triples, doc)
+            except Exception:
+                try:
+                    triples = self._apply_coref_lite(triples, doc)
+                except Exception:
+                    pass
+        else:
+            try:
+                triples = self._apply_coref_lite(triples, doc)
+            except Exception:
+                pass
         # Rebuild entities from refined triples + text context
         ent_from_triples: Set[str] = set()
         for s, r, d in triples:
@@ -194,6 +396,12 @@ class HotMemory:
         
         # Filter and store facts based on quality and intent
         stored_triples = []
+        # Coarse provenance tag for this turn
+        prov_tag = 'ud_only'
+        if self.use_srl:
+            prov_tag = 'srl_ud'
+        if getattr(self, 'use_onnx_srl', False):
+            prov_tag = 'onnx_srl_ud'
         # Hedge/negation adjustments
         t_lower = (text or "").lower()
         hedge_terms = ("maybe", "i think", "probably", "kinda", "sort of", "not sure", "perhaps", "possibly")
@@ -207,9 +415,14 @@ class HotMemory:
             subj = (subj or '').lower().strip()
             rel = (rel or '').lower().strip()
             obj = (obj or '').lower().strip()
+            # Avoid storing basic facts when subject is an unresolved pronoun placeholder
+            pronoun_like = {"he","she","they","him","her","them","who","whom","whose","which","that"}
+            if subj in pronoun_like and subj != 'you':
+                return False
             basic_rels = {
-                'owns', 'name', 'age', 'lives_in', 'works_at',
-                'born_in', 'favorite_color', 'favorite_number', 'also_known_as'
+                'owns', 'name', 'age', 'lives_in', 'works_at', 'teach_at',
+                'born_in', 'moved_from', 'went_to',
+                'favorite_color', 'favorite_number', 'also_known_as'
             }
             pet_terms = {'dog', 'cat', 'puppy', 'kitten', 'pet'}
             family_terms = {'son','daughter','child','kids','wife','husband','spouse','partner','brother','sister'}
@@ -256,6 +469,12 @@ class HotMemory:
                     self._handle_fact_correction(s, r, d, confidence, now_ts)
                 else:
                     self.store.observe_edge(s, r, d, confidence, now_ts)
+                # Persist edge metadata (provenance, language, props)
+                try:
+                    props = self._pending_edge_props.get((s, r, d)) or {}
+                    self.store.enqueue_edge_meta(s, r, d, prov=prov_tag, lang=lang, span=None, props=props, ts=now_ts)
+                except Exception:
+                    pass
                 # Alias expansion: when we learn (you, name, X), map X -> you for retrieval
                 try:
                     if (s == self.user_eid) and (r == 'name') and d:
@@ -265,6 +484,15 @@ class HotMemory:
                         self.entity_index[self.user_eid].add((self.user_eid, 'also_known_as', str(d)))
                         self.entity_index[str(d)].add((self.user_eid, 'also_known_as', str(d)))
                         self.store.flush_if_needed()
+                except Exception:
+                    pass
+                # Cross-lingual transliteration aliasing (fully local)
+                try:
+                    if r in {'name', 'also_known_as'} and d:
+                        d_txt = str(d)
+                        d_ascii = unidecode(d_txt)
+                        if d_ascii and d_ascii != d_txt and len(d_ascii) >= 3:
+                            self.store.enqueue_alias(d_ascii, d_txt)
                 except Exception:
                     pass
                     
@@ -286,10 +514,22 @@ class HotMemory:
         for s, r, d in stored_triples:
             self.recency_buffer.append(RecencyItem(s, r, d, text, now_ts, turn_id))
             # Update hot edge metadata for recency/weight (weight approx if unknown)
-            self.edge_meta[(s, r, d)] = {
-                'ts': now_ts,
-                'weight': max(0.3, 0.7)  # optimistic default
-            }
+            em = self.edge_meta.get((s, r, d), {})
+            em['ts'] = now_ts
+            em['weight'] = max(0.3, 0.7)
+            # Preserve provenance/props if set earlier in the turn
+            if 'prov' not in em:
+                em['prov'] = prov_tag
+            props = self._pending_edge_props.get((s, r, d)) or {}
+            if props:
+                try:
+                    if 'props' in em and isinstance(em['props'], dict):
+                        em['props'].update(props)
+                    else:
+                        em['props'] = dict(props)
+                except Exception:
+                    em['props'] = props
+            self.edge_meta[(s, r, d)] = em
         
         # Track overall performance
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -303,8 +543,9 @@ class HotMemory:
     
     def _extract(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any]:
         """
-        Extract entities and relations using USGS 27-pattern approach.
-        Optionally decompose complex sentences into clause spans when enabled.
+        Extract entities and relations.
+        - If HOTMEM_USE_SRL=true and SRLExtractor available, run SRL-first and fuse with UD 27 patterns.
+        - Otherwise, run UD 27 patterns only.
         Returns: (entities, triples, negation_count, original_doc)
         """
         nlp = _load_nlp(lang)
@@ -313,14 +554,110 @@ class HotMemory:
 
         doc = nlp(text)
 
-        # Always extract from the full doc first
-        ents_doc, trips_doc, neg_doc = self._extract_from_doc(doc)
+        # Collect negation count once
+        neg_total = sum(1 for t in doc if t.dep_ == "neg")
+
+        ents_all: Set[str] = set()
+        trips_all: List[Tuple[str, str, str]] = []
+
+        # ReLiK-first path (if enabled)
+        if self.use_relik and self._relik is not None:
+            try:
+                # Gating: short texts only (intent not available in this scope)
+                max_chars = int(os.getenv('HOTMEM_RELIK_MAX_CHARS', '480'))
+                if len(text or '') > max_chars:
+                    raise RuntimeError('ReLiK gated: text length')
+                _t0 = time.perf_counter()
+                relik_triples = self._relik.extract(text) or []
+                relik_ms = (time.perf_counter() - _t0) * 1000
+                try:
+                    self.metrics['relik_ms'].append(relik_ms)
+                    if len(self.metrics['relik_ms']) > self.max_metric_size:
+                        self.metrics['relik_ms'] = self.metrics['relik_ms'][-self.max_metric_size:]
+                except Exception:
+                    pass
+                added = 0
+                for (s, r, d, c) in relik_triples:
+                    if s and r and d:
+                        trips_all.append((s, r, d))
+                        ents_all.add(s); ents_all.add(d)
+                        # Seed edge_meta with provenance and weight
+                        try:
+                            em = self.edge_meta.get((s, r, d), {})
+                            em['ts'] = em.get('ts', 0)
+                            em['weight'] = float(c)
+                            em['prov'] = 'relik'
+                            self.edge_meta[(s, r, d)] = em
+                        except Exception:
+                            pass
+                        added += 1
+                try:
+                    logger.info(f"[ReLiK] ms={relik_ms:.1f} triples={len(relik_triples)} added={added}")
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.debug(f"[HotMem ReLiK] skipped/fail: {e}")
+
+        # ONNX-SRL-first path (if enabled)
+        if self.use_onnx_srl and self._onnx_srl is not None:
+            try:
+                roles_list = self._onnx_srl.extract(text)
+                for roles in roles_list:
+                    pred = roles.get('predicate', '')
+                    s = _canon_entity_text(roles.get('agent', ''))
+                    o = _canon_entity_text(roles.get('patient', '') or roles.get('destination', '') or roles.get('location', ''))
+                    if s and o:
+                        rel = pred.lower().strip()
+                        # Heuristic normalization (reuse SRL normalizer if available)
+                        if self.use_srl and self._srl is not None:
+                            try:
+                                rel = self._srl.normalizer.normalize(rel, roles, None)
+                            except Exception:
+                                pass
+                        trips_all.append((s, rel, o))
+                        ents_all.add(s); ents_all.add(o)
+            except Exception as e:
+                logger.debug(f"[HotMem ONNX SRL] failed: {e}")
+
+        # SRL-first path (semantic_roles.py)
+        if self.use_srl and SRLExtractor is not None:
+            try:
+                if self._srl is None:
+                    self._srl = SRLExtractor(use_normalizer=True)
+                preds = self._srl.doc_to_predications(doc, lang=lang)
+                srl_trips = self._srl.predications_to_triples(preds)
+                try:
+                    logger.debug(f"[HotMem SRL] predications={len(preds)} triples={len(srl_trips)}")
+                except Exception:
+                    pass
+                # Build entities from SRL triples
+                for (s, r, d) in srl_trips:
+                    ents_all.add(_canon_entity_text(s))
+                    ents_all.add(_canon_entity_text(d))
+                trips_all.extend(srl_trips)
+            except Exception as e:
+                logger.debug(f"[HotMem SRL] failed; falling back to UD only: {e}")
+
+        # Always include UD extraction and fuse
+        ents_doc, trips_doc, _neg_doc = self._extract_from_doc(doc)
+        
+        # Apply improved UD processing to raw UD triples before merging
+        if self.ud_processor and trips_doc:
+            try:
+                processed_triples = self.ud_processor.process_triples(trips_doc)
+                # Extract just the triples (without confidence for now)
+                trips_doc = [(s, r, o) for s, r, o, _ in processed_triples]
+                logger.debug(f"[Improved UD] Processed {len(trips_doc)} UD triples from raw extraction")
+            except Exception as e:
+                logger.debug(f"[Improved UD] Processing failed, using raw UD triples: {e}")
+        
+        for e in ents_doc:
+            ents_all.add(e)
+        for t in trips_doc:
+            if t not in trips_all:
+                trips_all.append(t)
 
         # Optionally add clause spans (extractions merged/deduped)
-        ents_all: Set[str] = set(ents_doc)
-        trips_all: List[Tuple[str, str, str]] = list(trips_doc)
-        neg_total = int(neg_doc)
-
         use_decomp = os.getenv("HOTMEM_DECOMPOSE_CLAUSES", "false").lower() in ("1", "true", "yes")
         if use_decomp and _decompose_clauses is not None:
             try:
@@ -332,12 +669,11 @@ class HotMemory:
                     subdoc = sp.as_doc()
                 except Exception:
                     subdoc = doc
-                ents, trips, negc = self._extract_from_doc(subdoc)
+                ents, trips, _negc = self._extract_from_doc(subdoc)
                 ents_all.update(ents)
-                for t in trips:
-                    if t not in trips_all:
-                        trips_all.append(t)
-                neg_total += int(negc)
+                for tt in trips:
+                    if tt not in trips_all:
+                        trips_all.append(tt)
 
         return list(ents_all), trips_all, neg_total, doc
 
@@ -431,6 +767,27 @@ class HotMemory:
             entities.add(chunk_text)
             entity_map[chunk.root.i] = chunk_text
         
+        # ONNX NER enrichment (add spans + map tokens)
+        try:
+            if self.use_onnx_ner and self._onnx_ner is not None and doc is not None:
+                text = doc.text
+                ents_onnx = self._onnx_ner.extract(text)
+                for (span_text, label, score, (cs, ce)) in ents_onnx:
+                    ent_txt = _canon_entity_text(span_text)
+                    if not ent_txt:
+                        continue
+                    entities.add(ent_txt)
+                    # Map spaCy tokens overlapping this char span to the entity
+                    try:
+                        span = doc.char_span(cs, ce, alignment_mode='expand')
+                        if span is not None:
+                            for t in span:
+                                entity_map[t.i] = ent_txt
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.debug(f"[HotMem ONNX NER] enrichment failed: {e}")
+
         # Individual tokens
         for token in doc:
             if token.i not in entity_map:
@@ -449,6 +806,70 @@ class HotMemory:
     def _get_entity(self, token, entity_map) -> str:
         """Get entity for token"""
         return entity_map.get(token.i, _norm(token.text))
+
+    def _apply_coref_neural(self, triples: List[Tuple[str, str, str]], doc):
+        """Resolve pronouns using a neural coref model (fastcoref).
+        Conservative resolution: only replace with clear non-pronoun antecedents; keep 'you'.
+        """
+        if not self._coref_model:
+            return triples
+        text = doc.text
+        try:
+            pred = self._coref_model.predict(texts=[text], min_cluster_size=2)
+            clusters = pred.get_clusters(as_strings=False)[0] if hasattr(pred, 'get_clusters') else []
+        except Exception:
+            return triples
+
+        # Build representative mention mapping
+        rep_map: Dict[Tuple[int, int], str] = {}
+        try:
+            for cluster in clusters:
+                best_txt = None
+                best_len = -1
+                for (s_idx, e_idx) in cluster:
+                    span = doc[s_idx:e_idx]
+                    span_txt = _canon_entity_text(span.text)
+                    if span_txt in {"i","me","my","mine","your","yours","yourself","you"}:
+                        continue
+                    if len(span) == 1 and span[0].pos_ == 'PRON':
+                        continue
+                    if len(span_txt) > best_len:
+                        best_txt = span_txt
+                        best_len = len(span_txt)
+                if not best_txt and cluster:
+                    (s0, e0) = cluster[0]
+                    best_txt = _canon_entity_text(doc[s0:e0].text)
+                for (s_idx, e_idx) in cluster:
+                    rep_map[(s_idx, e_idx)] = best_txt or ""
+        except Exception:
+            pass
+
+        def resolve_token_string(tok_str: str) -> Optional[str]:
+            tnorm = (tok_str or '').strip().lower()
+            if tnorm in {"you","i","me","my","mine","your","yours","yourself"}:
+                return "you"
+            try:
+                for token in doc:
+                    if _canon_entity_text(token.text) == tnorm:
+                        for (s_idx, e_idx), rep in rep_map.items():
+                            if s_idx <= token.i < e_idx and rep and rep not in {"you","i","me"}:
+                                return rep
+                        break
+            except Exception:
+                pass
+            return None
+
+        out: List[Tuple[str, str, str]] = []
+        for (s, r, d) in triples:
+            rs, rd = s, d
+            rep = resolve_token_string(rs)
+            if rep:
+                rs = rep
+            rep = resolve_token_string(rd)
+            if rep:
+                rd = rep
+            out.append((rs, r, rd))
+        return out
     
     def _extract_subject(self, token, entity_map, triples, entities):
         """nsubj, nsubjpass - nominal subject"""
@@ -824,6 +1245,11 @@ class HotMemory:
     
     def _format_memory_bullet(self, s: str, r: str, d: str) -> str:
         """Format a memory triple into a human-readable bullet point"""
+        # Use enhanced formatter if available
+        if self.bullet_formatter:
+            return self.bullet_formatter.format_bullet(s, r, d)
+        
+        # Fallback to original formatting
         # Handle pronouns and possessives more naturally
         if s == "you":
             if r == "name":
@@ -1045,6 +1471,12 @@ class HotMemory:
             "participated_in", "went_to",
             "friend_of", "owns", "has", "favorite_number",
         }
+        # If the query is explicitly temporal, allow time/duration injections
+        if any(tok in qtok for tok in {"when", "year", "date", "time"}):
+            allowed_rels = set(allowed_rels) | {"time", "duration"}
+        # If the query is causal, allow cause injection
+        if any(tok in qtok for tok in {"why", "because", "reason", "cause"}):
+            allowed_rels = set(allowed_rels) | {"because_of"}
         blocked_tokens = {"system prompt", "what time", "no-"}
 
         pronoun_skip = {"he","she","they","him","her","them","who","whom","whose","which"}
@@ -1087,7 +1519,12 @@ class HotMemory:
                         if any(cue in dl for cue in vehicle_cues):
                             sem = min(1.0, sem + 0.20)
                     w = float(meta.get('weight', 0.3))
-                    score = alpha * pri + beta * rec + gamma * sem + delta * w
+                    # Provenance-aware boost (quality-first)
+                    prov = str(meta.get('prov', ''))
+                    prov_boost_map = {'onnx_srl_ud': 1.00, 'srl_ud': 0.85, 'ud_only': 0.60, 'assisted': -0.30, '': 0.0}
+                    prov_boost = prov_boost_map.get(prov, 0.0)
+                    eps_prov = 0.05
+                    score = alpha * pri + beta * rec + gamma * sem + delta * w + eps_prov * prov_boost
                     scored_all.append((score, ts, 'kg', (s, r, d)))
 
         # Retrieval fusion: include FTS summary hits and (optional) LEANN summary hits
@@ -1334,8 +1771,198 @@ class HotMemory:
         
         results['entities'] = len(self.entity_index)
         results['recency_buffer'] = len(self.recency_buffer)
+        results['assisted_calls'] = self._assisted_calls
+        results['assisted_success'] = self._assisted_success
         
         return results
+
+    # ---------- Assisted Extraction (tiny LLM) ----------
+    def _should_assist(self, text: str, ud_triples: List[Tuple[str, str, str]], doc) -> bool:
+        if not self.assisted_enabled:
+            return False
+        try:
+            t = (text or '').strip()
+            if not t:
+                return False
+            # Trigger if very few UD triples OR sentence complexity indicators present OR long text
+            if len(ud_triples) <= 1:
+                return True
+            if len(t) > 180:
+                return True
+            if doc is not None:
+                for tok in doc:
+                    if tok.dep_ in {"ccomp", "xcomp", "advcl", "mark"}:
+                        return True
+        except Exception:
+            return False
+        return False
+
+    def _assist_extract(self, text: str, entities: List[str], ud_triples: List[Tuple[str, str, str]], session_id: Optional[str] = None) -> List[Tuple[str, str, str]]:
+        """Call a tiny LLM to link relations only between provided entities. Returns list of (s,r,d)."""
+        model = self.assisted_model
+        base_url = self.assisted_base_url.rstrip('/') + '/chat/completions'
+        # Strict instructions for structured output (enum-free; relation chosen from text)
+        sys_msg = (
+            "You are a relation linker. Link relations only between the provided ENTITIES based on the USER message.\n"
+            "Return exactly ONE JSON object with a top-level array field 'triples'.\n"
+            "Each triple item must be an object with keys: s (subject), r (relation), d (destination).\n"
+            "Rules:\n"
+            "- Use ONLY ENTITIES for s and d (exact match). Do not invent or alter entities. If you cannot match, skip.\n"
+            "- r must be a short phrase present in the USER text (1–3 tokens), lowercase, spaces → underscores (e.g., 'teaches at' → 'teaches_at').\n"
+            "- If the text clearly states an age like '3 years old' for an entity, you may output r='age' and d='3 years old'.\n"
+            "- If no valid relations are found, return {\"triples\": []}.\n"
+            "- Output only the JSON object. No extra text. No code fences. No trailing commas.\n"
+            "Checklist: s ∈ ENTITIES; d ∈ ENTITIES; r from text (lowercase, underscores); ≤3 triples; JSON parses."
+        )
+        # Minimal examples
+        ex1 = (
+            "ENTITIES: [\"dog\",\"luna\"]\n"
+            "USER: My dog Luna is 3 years old and loves hiking.\n"
+            "ASSISTANT: {\"triples\":[{\"s\":\"dog\",\"r\":\"also_known_as\",\"d\":\"luna\"},{\"s\":\"dog\",\"r\":\"age\",\"d\":\"3 years old\"}]}"
+        )
+        ex2 = (
+            "ENTITIES: [\"tom\",\"reed college\",\"portland\"]\n"
+            "USER: Tom lives in Portland and teaches at Reed College.\n"
+            "ASSISTANT: {\"triples\":[{\"s\":\"tom\",\"r\":\"lives_in\",\"d\":\"portland\"},{\"s\":\"tom\",\"r\":\"teaches_at\",\"d\":\"reed college\"}]}"
+        )
+        ents = [ _canon_entity_text(e) for e in (entities or []) if _canon_entity_text(e) ]
+        ents_unique = []
+        seen_e = set()
+        for e in ents:
+            if e not in seen_e:
+                ents_unique.append(e)
+                seen_e.add(e)
+        ents_json = json.dumps(ents_unique)
+        messages = [
+            {"role": "system", "content": sys_msg},
+            {"role": "system", "content": ex1},
+            {"role": "system", "content": ex2},
+            {"role": "system", "content": f"ENTITIES: {ents_json}"},
+            {"role": "user", "content": text},
+        ]
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": 128,
+            "temperature": 0.0,
+        }
+        # Encourage JSON output in servers that support it
+        if os.getenv('HOTMEM_ASSISTED_JSON_MODE','true').lower() in ('1','true','yes'):
+            payload["response_format"] = {"type": "json_object"}
+        if session_id:
+            payload["session_id"] = f"assist_{session_id}"
+        data = json.dumps(payload).encode('utf-8')
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY','')}"}
+        req = urllib.request.Request(base_url, data=data, headers=headers, method='POST')
+        timeout = max(0.05, self.assisted_timeout_ms / 1000.0)
+        try:
+            if os.getenv('HOTMEM_ASSISTED_LOG_REQUEST','false').lower() in ('1','true','yes'):
+                try:
+                    logger.info(
+                        f"[HotMem Assisted] POST {base_url} model={model} session_id={'assist_'+session_id if session_id else ''} "
+                        f"ents={len(ents_unique)} timeout_ms={int(self.assisted_timeout_ms)}"
+                    )
+                    if ents_unique:
+                        logger.info(f"[HotMem Assisted] ENTITIES sample: {ents_unique[:6]}")
+                except Exception:
+                    pass
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                body = resp.read().decode('utf-8')
+                obj = json.loads(body)
+                choice = (obj.get('choices') or [{}])[0]
+                content = ((choice.get('message') or {}).get('content') or '').strip()
+                # Some servers may return structured content directly
+                if not content and isinstance((choice.get('message') or {}).get('parsed'), dict):
+                    parsed = (choice.get('message') or {}).get('parsed')
+                    content = json.dumps(parsed)
+        except Exception as e:
+            try:
+                logger.info(f"[HotMem Assisted] HTTP error: {e}")
+            except Exception:
+                pass
+            return []
+        if not content:
+            return []
+        # Optional: log returned content (longer snippet)
+        if os.getenv('HOTMEM_ASSISTED_LOG_RAW','false').lower() in ('1','true','yes'):
+            try:
+                snippet = content if len(content) <= 4000 else (content[:4000] + '…')
+                logger.info(f"[HotMem Assisted] raw content: {snippet}")
+            except Exception:
+                pass
+        # Parse JSON object `{ "triples": [ ... ] }` or JSONL fallback
+        out: List[Tuple[str, str, str]] = []
+        entity_set = set(ents_unique)
+        pronouns = {"it","this","that","he","she","they","we"}
+
+        def _match_entity(cand: str) -> Optional[str]:
+            c = (cand or '').strip().lower()
+            if not c:
+                return None
+            if c in entity_set:
+                return c
+            for ent in ents_unique:
+                if c and (c in ent) and (len(ent) >= len(c)):
+                    return ent
+            for ent in ents_unique:
+                if ent in c:
+                    return ent
+            return None
+        # Try JSON object first
+        try:
+            if content.lstrip().startswith('{'):
+                obj = json.loads(content)
+                arr = obj.get('triples') or []
+                if isinstance(arr, list):
+                    for rec in arr:
+                        try:
+                            s = _canon_entity_text(str(rec.get('s','') or ''))
+                            r = str(rec.get('r','') or '').strip().lower().replace(' ', '_')
+                            d = _canon_entity_text(str(rec.get('d','') or ''))
+                            if s in pronouns:
+                                continue
+                            ms = _match_entity(s)
+                            md = _match_entity(d)
+                            if ms and md:
+                                if r == 'age' and not d.endswith('years old'):
+                                    dd = ''.join(ch for ch in d if ch.isdigit())
+                                    if dd:
+                                        d = f"{dd} years old"
+                                out.append((ms,r,md))
+                        except Exception:
+                            continue
+                        if len(out) >= self.assisted_max_triples:
+                            break
+        except Exception:
+            out = []
+        # Fallback: JSONL lines
+        if not out:
+            for line in content.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                    s = _canon_entity_text(str(rec.get('s','') or ''))
+                    r = str(rec.get('r','') or '').strip().lower().replace(' ', '_')
+                    d = _canon_entity_text(str(rec.get('d','') or ''))
+                    if s in pronouns:
+                        continue
+                    ms = _match_entity(s)
+                    md = _match_entity(d)
+                    if ms and md:
+                        if r == 'age' and not d.endswith('years old'):
+                            # normalize if number only
+                            dd = ''.join(ch for ch in d if ch.isdigit())
+                            if dd:
+                                d = f"{dd} years old"
+                        out.append((ms,r,md))
+                except Exception:
+                    continue
+                if len(out) >= self.assisted_max_triples:
+                    break
+        # If still nothing, note it (already logged raw content above)
+        return out
     
     def rebuild_from_store(self):
         """Rebuild hot indices from persistent store"""
@@ -1354,6 +1981,20 @@ class HotMemory:
                 # Seed meta with weight; ts unknown (0)
                 self.edge_meta[(s, r, d)] = {'ts': 0, 'weight': float(conf)}
                 count += 1
+
+        # Merge persisted edge metadata if available
+        try:
+            metas = self.store.get_all_edge_meta()
+        except Exception:
+            metas = []
+        for (s, r, d, meta) in metas:
+            try:
+                em = self.edge_meta.get((s, r, d), {'ts': 0, 'weight': 0.3})
+                for k, v in meta.items():
+                    em[k] = v
+                self.edge_meta[(s, r, d)] = em
+            except Exception:
+                continue
         
         elapsed_ms = (time.perf_counter() - start) * 1000
         logger.info(f"Rebuilt {count} edges in {elapsed_ms:.1f}ms")
@@ -1482,6 +2123,9 @@ class HotMemory:
                 cd = "you"
 
             rr = r
+            # Canonicalize minor relation variants
+            if rr in {"teaches_at", "teached_at"}:
+                rr = "teach_at"
             # Strip relative scaffolding prefixes from entities for readability
             for pref in ("whose ", "which ", "who ", "that "):
                 if cs.startswith(pref):
@@ -1720,11 +2364,22 @@ class HotMemory:
             anchor = refined[0]
 
         if anchor is not None:
-            s_anchor, r_anchor, _ = anchor
+            s_anchor, r_anchor, d_anchor = anchor
             for y in years:
                 refined.append((s_anchor, "time", y))
             for dur in durations:
                 refined.append((s_anchor, "duration", dur))
+            # Record temporal props to annotate the anchor edge when stored
+            try:
+                props = {}
+                if years:
+                    props['time'] = list(dict.fromkeys(years))
+                if durations:
+                    props['duration'] = list(dict.fromkeys(durations))
+                if props:
+                    self._pending_edge_props[(s_anchor, r_anchor, d_anchor)] = props
+            except Exception:
+                pass
 
         # De-duplicate while preserving order
         seen = set()

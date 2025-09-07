@@ -12,6 +12,7 @@ import hashlib
 import time
 import shutil
 import contextlib
+import json
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict, Any
 from collections import defaultdict
@@ -47,6 +48,7 @@ class MemoryStore:
         # Batch queues
         self._aliases: List[Tuple[str, str]] = []
         self._edges: List[Tuple[str, str, str, float, int, int, int, int]] = []
+        self._edge_meta_updates: List[Tuple[str, str, str, str, Optional[str], Optional[str], Dict[str, Any], int]] = []
         self._mentions: List[Tuple[str, str, int, str, int]] = []
         self._last = time.time()
         
@@ -99,6 +101,19 @@ class MemoryStore:
             );
             CREATE INDEX IF NOT EXISTS idx_edge_src ON edge(src);
             CREATE INDEX IF NOT EXISTS idx_edge_status ON edge(status);
+
+            -- Edge metadata (provenance, language, spans, properties JSON)
+            CREATE TABLE IF NOT EXISTS edge_meta(
+              id TEXT PRIMARY KEY,
+              src TEXT,
+              rel TEXT,
+              dst TEXT,
+              prov TEXT,
+              lang TEXT,
+              span TEXT,
+              props TEXT,
+              updated_at INT
+            );
             
             CREATE TABLE IF NOT EXISTS mention(
               id TEXT PRIMARY KEY, 
@@ -189,6 +204,19 @@ class MemoryStore:
     
     def enqueue_mention(self, eid: str, text: str, ts: float, sid: str, tid: int) -> None:
         self._mentions.append((eid, text[:500], int(ts), sid, int(tid)))  # Limit text length
+
+    def enqueue_edge_meta(
+        self,
+        s: str,
+        r: str,
+        d: str,
+        prov: str = "",
+        lang: Optional[str] = None,
+        span: Optional[str] = None,
+        props: Optional[Dict[str, Any]] = None,
+        ts: Optional[int] = None,
+    ) -> None:
+        self._edge_meta_updates.append((s, r, d, prov or "", lang, span, props or {}, int(ts or time.time())))
     
     def flush_if_needed(self, max_ops: int = 16, max_ms: int = 500) -> None:
         total_ops = len(self._aliases) + len(self._edges) + len(self._mentions)
@@ -199,7 +227,7 @@ class MemoryStore:
     
     # ---------- Flush (batched) ----------
     def flush(self) -> None:
-        if not (self._aliases or self._edges or self._mentions):
+        if not (self._aliases or self._edges or self._mentions or self._edge_meta_updates):
             return
         
         start = time.perf_counter()
@@ -271,6 +299,33 @@ class MemoryStore:
                         "INSERT INTO chunks_fts(text, eid, rel, dst, ts) VALUES(?, ?, ?, ?, ?)",
                         (text, eid, "", "", int(ts))
                     )
+
+                # Batch process edge metadata
+                for s, r, d, prov, lang, span, props, ts in self._edge_meta_updates:
+                    meta_id = self.edge_id(s, r, d)
+                    cur.execute(
+                        """
+                        INSERT INTO edge_meta(id, src, rel, dst, prov, lang, span, props, updated_at)
+                        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                          prov=excluded.prov,
+                          lang=excluded.lang,
+                          span=excluded.span,
+                          props=excluded.props,
+                          updated_at=excluded.updated_at
+                        """,
+                        (
+                            meta_id,
+                            s,
+                            r,
+                            d,
+                            prov,
+                            str(lang or ""),
+                            str(span or ""),
+                            json.dumps(props or {}),
+                            int(ts),
+                        )
+                    )
                 
                 self.sql.commit()
                 
@@ -282,6 +337,7 @@ class MemoryStore:
         # Clear queues only on success
         self._aliases.clear()
         self._edges.clear()
+        self._edge_meta_updates.clear()
         self._mentions.clear()
         self._last = time.time()
         
@@ -482,3 +538,21 @@ class MemoryStore:
             (int(min_status),)
         ).fetchall()
         return [(str(s), str(r), str(d), float(w)) for (s, r, d, w) in rows]
+
+    def get_all_edge_meta(self) -> List[Tuple[str, str, str, Dict[str, Any]]]:
+        """Return (src, rel, dst, meta) for all edge metadata rows."""
+        cur = self.sql.cursor()
+        rows = cur.execute("SELECT src, rel, dst, prov, lang, span, props FROM edge_meta").fetchall()
+        out: List[Tuple[str, str, str, Dict[str, Any]]] = []
+        for (s, r, d, prov, lang, span, props) in rows:
+            try:
+                pd = json.loads(props) if props else {}
+            except Exception:
+                pd = {}
+            out.append((str(s), str(r), str(d), {
+                'prov': str(prov or ''),
+                'lang': str(lang or ''),
+                'span': str(span or ''),
+                'props': pd,
+            }))
+        return out

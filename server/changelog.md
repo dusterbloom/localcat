@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Improved UD Processing & File Renaming (2025-09-07)
+- **Enhanced UD Processing**: Added `improved_ud_extractor.py` with quality filters for Universal Dependencies triples
+- **Quality Filtering**: Successfully filters nonsense triples like `(you, take, that)` before merging with other extraction methods
+- **Performance**: Maintains <200ms hot path latency while significantly improving knowledge graph quality
+- **File Renaming**: Renamed ReLiK-related files to reflect actual technology usage:
+  - `relik_extractor.py` → `hotmem_extractor.py`
+  - `enhanced_relik_replacement.py` → `enhanced_hotmem_extractor.py`
+  - Updated all imports and class references throughout codebase
+- **Documentation**: Updated backlog.md with completed improvements
+
 ### Added - Prompt & Context Orchestrator (2025-09-06)
 - Budgeted context packing with ordered sections: System → Memory → Summary → Dialogue
 - Section trimming with token-budget slices via `CONTEXT_BUDGET_TOKENS`

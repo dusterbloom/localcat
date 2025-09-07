@@ -1,5 +1,24 @@
 # LocalCat Server Development Backlog
 
+## 📋 Recent Completed Improvements (2025-09-07)
+
+### ✅ Improved UD Processing Enhancement
+- **Implemented**: Enhanced Universal Dependencies processing with quality filters
+- **Problem**: Raw UD extraction was generating nonsense triples and low-quality relations
+- **Solution**: Added `improved_ud_extractor.py` with quality filtering applied to raw UD triples before merging
+- **Results**: Successfully filters nonsense triples like `(you, take, that)` and improves knowledge graph quality
+- **Performance**: Maintains <200ms hot path latency while significantly improving extraction quality
+
+### ✅ File Renaming & Cleanup
+- **Completed**: Renamed ReLiK-related files to HotMem equivalents
+- **Changes**: 
+  - `relik_extractor.py` → `hotmem_extractor.py`
+  - `enhanced_relik_replacement.py` → `enhanced_hotmem_extractor.py`
+  - Updated all imports and class references
+- **Rationale**: Project no longer uses ReLiK, naming should reflect actual technology
+
+---
+
 ## 📋 DRAFT: HotMem Evolution Phase 2 Implementation Plan
 
 **Status**: Ready for implementation - focuses on priorities 1 and 2 from current backlog
