@@ -13,8 +13,8 @@ from collections import defaultdict
 import threading
 from loguru import logger
 
-from memory_interfaces import IMemoryExtractor, ExtractionResult
-from extraction_strategies import (
+from components.memory.memory_interfaces import IMemoryExtractor, ExtractionResult
+from components.extraction.extraction_strategies import (
     ExtractionStrategyBase, create_strategy, get_available_strategies,
     EXTRACTION_STRATEGIES
 )

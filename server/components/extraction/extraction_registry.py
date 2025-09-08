@@ -16,8 +16,8 @@ import threading
 from pathlib import Path
 from loguru import logger
 
-from memory_interfaces import IExtractionStrategy
-from extraction_strategies import ExtractionStrategyBase
+from components.memory.memory_interfaces import IExtractionStrategy
+from components.extraction.extraction_strategies import ExtractionStrategyBase
 
 @dataclass
 class PluginMetadata:
@@ -100,7 +100,7 @@ class ExtractionRegistry:
     def _initialize_registry(self) -> None:
         """Initialize the registry with built-in strategies."""
         # Register built-in strategies
-        from extraction_strategies import (
+        from components.extraction.extraction_strategies import (
             HotMemExtractionStrategy,
             UDExtractionStrategy,
             HybridExtractionStrategy,

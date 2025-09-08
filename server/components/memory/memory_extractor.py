@@ -59,7 +59,7 @@ try:
 except Exception:
     _decompose_clauses = None  # Optional
 try:
-    from memory_quality import calculate_extraction_confidence as _extra_confidence  # type: ignore
+    from components.memory.memory_quality import calculate_extraction_confidence as _extra_confidence  # type: ignore
 except Exception:
     _extra_confidence = None  # Optional
 

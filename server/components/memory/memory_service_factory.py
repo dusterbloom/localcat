@@ -68,11 +68,11 @@ class MemoryServiceFactory:
     
     def _register_default_services(self) -> None:
         """Register default service configurations."""
-        from memory_extractor import MemoryExtractor
-        from memory_storage import MemoryStorage
-        from memory_retriever import MemoryRetriever
-        from memory_quality import MemoryQuality
-        from memory_metrics import MemoryMetrics
+        from components.memory.memory_extractor import MemoryExtractor
+        from components.memory.memory_storage import MemoryStorage
+        from components.memory.memory_retriever import MemoryRetriever
+        from components.memory.memory_quality import MemoryQuality
+        from components.memory.memory_metrics import MemoryMetrics
         
         # Core services
         self.register_service('memory_store', MemoryStore, singleton=True)

@@ -315,7 +315,7 @@ class HotPathMemoryProcessor(BaseProcessor):
     async def _handle_correction_intent(self, text: str) -> Optional[Dict[str, Any]]:
         """Handle correction intent detection and application"""
         try:
-            from memory_correction import get_corrector
+            from components.memory.memory_correction import get_corrector
             corrector = get_corrector()
             
             # Detect correction intent
