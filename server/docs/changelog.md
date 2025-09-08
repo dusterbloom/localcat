@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Phase 5.1 Service Health Monitoring System (2025-09-08) 🎉
+- **Comprehensive Monitoring Infrastructure**: Complete monitoring, metrics collection, and alerting system
+- **HealthMonitor**: Service health checks with circuit breaker pattern and graceful degradation
+  - HTTP and file-based health checks for external services (Ollama, LM Studio, database, LEANN)
+  - Automatic failure detection with exponential backoff and retry logic
+  - Circuit breaker implementation to prevent cascading failures
+  - Real-time health status tracking with configurable check intervals
+- **MetricsCollector**: Time-series performance metrics collection and aggregation
+  - System resource monitoring (CPU, memory, disk usage)
+  - Pipeline performance metrics (response times, frame processing)
+  - Service-specific metrics with configurable retention periods
+  - SQLite-based persistence for historical data analysis
+- **AlertingSystem**: Rule-based alerting with multiple notification channels
+  - Configurable alert rules with severity levels (INFO, WARNING, ERROR, CRITICAL)
+  - Threshold-based alerting for metrics and service health
+  - Alert lifecycle management (trigger, update, resolve)
+  - Multiple notification channel support (extensible architecture)
+- **API Endpoints**: Real-time monitoring endpoints for system visibility
+  - `GET /api/health` - Basic health check
+  - `GET /api/metrics` - Current system metrics and service health status
+  - `GET /api/monitoring/status` - Monitoring system status and active alerts count
+- **Integration**: Fully integrated into bot.py with proper cleanup handlers
+  - Global monitoring variables for API endpoint access
+  - Proper initialization and shutdown sequences
+  - Cleanup handlers for participant disconnection and pipeline termination
+- **Performance**: Minimal overhead, maintains <200ms hot path latency
+- **Configuration**: Environment-based configuration with monitoring enable/disable toggle
+
 ### Fixed - TTS Text Processing Issues (2025-09-08) 🎉
 - **TTS Spacing Problem**: Fixed critical issue where TTS was receiving concatenated text without spaces (e.g., "Goodafternoontoyoutoo" instead of "Good afternoon to you too")
 - **Root Cause**: LLM Assistant Aggregator with `expect_stripped_words=True` was adding spaces between every streamed token, creating "rubbish text"

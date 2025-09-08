@@ -44,6 +44,11 @@ from pipecat.frames.frames import LLMRunFrame
 # Import HotMem processor
 from components.processing.hotpath_processor import HotPathMemoryProcessor
 
+# Import monitoring components
+from components.monitoring.health_monitor import HealthMonitor
+from components.monitoring.metrics_collector import MetricsCollector
+from components.monitoring.alerting_system import AlertingSystem
+
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
@@ -54,7 +59,6 @@ from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams,
 from tts.tts_mlx_isolated import TTSMLXIsolated
 from services.summarizer import start_periodic_summarizer
 from components.processing.sanitizer_processor import SanitizerProcessor
-from components.processing.response_formatter import ResponseFormatterProcessor
 
 
 from pipecat_whisker import WhiskerObserver
@@ -71,6 +75,12 @@ async def get_initial_greeting() -> str:
 app = FastAPI()
 
 pcs_map: Dict[str, SmallWebRTCConnection] = {}
+
+# Global monitoring variables
+health_monitor = None
+metrics_collector = None
+alerting_system = None
+monitoring_enabled = False
 
 ice_servers = [
     IceServer(
@@ -240,6 +250,31 @@ async def run_bot(webrtc_connection):
     except Exception as e:
         logger.warning(f"Failed to start summarizer: {e}")
 
+    # Initialize monitoring system if enabled
+    global health_monitor, metrics_collector, alerting_system, monitoring_enabled
+    monitoring_enabled = os.getenv("MONITORING_ENABLED", "true").lower() in ("1", "true", "yes")
+    
+    if monitoring_enabled:
+        try:
+            # Initialize metrics collector first
+            metrics_collector = MetricsCollector()
+            await metrics_collector.start_collection()
+            
+            # Initialize health monitor
+            health_monitor = HealthMonitor()
+            await health_monitor.start_monitoring()
+            
+            # Initialize alerting system
+            alerting_system = AlertingSystem()
+            alerting_system.set_metrics_collector(metrics_collector)
+            await alerting_system.start_monitoring()
+            
+            logger.info("✅ Monitoring system initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize monitoring system: {e}")
+            monitoring_enabled = False
+
     #
     # RTVI events for Pipecat client UI
     #
@@ -298,6 +333,16 @@ async def run_bot(webrtc_connection):
                 summarizer_task.cancel()
         except Exception:
             pass
+        # Stop monitoring systems
+        try:
+            if health_monitor:
+                await health_monitor.stop_monitoring()
+            if metrics_collector:
+                await metrics_collector.stop_collection()
+            if alerting_system:
+                await alerting_system.stop_monitoring()
+        except Exception as e:
+            logger.warning(f"Monitoring cleanup failed: {e}")
         # Build and persist session summary for retrieval
         try:
             summary_text = memory.persist_session_summary()
@@ -340,6 +385,16 @@ async def run_bot(webrtc_connection):
                 summarizer_task.cancel()
         except Exception:
             pass
+        # Stop monitoring systems
+        try:
+            if health_monitor:
+                await health_monitor.stop_monitoring()
+            if metrics_collector:
+                await metrics_collector.stop_collection()
+            if alerting_system:
+                await alerting_system.stop_monitoring()
+        except Exception as e:
+            logger.warning(f"Monitoring cleanup failed in finally: {e}")
         # As a safety net, attempt to persist a session summary when the pipeline ends
         try:
             summary_text = memory.persist_session_summary()
@@ -395,6 +450,37 @@ async def offer(request: dict, background_tasks: BackgroundTasks):
     pcs_map[answer["pc_id"]] = pipecat_connection
 
     return answer
+
+
+@app.get("/api/health")
+async def health_check():
+    """Basic health check endpoint"""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+
+@app.get("/api/metrics")
+async def get_metrics():
+    """Get current system metrics"""
+    if not metrics_collector:
+        return {"error": "Metrics not available"}
+    
+    return {
+        "current_metrics": metrics_collector.get_current_metrics(),
+        "system_health": health_monitor.get_system_health() if health_monitor else {},
+        "service_health": health_monitor.get_all_health_status() if health_monitor else {}
+    }
+
+
+@app.get("/api/monitoring/status")
+async def monitoring_status():
+    """Get monitoring system status"""
+    return {
+        "monitoring_enabled": monitoring_enabled,
+        "health_monitor": health_monitor is not None,
+        "metrics_collector": metrics_collector is not None,
+        "alerting_system": alerting_system is not None,
+        "active_alerts": len(alerting_system.active_alerts) if alerting_system else 0
+    }
 
 
 @asynccontextmanager
