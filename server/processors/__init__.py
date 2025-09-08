@@ -1,0 +1,1 @@
+"""Processors package for LocalCat pipeline architecture."""
