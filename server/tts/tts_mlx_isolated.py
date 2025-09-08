@@ -25,6 +25,23 @@ from pipecat.services.tts_service import TTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
 
 
+def add_word_boundaries(text: str) -> str:
+    """Add spaces between words when text is concatenated without spaces."""
+    # This is a heuristic to add word boundaries for text that's been streamed
+    # without proper spacing between tokens
+    if not text:
+        return text
+    
+    # Common patterns that indicate word boundaries
+    text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)  # camelCase -> camel Case
+    text = re.sub(r'([.,!?;:])([a-zA-Z])', r'\1 \2', text)  # Punctuation followed by letter
+    text = re.sub(r'([a-zA-Z])([.,!?;:])', r'\1 \2', text)  # Letter followed by punctuation
+    text = re.sub(r"([a-zA-Z])'([a-zA-Z])", r"\1' \2", text)  # Contractions
+    text = re.sub(r'\s+', ' ', text).strip()  # Clean up multiple spaces
+    
+    return text
+
+
 def remove_emojis(text: str) -> str:
     """Remove ALL emoji characters from text to prevent TTS from speaking them."""
     # Comprehensive emoji removal - covers all Unicode emoji ranges
@@ -53,6 +70,15 @@ def remove_emojis(text: str) -> str:
     )
     cleaned_text = emoji_pattern.sub('', text)
     # Clean up extra whitespace
+    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+    return cleaned_text
+
+
+def remove_thinking_markers(text: str) -> str:
+    """Remove thinking markers (*text*) from text to prevent TTS from speaking them."""
+    # Remove * characters used for thinking/reasoning blocks
+    cleaned_text = re.sub(r'\*+', '', text)  # Remove one or more * characters
+    # Clean up extra whitespace that might result from removing *
     cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
     return cleaned_text
 
@@ -213,7 +239,13 @@ class TTSMLXIsolated(TTSService):
         # Remove emojis before processing
         cleaned_text = remove_emojis(text)
         
-        # Skip if text becomes empty after emoji removal
+        # Remove thinking markers (* characters) before processing
+        cleaned_text = remove_thinking_markers(cleaned_text)
+        
+        # Add word boundaries for text that's been concatenated without spaces
+        cleaned_text = add_word_boundaries(cleaned_text)
+        
+        # Skip if text becomes empty after processing
         if not cleaned_text.strip():
             logger.debug(f"{self}: Skipping TTS for emoji-only text [{text}]")
             return

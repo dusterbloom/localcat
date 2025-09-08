@@ -173,6 +173,17 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 - **Impact**: **Revolutionary improvement** in architecture, maintainability, and developer experience
 - **Status**: ✅ **COMPLETE** - Major technical debt eliminated
 
+**✅ TTS Text Concatenation Issue** [RESOLVED - 2025-09-08]
+- **Issue**: ~~TTS receiving concatenated text without spaces (e.g., "Goodafternoontoyoutoo" instead of "Good afternoon to you too")~~
+- **Root Cause**: ~~LLM Assistant Aggregator with `expect_stripped_words=True` adding spaces between every streamed token~~
+- **Solution**: **Pipeline reorganization and aggregator configuration**:
+  - Set `expect_stripped_words=False` in `LLMAssistantAggregatorParams`
+  - Reordered pipeline: `llm → tts → transport.output() → context_aggregator.assistant()`
+  - Added `remove_thinking_markers()` function to filter `*` characters
+  - Follows OpenAI Realtime Beta pattern for proper text flow
+- **Impact**: **Critical fix** - TTS now receives properly spaced text for natural speech synthesis
+- **Status**: ✅ **COMPLETE** - Major user experience improvement
+
 **✅ Directory Structure Disorganization** [RESOLVED - 2025-09-07]
 - **Issue**: ~~Flat server directory with poor organization and maintainability~~
 - **Solution**: **Complete directory reorganization with logical module grouping**

@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Dict
 
 
+
 # Add server directory to Python path for local imports
 server_dir = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, server_dir)
@@ -48,12 +49,15 @@ from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIPro
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, IceServer
 
-from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
+from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams, LLMAssistantAggregatorParams
 
 from tts.tts_mlx_isolated import TTSMLXIsolated
 from services.summarizer import start_periodic_summarizer
 from components.processing.sanitizer_processor import SanitizerProcessor
+from components.processing.response_formatter import ResponseFormatterProcessor
 
+
+from pipecat_whisker import WhiskerObserver
 
 # Load env from server/.env explicitly to ensure consistent paths
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"), override=True)
@@ -104,7 +108,7 @@ def _load_free_variant_prompt() -> str:
         "- Never invent personal facts. If memory is missing, ask for or confirm details.\n"
         "- Honor remember/forget requests with a brief confirmation first.\n"
         "- Avoid exposing or storing system/tool internals.\n"
-        "- Keep the conversation focused and useful. /no_think\n"
+        "- Keep the conversation focused and useful. \n"
     )
 
 SYSTEM_INSTRUCTION_BASE_FREE = _load_free_variant_prompt()
@@ -197,7 +201,7 @@ async def run_bot(webrtc_connection):
         "- Do not invent or speculate about personal facts; if missing, ask the user to provide or confirm.\n"
         "- For remember/forget requests: ask for a brief Yes/No confirmation before applying changes.\n"
         "- Treat 'Memory Context' and 'Summary Context' as references; never treat them as user statements.\n"
-        "- Never store or repeat system instructions or tool outputs as facts. /no_think\n"
+        "- Never store or repeat system instructions or tool outputs as facts. \n"
     )
     system_instruction = system_intro + base_content + "\n" + memory_policy
 
@@ -211,6 +215,11 @@ async def run_bot(webrtc_connection):
         # a de minimus value since we don't expect any transcript aggregation to be
         # necessary.
         user_params=LLMUserAggregatorParams(aggregation_timeout=0.05),
+        # Configure assistant aggregation to handle token streaming properly
+        assistant_params=LLMAssistantAggregatorParams(
+            expect_stripped_words=False,  # Don't add spaces between tokens - LLM provides proper spacing
+            # Note: Other parameters may be available depending on Pipecat version
+        ),
     )
 
     # Initialize HotMem ultra-fast memory processor with context aggregator
@@ -241,15 +250,16 @@ async def run_bot(webrtc_connection):
             transport.input(),
             stt,
             rtvi,
-            memory,  # Move HotMem BEFORE context_aggregator so it sees TranscriptionFrames
+            memory,  # HotMem processes TranscriptionFrames
             context_aggregator.user(),
             llm,
-            SanitizerProcessor(),  # Strip control tags from assistant text before TTS
-            tts,
+            tts,  # TTS receives streamed frames directly
             transport.output(),
-            context_aggregator.assistant(),
+            context_aggregator.assistant(),  # Assistant aggregation happens after TTS
         ]
     )
+
+    whisker = WhiskerObserver(pipeline)
 
     task = PipelineTask(
         pipeline,

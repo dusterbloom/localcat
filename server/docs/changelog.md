@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - TTS Text Processing Issues (2025-09-08) 🎉
+- **TTS Spacing Problem**: Fixed critical issue where TTS was receiving concatenated text without spaces (e.g., "Goodafternoontoyoutoo" instead of "Good afternoon to you too")
+- **Root Cause**: LLM Assistant Aggregator with `expect_stripped_words=True` was adding spaces between every streamed token, creating "rubbish text"
+- **Solution**: 
+  - Set `expect_stripped_words=False` in `LLMAssistantAggregatorParams`
+  - Reordered pipeline to move `context_aggregator.assistant()` after `transport.output()` 
+  - TTS now receives frames directly from LLM, bypassing problematic aggregation logic
+- **Pipeline Architecture**: Updated to follow OpenAI Realtime Beta pattern for proper text flow
+- **Thinking Markers**: Added `remove_thinking_markers()` function to filter `*` characters from TTS input
+- **Text Processing**: Enhanced TTS preprocessing pipeline with emoji and thinking marker removal
+
 ### Added - Phase 3 & 4 Complete Architecture Refactoring (2025-09-08) 🎉
 - **Major Architecture Transformation**: Complete SOLID-based modular architecture replacing monolithic design
 - **Phase 3: Pipeline Architecture**: 
