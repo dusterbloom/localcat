@@ -1,97 +1,103 @@
-Speech-to-Speech
-OpenAI Realtime Beta
+# OpenAI Realtime Beta
 
-Copy page
+> Real-time speech-to-speech service implementation using OpenAI’s Realtime Beta API
 
-Real-time speech-to-speech service implementation using OpenAI’s Realtime Beta API
+`OpenAIRealtimeBetaLLMService` provides real-time, multimodal conversation capabilities using OpenAI's Realtime Beta API. It supports speech-to-speech interactions with integrated LLM processing, function calling, and advanced conversation management.
 
-OpenAIRealtimeBetaLLMService provides real-time, multimodal conversation capabilities using OpenAI’s Realtime Beta API. It supports speech-to-speech interactions with integrated LLM processing, function calling, and advanced conversation management.
-Real-time Interaction
-Stream audio in real-time with minimal latency response times
-Speech Processing
-Built-in speech-to-text and text-to-speech capabilities with voice options
-Advanced Turn Detection
-Multiple voice activity detection options including semantic turn detection
-Powerful Function Calling
-Seamless support for calling external functions and APIs
-​
-Installation
-To use OpenAIRealtimeBetaLLMService, install the required dependencies:
+<CardGroup cols={2}>
+  <Card title="Real-time Interaction" icon="bolt">
+    Stream audio in real-time with minimal latency response times
+  </Card>
 
-Copy
+  <Card title="Speech Processing" icon="waveform-lines">
+    Built-in speech-to-text and text-to-speech capabilities with voice options
+  </Card>
 
-Ask AI
+  <Card title="Advanced Turn Detection" icon="microphone">
+    Multiple voice activity detection options including semantic turn detection
+  </Card>
+
+  <Card title="Powerful Function Calling" icon="code">
+    Seamless support for calling external functions and APIs
+  </Card>
+</CardGroup>
+
+## Installation
+
+To use `OpenAIRealtimeBetaLLMService`, install the required dependencies:
+
+```bash
 pip install "pipecat-ai[openai]"
-You’ll also need to set up your OpenAI API key as an environment variable: OPENAI_API_KEY.
-​
-Configuration
-​
-Constructor Parameters
-​
-api_key
-strrequired
-Your OpenAI API key
-​
-model
-strdefault:"gpt-4o-realtime-preview-2025-06-03"
-The speech-to-speech model used for processing
-​
-base_url
-strdefault:"wss://api.openai.com/v1/realtime"
-WebSocket endpoint URL
-​
-session_properties
-SessionProperties
-Configuration for the realtime session
-​
-start_audio_paused
-booldefault:"False"
-Whether to start with audio input paused
-​
-send_transcription_frames
-booldefault:"True"
-Whether to emit transcription frames
-​
-Session Properties
-The SessionProperties object configures the behavior of the realtime session:
-​
-modalities
-List[Literal['text', 'audio']]
-The modalities to enable (default includes both text and audio)
-​
-instructions
-str
-System instructions that guide the model’s behavior
+```
 
-Copy
+You'll also need to set up your OpenAI API key as an environment variable: `OPENAI_API_KEY`.
 
-Ask AI
+## Configuration
+
+### Constructor Parameters
+
+<ParamField path="api_key" type="str" required>
+  Your OpenAI API key
+</ParamField>
+
+<ParamField path="model" type="str" default="gpt-4o-realtime-preview-2025-06-03">
+  The speech-to-speech model used for processing
+</ParamField>
+
+<ParamField path="base_url" type="str" default="wss://api.openai.com/v1/realtime">
+  WebSocket endpoint URL
+</ParamField>
+
+<ParamField path="session_properties" type="SessionProperties">
+  Configuration for the realtime session
+</ParamField>
+
+<ParamField path="start_audio_paused" type="bool" default="False">
+  Whether to start with audio input paused
+</ParamField>
+
+<ParamField path="send_transcription_frames" type="bool" default="True">
+  Whether to emit transcription frames
+</ParamField>
+
+### Session Properties
+
+The `SessionProperties` object configures the behavior of the realtime session:
+
+<ParamField path="modalities" type="List[Literal['text', 'audio']]" optional>
+  The modalities to enable (default includes both text and audio)
+</ParamField>
+
+<ParamField path="instructions" type="str" optional>
+  System instructions that guide the model's behavior
+</ParamField>
+
+```python
 service = OpenAIRealtimeBetaLLMService(
     api_key=os.getenv("OPENAI_API_KEY"),
     session_properties=SessionProperties(
         instructions="You are a helpful assistant. Be concise and friendly."
     )
 )
-​
-voice
-str
-Voice ID for text-to-speech (options: alloy, echo, fable, onyx, nova, shimmer)
-​
-input_audio_format
-Literal['pcm16', 'g711_ulaw', 'g711_alaw']
-Format of the input audio
-​
-output_audio_format
-Literal['pcm16', 'g711_ulaw', 'g711_alaw']
-Format of the output audio
-​
-input_audio_transcription
-InputAudioTranscription
-Configuration for audio transcription
+```
 
-Copy
+<ParamField path="voice" type="str" optional>
+  Voice ID for text-to-speech (options: alloy, echo, fable, onyx, nova, shimmer)
+</ParamField>
 
-Ask AI
+<ParamField path="input_audio_format" type="Literal['pcm16', 'g711_ulaw', 'g711_alaw']" optional>
+  Format of the input audio
+</ParamField>
+
+<ParamField path="output_audio_format" type="Literal['pcm16', 'g711_ulaw', 'g711_alaw']" optional>
+  Format of the output audio
+</ParamField>
+
+<ParamField path="input_audio_transcription" type="InputAudioTranscription" optional>
+  Configuration for audio transcription
+</ParamField>
+
+```python
 from pipecat.services.openai_realtime_beta.events import InputAudioTranscription
 
 service = OpenAIRealtimeBetaLLMService(
@@ -104,121 +110,121 @@ service = OpenAIRealtimeBetaLLMService(
         )
     )
 )
-​
-input_audio_noise_reduction
-InputAudioNoiseReduction
-Configuration for audio noise reduction
-​
-turn_detection
-Union[TurnDetection, SemanticTurnDetection, bool]
-Configuration for turn detection (set to False to disable)
-​
-tools
-List[Dict]
-List of function definitions for tool/function calling
-​
-tool_choice
-Literal['auto', 'none', 'required']
-Controls when the model calls functions
-​
-temperature
-float
-Controls randomness in responses (0.0 to 2.0)
-​
-max_response_output_tokens
-Union[int, Literal['inf']]
-Maximum number of tokens to generate
-​
-Input Frames
-​
-Audio Input
-​
-InputAudioRawFrame
-Frame
-Raw audio data for speech input
-​
-Control Input
-​
-StartInterruptionFrame
-Frame
-Signals start of user interruption
-​
-UserStartedSpeakingFrame
-Frame
-Signals user started speaking
-​
-UserStoppedSpeakingFrame
-Frame
-Signals user stopped speaking
-​
-Context Input
-​
-OpenAILLMContextFrame
-Frame
-Contains conversation context
-​
-LLMMessagesAppendFrame
-Frame
-Appends messages to conversation
-​
-Output Frames
-​
-Audio Output
-​
-TTSAudioRawFrame
-Frame
-Generated speech audio
-​
-Control Output
-​
-TTSStartedFrame
-Frame
-Signals start of speech synthesis
-​
-TTSStoppedFrame
-Frame
-Signals end of speech synthesis
-​
-Text Output
-​
-TextFrame
-Frame
-Generated text responses
-​
-TranscriptionFrame
-Frame
-Speech transcriptions
-​
-Events
-​
-on_conversation_item_created
-event
-Emitted when a conversation item on the server is created. Handler receives:
-item_id: str
-item: ConversationItem
-​
-on_conversation_item_updated
-event
-Emitted when a conversation item on the server is updated. Handler receives:
-item_id: str
-item: Optional[ConversationItem] (may not exist for some updates)
-​
-Methods
-​
-retrieve_conversation_item
-method
-Retrieves a conversation item’s details from the server.
+```
 
-Copy
+<ParamField path="input_audio_noise_reduction" type="InputAudioNoiseReduction" optional>
+  Configuration for audio noise reduction
+</ParamField>
 
-Ask AI
-async def retrieve_conversation_item(self, item_id: str) -> ConversationItem
-​
-Usage Example
+<ParamField path="turn_detection" type="Union[TurnDetection, SemanticTurnDetection, bool]" optional>
+  Configuration for turn detection (set to False to disable)
+</ParamField>
 
-Copy
+<ParamField path="tools" type="List[Dict]" optional>
+  List of function definitions for tool/function calling
+</ParamField>
 
-Ask AI
+<ParamField path="tool_choice" type="Literal['auto', 'none', 'required']" optional>
+  Controls when the model calls functions
+</ParamField>
+
+<ParamField path="temperature" type="float" optional>
+  Controls randomness in responses (0.0 to 2.0)
+</ParamField>
+
+<ParamField path="max_response_output_tokens" type="Union[int, Literal['inf']]" optional>
+  Maximum number of tokens to generate
+</ParamField>
+
+## Input Frames
+
+### Audio Input
+
+<ParamField path="InputAudioRawFrame" type="Frame">
+  Raw audio data for speech input
+</ParamField>
+
+### Control Input
+
+<ParamField path="StartInterruptionFrame" type="Frame">
+  Signals start of user interruption
+</ParamField>
+
+<ParamField path="UserStartedSpeakingFrame" type="Frame">
+  Signals user started speaking
+</ParamField>
+
+<ParamField path="UserStoppedSpeakingFrame" type="Frame">
+  Signals user stopped speaking
+</ParamField>
+
+### Context Input
+
+<ParamField path="OpenAILLMContextFrame" type="Frame">
+  Contains conversation context
+</ParamField>
+
+<ParamField path="LLMMessagesAppendFrame" type="Frame">
+  Appends messages to conversation
+</ParamField>
+
+## Output Frames
+
+### Audio Output
+
+<ParamField path="TTSAudioRawFrame" type="Frame">
+  Generated speech audio
+</ParamField>
+
+### Control Output
+
+<ParamField path="TTSStartedFrame" type="Frame">
+  Signals start of speech synthesis
+</ParamField>
+
+<ParamField path="TTSStoppedFrame" type="Frame">
+  Signals end of speech synthesis
+</ParamField>
+
+### Text Output
+
+<ParamField path="TextFrame" type="Frame">
+  Generated text responses
+</ParamField>
+
+<ParamField path="TranscriptionFrame" type="Frame">
+  Speech transcriptions
+</ParamField>
+
+## Events
+
+<ParamField path="on_conversation_item_created" type="event">
+  Emitted when a conversation item on the server is created. Handler receives:
+
+  * `item_id: str`
+  * `item: ConversationItem`
+</ParamField>
+
+<ParamField path="on_conversation_item_updated" type="event">
+  Emitted when a conversation item on the server is updated. Handler receives:
+
+  * `item_id: str`
+  * `item: Optional[ConversationItem]` (may not exist for some updates)
+</ParamField>
+
+## Methods
+
+<ResponseField name="retrieve_conversation_item" type="method">
+  Retrieves a conversation item's details from the server.
+
+  ```python
+  async def retrieve_conversation_item(self, item_id: str) -> ConversationItem
+  ```
+</ResponseField>
+
+## Usage Example
+
+```python
 from pipecat.services.openai_realtime_beta import OpenAIRealtimeBetaLLMService
 from pipecat.services.openai_realtime_beta.events import SessionProperties, TurnDetection
 
@@ -242,13 +248,13 @@ pipeline = Pipeline([
     service,           # Processes speech/generates responses
     audio_output       # Handles TTSAudioRawFrame
 ])
-​
-Function Calling
+```
+
+## Function Calling
+
 The service supports function calling with automatic response handling:
 
-Copy
-
-Ask AI
+```python
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.services.openai_realtime_beta import SessionProperties
@@ -276,52 +282,49 @@ llm = OpenAIRealtimeBetaLLMService(
 )
 
 llm.register_function("get_weather", fetch_weather_from_api)
-See the Function Calling guide for:
-Detailed implementation instructions
-Provider-specific function definitions
-Handler registration examples
-Control over function call behavior
-Complete usage examples
-​
-Frame Flow
-InputAudioRawFrame
+```
 
-OpenAIRealtimeBetaLLMService
+See the [Function Calling guide](/learn/function-calling) for:
 
-TranscriptionFrame
+* Detailed implementation instructions
+* Provider-specific function definitions
+* Handler registration examples
+* Control over function call behavior
+* Complete usage examples
 
-TTSStartedFrame
+## Frame Flow
 
-TTSAudioRawFrame
+```mermaid
+graph TD
+    A[InputAudioRawFrame] --> B[OpenAIRealtimeBetaLLMService]
+    B --> C[TranscriptionFrame]
+    B --> H[TTSStartedFrame]
+    B --> I[TTSAudioRawFrame]
+    B --> J[TTSStoppedFrame]
+    B --> K[ErrorFrame]
+    B --> D[LLMFullResponseStartFrame]
+    B --> E[Function Calls]
+    B --> F[LLMFullResponseEndFrame]
+    E --> G[Function Results]
+    G --> B
 
-TTSStoppedFrame
+```
 
-ErrorFrame
+## Metrics Support
 
-LLMFullResponseStartFrame
-
-Function Calls
-
-LLMFullResponseEndFrame
-
-Function Results
-
-​
-Metrics Support
 The service collects comprehensive metrics:
-Token usage (prompt and completion)
-Processing duration
-Time to First Byte (TTFB)
-Audio processing metrics
-Function call metrics
-​
-Advanced Features
-​
-Turn Detection
 
-Copy
+* Token usage (prompt and completion)
+* Processing duration
+* Time to First Byte (TTFB)
+* Audio processing metrics
+* Function call metrics
 
-Ask AI
+## Advanced Features
+
+### Turn Detection
+
+```python
 # Server-side basic VAD
 turn_detection = TurnDetection(
     type="server_vad",
@@ -340,12 +343,11 @@ turn_detection = SemanticTurnDetection(
 
 # Disable turn detection
 turn_detection = False
-​
-Context Management
+```
 
-Copy
+### Context Management
 
-Ask AI
+```python
 # Create context
 context = OpenAIRealtimeLLMContext(
     messages=[],
@@ -355,17 +357,22 @@ context = OpenAIRealtimeLLMContext(
 
 # Create aggregators
 aggregators = service.create_context_aggregator(context)
-​
-Foundational Examples
-OpenAI Realtime Beta Example
-Basic implementation showing core realtime features including audio streaming, turn detection, and function calling.
-​
-Notes
-Supports real-time speech-to-speech conversation
-Handles interruptions and turn-taking
-Manages WebSocket connection lifecycle
-Provides function calling capabilities
-Supports conversation context management
-Includes comprehensive error handling
-Manages audio streaming and processing
-Handles both text and audio modalities
+```
+
+## Foundational Examples
+
+<Card title="OpenAI Realtime Beta Example" icon="code" href="https://github.com/pipecat-ai/pipecat/blob/main/examples/foundational/19-openai-realtime-beta.py">
+  Basic implementation showing core realtime features including audio streaming,
+  turn detection, and function calling.
+</Card>
+
+## Notes
+
+* Supports real-time speech-to-speech conversation
+* Handles interruptions and turn-taking
+* Manages WebSocket connection lifecycle
+* Provides function calling capabilities
+* Supports conversation context management
+* Includes comprehensive error handling
+* Manages audio streaming and processing
+* Handles both text and audio modalities
