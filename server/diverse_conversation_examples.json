@@ -1,0 +1,1294 @@
+[
+  {
+    "text": "Sarah lives in New York with her husband Michael and their two kids.",
+    "entities": [
+      {
+        "text": "Sarah",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "New York",
+        "type": "LOCATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "Michael",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "kids",
+        "type": "PERSON",
+        "confidence": 0.85
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Sarah",
+        "predicate": "lives_in",
+        "object": "New York",
+        "confidence": 0.9
+      },
+      {
+        "subject": "Sarah",
+        "predicate": "married_to",
+        "object": "Michael",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Sarah",
+        "predicate": "parent_of",
+        "object": "kids",
+        "confidence": 0.85
+      },
+      {
+        "subject": "Michael",
+        "predicate": "parent_of",
+        "object": "kids",
+        "confidence": 0.85
+      },
+      {
+        "subject": "Sarah",
+        "predicate": "lives_with",
+        "object": "Michael",
+        "confidence": 0.9
+      }
+    ],
+    "category": "daily_life",
+    "difficulty": "medium"
+  },
+  {
+    "text": "My neighbor John takes care of his elderly mother who lives next door.",
+    "entities": [
+      {
+        "text": "John",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "mother",
+        "type": "PERSON",
+        "confidence": 0.85
+      },
+      {
+        "text": "next door",
+        "type": "LOCATION",
+        "confidence": 0.8
+      }
+    ],
+    "relations": [
+      {
+        "subject": "John",
+        "predicate": "neighbor_of",
+        "object": "speaker",
+        "confidence": 0.9
+      },
+      {
+        "subject": "John",
+        "predicate": "takes_care_of",
+        "object": "mother",
+        "confidence": 0.95
+      },
+      {
+        "subject": "mother",
+        "predicate": "lives_in",
+        "object": "next door",
+        "confidence": 0.8
+      },
+      {
+        "subject": "John",
+        "predicate": "child_of",
+        "object": "mother",
+        "confidence": 0.85
+      }
+    ],
+    "category": "daily_life",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Emma and her best friend Lisa met through college and now hang out every weekend.",
+    "entities": [
+      {
+        "text": "Emma",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "Lisa",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "college",
+        "type": "ORGANIZATION",
+        "confidence": 0.85
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Emma",
+        "predicate": "best_friends_with",
+        "object": "Lisa",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Emma",
+        "predicate": "met_through",
+        "object": "college",
+        "confidence": 0.85
+      },
+      {
+        "subject": "Lisa",
+        "predicate": "met_through",
+        "object": "college",
+        "confidence": 0.85
+      },
+      {
+        "subject": "Emma",
+        "predicate": "hangs_out_with",
+        "object": "Lisa",
+        "confidence": 0.9
+      }
+    ],
+    "category": "daily_life",
+    "difficulty": "medium"
+  },
+  {
+    "text": "David is famous for his amazing BBQ parties that he hosts in his backyard.",
+    "entities": [
+      {
+        "text": "David",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "BBQ parties",
+        "type": "EVENT",
+        "confidence": 0.85
+      },
+      {
+        "text": "backyard",
+        "type": "LOCATION",
+        "confidence": 0.8
+      }
+    ],
+    "relations": [
+      {
+        "subject": "David",
+        "predicate": "famous_for",
+        "object": "BBQ parties",
+        "confidence": 0.9
+      },
+      {
+        "subject": "David",
+        "predicate": "hosts",
+        "object": "BBQ parties",
+        "confidence": 0.95
+      },
+      {
+        "subject": "BBQ parties",
+        "predicate": "located_in",
+        "object": "backyard",
+        "confidence": 0.8
+      }
+    ],
+    "category": "daily_life",
+    "difficulty": "medium"
+  },
+  {
+    "text": "My roommate Alex studies at Stanford and is majoring in computer science.",
+    "entities": [
+      {
+        "text": "Alex",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "Stanford",
+        "type": "ORGANIZATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "computer science",
+        "type": "MISC",
+        "confidence": 0.85
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Alex",
+        "predicate": "roommate_of",
+        "object": "speaker",
+        "confidence": 0.9
+      },
+      {
+        "subject": "Alex",
+        "predicate": "studies_at",
+        "object": "Stanford",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Alex",
+        "predicate": "majors_in",
+        "object": "computer science",
+        "confidence": 0.9
+      }
+    ],
+    "category": "daily_life",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Jennifer works at Google as a software engineer and reports to the engineering manager.",
+    "entities": [
+      {
+        "text": "Jennifer",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "Google",
+        "type": "ORGANIZATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "software engineer",
+        "type": "TITLE",
+        "confidence": 0.85
+      },
+      {
+        "text": "engineering manager",
+        "type": "TITLE",
+        "confidence": 0.85
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Jennifer",
+        "predicate": "works_at",
+        "object": "Google",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Jennifer",
+        "predicate": "employed_by",
+        "object": "Google",
+        "confidence": 0.9
+      },
+      {
+        "subject": "Jennifer",
+        "predicate": "reports_to",
+        "object": "engineering manager",
+        "confidence": 0.85
+      }
+    ],
+    "category": "work_career",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Professor Williams teaches at Harvard and specializes in artificial intelligence research.",
+    "entities": [
+      {
+        "text": "Professor Williams",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "Harvard",
+        "type": "ORGANIZATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "artificial intelligence research",
+        "type": "MISC",
+        "confidence": 0.85
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Professor Williams",
+        "predicate": "teaches_at",
+        "object": "Harvard",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Professor Williams",
+        "predicate": "specializes_in",
+        "object": "artificial intelligence research",
+        "confidence": 0.9
+      }
+    ],
+    "category": "work_career",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Mark founded his own startup and now serves as CEO while mentoring young entrepreneurs.",
+    "entities": [
+      {
+        "text": "Mark",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "startup",
+        "type": "ORGANIZATION",
+        "confidence": 0.85
+      },
+      {
+        "text": "entrepreneurs",
+        "type": "PERSON",
+        "confidence": 0.8
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Mark",
+        "predicate": "founder_of",
+        "object": "startup",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Mark",
+        "predicate": "CEO_of",
+        "object": "startup",
+        "confidence": 0.9
+      },
+      {
+        "subject": "Mark",
+        "predicate": "mentors",
+        "object": "entrepreneurs",
+        "confidence": 0.85
+      }
+    ],
+    "category": "work_career",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Dr. Smith graduated from MIT with a degree in physics and now consults for NASA.",
+    "entities": [
+      {
+        "text": "Dr. Smith",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "MIT",
+        "type": "ORGANIZATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "physics",
+        "type": "MISC",
+        "confidence": 0.85
+      },
+      {
+        "text": "NASA",
+        "type": "ORGANIZATION",
+        "confidence": 0.9
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Dr. Smith",
+        "predicate": "graduated_from",
+        "object": "MIT",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Dr. Smith",
+        "predicate": "degree_in",
+        "object": "physics",
+        "confidence": 0.85
+      },
+      {
+        "subject": "Dr. Smith",
+        "predicate": "consults_for",
+        "object": "NASA",
+        "confidence": 0.9
+      }
+    ],
+    "category": "work_career",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Sarah and Tom are colleagues at Microsoft who work on the same team.",
+    "entities": [
+      {
+        "text": "Sarah",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "Tom",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "Microsoft",
+        "type": "ORGANIZATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "team",
+        "type": "ORGANIZATION",
+        "confidence": 0.8
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Sarah",
+        "predicate": "colleague_of",
+        "object": "Tom",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Sarah",
+        "predicate": "works_at",
+        "object": "Microsoft",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Tom",
+        "predicate": "works_at",
+        "object": "Microsoft",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Sarah",
+        "predicate": "teammate_of",
+        "object": "Tom",
+        "confidence": 0.9
+      },
+      {
+        "subject": "Sarah",
+        "predicate": "member_of",
+        "object": "team",
+        "confidence": 0.85
+      },
+      {
+        "subject": "Tom",
+        "predicate": "member_of",
+        "object": "team",
+        "confidence": 0.85
+      }
+    ],
+    "category": "work_career",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Christopher Nolan directed The Dark Knight trilogy which starred Christian Bale as Batman.",
+    "entities": [
+      {
+        "text": "Christopher Nolan",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "The Dark Knight trilogy",
+        "type": "MISC",
+        "confidence": 0.9
+      },
+      {
+        "text": "Christian Bale",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "Batman",
+        "type": "PERSON",
+        "confidence": 0.9
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Christopher Nolan",
+        "predicate": "directed",
+        "object": "The Dark Knight trilogy",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Christian Bale",
+        "predicate": "starred_in",
+        "object": "The Dark Knight trilogy",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Christian Bale",
+        "predicate": "played_in",
+        "object": "The Dark Knight trilogy",
+        "confidence": 0.9
+      }
+    ],
+    "category": "entertainment",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Taylor Swift performed at the Grammy Awards and won Album of the Year.",
+    "entities": [
+      {
+        "text": "Taylor Swift",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "Grammy Awards",
+        "type": "EVENT",
+        "confidence": 0.9
+      },
+      {
+        "text": "Album of the Year",
+        "type": "MISC",
+        "confidence": 0.85
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Taylor Swift",
+        "predicate": "performed_in",
+        "object": "Grammy Awards",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Taylor Swift",
+        "predicate": "won",
+        "object": "Album of the Year",
+        "confidence": 0.95
+      }
+    ],
+    "category": "entertainment",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Morgan Freeman narrated the documentary March of the Penguins which was directed by Luc Jacquet.",
+    "entities": [
+      {
+        "text": "Morgan Freeman",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "March of the Penguins",
+        "type": "MISC",
+        "confidence": 0.9
+      },
+      {
+        "text": "Luc Jacquet",
+        "type": "PERSON",
+        "confidence": 0.95
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Morgan Freeman",
+        "predicate": "narrated",
+        "object": "March of the Penguins",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Luc Jacquet",
+        "predicate": "directed",
+        "object": "March of the Penguins",
+        "confidence": 0.95
+      }
+    ],
+    "category": "entertainment",
+    "difficulty": "medium"
+  },
+  {
+    "text": "I watched The Crown on Netflix and listened to the soundtrack composed by Hans Zimmer.",
+    "entities": [
+      {
+        "text": "The Crown",
+        "type": "MISC",
+        "confidence": 0.9
+      },
+      {
+        "text": "Netflix",
+        "type": "ORGANIZATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "soundtrack",
+        "type": "MISC",
+        "confidence": 0.85
+      },
+      {
+        "text": "Hans Zimmer",
+        "type": "PERSON",
+        "confidence": 0.95
+      }
+    ],
+    "relations": [
+      {
+        "subject": "speaker",
+        "predicate": "watched",
+        "object": "The Crown",
+        "confidence": 0.9
+      },
+      {
+        "subject": "The Crown",
+        "predicate": "streamed_on",
+        "object": "Netflix",
+        "confidence": 0.85
+      },
+      {
+        "subject": "speaker",
+        "predicate": "listened_to",
+        "object": "soundtrack",
+        "confidence": 0.85
+      },
+      {
+        "subject": "Hans Zimmer",
+        "predicate": "composed",
+        "object": "soundtrack",
+        "confidence": 0.95
+      }
+    ],
+    "category": "entertainment",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Stephen King wrote The Shining which Stanley Kubrick later adapted into a film starring Jack Nicholson.",
+    "entities": [
+      {
+        "text": "Stephen King",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "The Shining",
+        "type": "MISC",
+        "confidence": 0.9
+      },
+      {
+        "text": "Stanley Kubrick",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "film",
+        "type": "MISC",
+        "confidence": 0.8
+      },
+      {
+        "text": "Jack Nicholson",
+        "type": "PERSON",
+        "confidence": 0.95
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Stephen King",
+        "predicate": "wrote",
+        "object": "The Shining",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Stanley Kubrick",
+        "predicate": "adapted",
+        "object": "The Shining",
+        "confidence": 0.9
+      },
+      {
+        "subject": "Stanley Kubrick",
+        "predicate": "directed",
+        "object": "film",
+        "confidence": 0.85
+      },
+      {
+        "subject": "Jack Nicholson",
+        "predicate": "starred_in",
+        "object": "film",
+        "confidence": 0.9
+      }
+    ],
+    "category": "entertainment",
+    "difficulty": "medium"
+  },
+  {
+    "text": "LeBron James plays for the Lakers and has won four NBA championships.",
+    "entities": [
+      {
+        "text": "LeBron James",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "Lakers",
+        "type": "ORGANIZATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "four NBA championships",
+        "type": "MISC",
+        "confidence": 0.85
+      }
+    ],
+    "relations": [
+      {
+        "subject": "LeBron James",
+        "predicate": "plays_for",
+        "object": "Lakers",
+        "confidence": 0.95
+      },
+      {
+        "subject": "LeBron James",
+        "predicate": "won",
+        "object": "four NBA championships",
+        "confidence": 0.9
+      }
+    ],
+    "category": "sports_hobbies",
+    "difficulty": "medium"
+  },
+  {
+    "text": "My brother runs marathons and trains every morning at the local park.",
+    "entities": [
+      {
+        "text": "brother",
+        "type": "PERSON",
+        "confidence": 0.85
+      },
+      {
+        "text": "marathons",
+        "type": "EVENT",
+        "confidence": 0.8
+      },
+      {
+        "text": "local park",
+        "type": "LOCATION",
+        "confidence": 0.8
+      }
+    ],
+    "relations": [
+      {
+        "subject": "brother",
+        "predicate": "runs",
+        "object": "marathons",
+        "confidence": 0.85
+      },
+      {
+        "subject": "brother",
+        "predicate": "trains",
+        "object": "local park",
+        "confidence": 0.85
+      }
+    ],
+    "category": "sports_hobbies",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Emma paints beautiful landscapes and exhibits her work at local art galleries.",
+    "entities": [
+      {
+        "text": "Emma",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "landscapes",
+        "type": "MISC",
+        "confidence": 0.85
+      },
+      {
+        "text": "local art galleries",
+        "type": "LOCATION",
+        "confidence": 0.8
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Emma",
+        "predicate": "paints",
+        "object": "landscapes",
+        "confidence": 0.9
+      },
+      {
+        "subject": "Emma",
+        "predicate": "exhibits",
+        "object": "work",
+        "confidence": 0.85
+      },
+      {
+        "subject": "work",
+        "predicate": "located_in",
+        "object": "local art galleries",
+        "confidence": 0.8
+      }
+    ],
+    "category": "sports_hobbies",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Tom Brady coached the Buccaneers after retiring from playing football.",
+    "entities": [
+      {
+        "text": "Tom Brady",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "Buccaneers",
+        "type": "ORGANIZATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "football",
+        "type": "MISC",
+        "confidence": 0.85
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Tom Brady",
+        "predicate": "coaches",
+        "object": "Buccaneers",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Tom Brady",
+        "predicate": "retired_from",
+        "object": "football",
+        "confidence": 0.9
+      }
+    ],
+    "category": "sports_hobbies",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Sarah collects vintage cameras and photographs wildlife in her free time.",
+    "entities": [
+      {
+        "text": "Sarah",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "vintage cameras",
+        "type": "MISC",
+        "confidence": 0.85
+      },
+      {
+        "text": "wildlife",
+        "type": "MISC",
+        "confidence": 0.8
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Sarah",
+        "predicate": "collects",
+        "object": "vintage cameras",
+        "confidence": 0.9
+      },
+      {
+        "subject": "Sarah",
+        "predicate": "photographs",
+        "object": "wildlife",
+        "confidence": 0.85
+      }
+    ],
+    "category": "sports_hobbies",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Gordon Ramsay owns several Michelin-starred restaurants and is famous for his cooking shows.",
+    "entities": [
+      {
+        "text": "Gordon Ramsay",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "Michelin-starred restaurants",
+        "type": "ORGANIZATION",
+        "confidence": 0.85
+      },
+      {
+        "text": "cooking shows",
+        "type": "MISC",
+        "confidence": 0.8
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Gordon Ramsay",
+        "predicate": "owns",
+        "object": "Michelin-starred restaurants",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Gordon Ramsay",
+        "predicate": "famous_for",
+        "object": "cooking shows",
+        "confidence": 0.9
+      }
+    ],
+    "category": "food_travel",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Last summer, I traveled to Japan and stayed at a traditional ryokan in Kyoto.",
+    "entities": [
+      {
+        "text": "summer",
+        "type": "DATE",
+        "confidence": 0.8
+      },
+      {
+        "text": "Japan",
+        "type": "LOCATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "traditional ryokan",
+        "type": "LOCATION",
+        "confidence": 0.85
+      },
+      {
+        "text": "Kyoto",
+        "type": "LOCATION",
+        "confidence": 0.9
+      }
+    ],
+    "relations": [
+      {
+        "subject": "speaker",
+        "predicate": "traveled_to",
+        "object": "Japan",
+        "confidence": 0.95
+      },
+      {
+        "subject": "speaker",
+        "predicate": "stayed_at",
+        "object": "traditional ryokan",
+        "confidence": 0.9
+      },
+      {
+        "subject": "traditional ryokan",
+        "predicate": "located_in",
+        "object": "Kyoto",
+        "confidence": 0.85
+      }
+    ],
+    "category": "food_travel",
+    "difficulty": "medium"
+  },
+  {
+    "text": "The local Italian restaurant is known for their homemade pasta and wood-fired pizza.",
+    "entities": [
+      {
+        "text": "local Italian restaurant",
+        "type": "ORGANIZATION",
+        "confidence": 0.85
+      },
+      {
+        "text": "homemade pasta",
+        "type": "MISC",
+        "confidence": 0.8
+      },
+      {
+        "text": "wood-fired pizza",
+        "type": "MISC",
+        "confidence": 0.8
+      }
+    ],
+    "relations": [
+      {
+        "subject": "local Italian restaurant",
+        "predicate": "known_for",
+        "object": "homemade pasta",
+        "confidence": 0.85
+      },
+      {
+        "subject": "local Italian restaurant",
+        "predicate": "known_for",
+        "object": "wood-fired pizza",
+        "confidence": 0.85
+      }
+    ],
+    "category": "food_travel",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Maria bakes amazing sourdough bread that she sells at the farmers market.",
+    "entities": [
+      {
+        "text": "Maria",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "sourdough bread",
+        "type": "MISC",
+        "confidence": 0.85
+      },
+      {
+        "text": "farmers market",
+        "type": "LOCATION",
+        "confidence": 0.8
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Maria",
+        "predicate": "bakes",
+        "object": "sourdough bread",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Maria",
+        "predicate": "sells",
+        "object": "sourdough bread",
+        "confidence": 0.9
+      },
+      {
+        "subject": "sourdough bread",
+        "predicate": "sold_in",
+        "object": "farmers market",
+        "confidence": 0.85
+      }
+    ],
+    "category": "food_travel",
+    "difficulty": "medium"
+  },
+  {
+    "text": "We flew to Paris and visited the Eiffel Tower before booking a table at a Michelin-starred restaurant.",
+    "entities": [
+      {
+        "text": "Paris",
+        "type": "LOCATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "Eiffel Tower",
+        "type": "LOCATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "Michelin-starred restaurant",
+        "type": "ORGANIZATION",
+        "confidence": 0.85
+      }
+    ],
+    "relations": [
+      {
+        "subject": "speaker",
+        "predicate": "flew_to",
+        "object": "Paris",
+        "confidence": 0.95
+      },
+      {
+        "subject": "speaker",
+        "predicate": "visited",
+        "object": "Eiffel Tower",
+        "confidence": 0.95
+      },
+      {
+        "subject": "speaker",
+        "predicate": "booked",
+        "object": "table",
+        "confidence": 0.85
+      },
+      {
+        "subject": "table",
+        "predicate": "located_in",
+        "object": "Michelin-starred restaurant",
+        "confidence": 0.8
+      }
+    ],
+    "category": "food_travel",
+    "difficulty": "medium"
+  },
+  {
+    "text": "President Biden was elected in 2020 and appointed several cabinet members.",
+    "entities": [
+      {
+        "text": "President Biden",
+        "type": "PERSON",
+        "confidence": 0.95
+      },
+      {
+        "text": "2020",
+        "type": "DATE",
+        "confidence": 0.9
+      },
+      {
+        "text": "cabinet members",
+        "type": "PERSON",
+        "confidence": 0.8
+      }
+    ],
+    "relations": [
+      {
+        "subject": "President Biden",
+        "predicate": "elected",
+        "object": "2020",
+        "confidence": 0.95
+      },
+      {
+        "subject": "President Biden",
+        "predicate": "appointed",
+        "object": "cabinet members",
+        "confidence": 0.9
+      }
+    ],
+    "category": "news_events",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Scientists discovered a new species of butterfly in the Amazon rainforest.",
+    "entities": [
+      {
+        "text": "Scientists",
+        "type": "PERSON",
+        "confidence": 0.85
+      },
+      {
+        "text": "new species of butterfly",
+        "type": "MISC",
+        "confidence": 0.85
+      },
+      {
+        "text": "Amazon rainforest",
+        "type": "LOCATION",
+        "confidence": 0.9
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Scientists",
+        "predicate": "discovered",
+        "object": "new species of butterfly",
+        "confidence": 0.95
+      },
+      {
+        "subject": "new species of butterfly",
+        "predicate": "found_in",
+        "object": "Amazon rainforest",
+        "confidence": 0.9
+      }
+    ],
+    "category": "news_events",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Thousands of people marched in the climate change protest organized by environmental activists.",
+    "entities": [
+      {
+        "text": "Thousands of people",
+        "type": "PERSON",
+        "confidence": 0.85
+      },
+      {
+        "text": "climate change protest",
+        "type": "EVENT",
+        "confidence": 0.85
+      },
+      {
+        "text": "environmental activists",
+        "type": "PERSON",
+        "confidence": 0.8
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Thousands of people",
+        "predicate": "marched",
+        "object": "climate change protest",
+        "confidence": 0.95
+      },
+      {
+        "subject": "environmental activists",
+        "predicate": "organized",
+        "object": "climate change protest",
+        "confidence": 0.9
+      }
+    ],
+    "category": "news_events",
+    "difficulty": "medium"
+  },
+  {
+    "text": "Apple announced their new iPhone at the annual product launch event in Cupertino.",
+    "entities": [
+      {
+        "text": "Apple",
+        "type": "ORGANIZATION",
+        "confidence": 0.9
+      },
+      {
+        "text": "new iPhone",
+        "type": "PRODUCT",
+        "confidence": 0.85
+      },
+      {
+        "text": "annual product launch event",
+        "type": "EVENT",
+        "confidence": 0.8
+      },
+      {
+        "text": "Cupertino",
+        "type": "LOCATION",
+        "confidence": 0.85
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Apple",
+        "predicate": "announced",
+        "object": "new iPhone",
+        "confidence": 0.95
+      },
+      {
+        "subject": "Apple",
+        "predicate": "launched",
+        "object": "new iPhone",
+        "confidence": 0.9
+      },
+      {
+        "subject": "annual product launch event",
+        "predicate": "located_in",
+        "object": "Cupertino",
+        "confidence": 0.85
+      }
+    ],
+    "category": "news_events",
+    "difficulty": "medium"
+  },
+  {
+    "text": "The Nobel Prize in Physics was awarded to scientists who discovered black hole formations.",
+    "entities": [
+      {
+        "text": "Nobel Prize in Physics",
+        "type": "MISC",
+        "confidence": 0.9
+      },
+      {
+        "text": "scientists",
+        "type": "PERSON",
+        "confidence": 0.85
+      },
+      {
+        "text": "black hole formations",
+        "type": "MISC",
+        "confidence": 0.85
+      }
+    ],
+    "relations": [
+      {
+        "subject": "Nobel Prize in Physics",
+        "predicate": "awarded_to",
+        "object": "scientists",
+        "confidence": 0.95
+      },
+      {
+        "subject": "scientists",
+        "predicate": "discovered",
+        "object": "black hole formations",
+        "confidence": 0.9
+      }
+    ],
+    "category": "news_events",
+    "difficulty": "medium"
+  }
+]

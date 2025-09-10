@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "triples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "s": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Subject entity from the provided ENTITIES list"
+          },
+          "r": {
+            "type": "string", 
+            "minLength": 1,
+            "description": "Relation predicate, lowercase with underscores instead of spaces"
+          },
+          "d": {
+            "type": "string",
+            "minLength": 1, 
+            "description": "Destination entity from the provided ENTITIES list"
+          }
+        },
+        "required": ["s", "r", "d"],
+        "additionalProperties": false
+      },
+      "maxItems": 10,
+      "description": "Array of extracted relation triples"
+    }
+  },
+  "required": ["triples"],
+  "additionalProperties": false
+}
