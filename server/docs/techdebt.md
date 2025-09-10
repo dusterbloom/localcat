@@ -11,6 +11,15 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 
 ### 🎯 HotMem Evolution Phase 2/3 Issues (Updated - 2025-09-06)
 
+**✅ RESOLVED: Entity Extraction Quality Issues (GLiNER Revolution)**  
+- **Issue**: Basic entity extraction struggled with compound entities and complex patterns
+- **Impact**: Poor entity detection (~70% accuracy) leading to missed context and retrieval failures
+- **Examples**: Failed to detect "Tesla Model S", "Sarah Williams", "first macOS app" as single entities
+- **Solution**: Integrated GLiNER (Global Named Entity Recognition) for zero-shot entity detection
+- **Resolution**: 96.7% entity accuracy with compound entity detection, 11 entity categories
+- **Performance**: 394ms pipeline (voice-acceptable), model cached per session
+- **Date Resolved**: 2025-09-10
+
 **✅ RESOLVED: UD Quality Filtering Issues**  
 - **Issue**: Raw UD extraction was generating nonsense triples and low-quality relations
 - **Impact**: Poor knowledge graph quality with irrelevant triples

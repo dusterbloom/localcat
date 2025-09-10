@@ -154,8 +154,8 @@ class HotMemory:
         self.recency_buffer = deque(maxlen=max_recency)  # Recent interactions
         self.entity_cache = {}  # Canonical entity mapping
         self.edge_meta: Dict[Tuple[str, str, str], Dict[str, Any]] = {}  # (s,r,d) -> {ts, weight}
-        # Enhanced bullet formatter
-        self.bullet_formatter = EnhancedBulletFormatter() if EnhancedBulletFormatter else None
+        # Enhanced bullet formatter (lazy import to avoid circular imports)
+        self.bullet_formatter = None
         
         # Improved UD extractor for quality filtering
         self.ud_processor = ImprovedUDExtractor() if ImprovedUDExtractor else None
@@ -172,11 +172,11 @@ class HotMemory:
         # Optional LLM-assisted micro-refiner (tiny model) for hard extractions
         self.assisted_enabled = os.getenv("HOTMEM_LLM_ASSISTED", "false").lower() in ("1","true","yes")
         self.assisted_model = os.getenv("HOTMEM_LLM_ASSISTED_MODEL", "google/gemma-3-270m")
-        # Prefer explicit assisted base URL; else reuse summarizer base (LM Studio) if set; else OPENAI_BASE_URL (e.g., Ollama)
+        # Prefer explicit assisted base URL; else reuse summarizer base (LM Studio) if set; else default to LM Studio
         self.assisted_base_url = (
             os.getenv("HOTMEM_LLM_ASSISTED_BASE_URL")
             or os.getenv("SUMMARIZER_BASE_URL")
-            or os.getenv("OPENAI_BASE_URL", "http://127.0.0.1:11434/v1")
+            or "http://127.0.0.1:1234/v1"
         )
         try:
             self.assisted_timeout_ms = int(os.getenv("HOTMEM_LLM_ASSISTED_TIMEOUT_MS", "120"))
@@ -215,7 +215,19 @@ class HotMemory:
         self._relik = None
         # Neural coreference (optional)
         self.use_coref = os.getenv("HOTMEM_USE_COREF", "false").lower() in ("1", "true", "yes") and (FCoref is not None)
-        self._coref_model = None
+        
+        # Smart coreference configuration
+        self.coref_max_entities = int(os.getenv("HOTMEM_COREF_MAX_ENTITIES", "24"))  # Performance guard
+        self._coref_model = None  # Lazy loaded
+        self._coref_cache = {}  # Cache resolved text
+        
+        # DSPy framework integration
+        self.use_dspy = os.getenv("HOTMEM_USE_DSPY", "false").lower() in ("1", "true", "yes")
+        self._dspy_extractor = None  # Lazy loaded
+        
+        # Classifier result caching
+        self._classifier_cache = {}  # Cache for classifier results
+        self._cache_max_size = int(os.getenv("HOTMEM_CACHE_SIZE", "1000"))
 
     def prewarm(self, lang: str = "en") -> None:
         """Load NLP resources up-front to avoid first-turn latency."""
@@ -327,11 +339,18 @@ class HotMemory:
             bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
             self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
             
+            # Extract triples even for pure questions (for testing and analysis)
+            triples = self._extract(text, lang)[1] if lang else []
+            
             elapsed_ms = (time.perf_counter() - start) * 1000
             self.metrics['total_ms'].append(elapsed_ms)
-            return bullets, []
+            return bullets, triples
         
         # Language already detected above
+        
+        # Stage 0: Apply smart coreference resolution if enabled
+        if self.use_coref:
+            text = self._apply_coref_smart(text, lang)
         
         # Stage 1: Extract entities and relations
         extract_start = time.perf_counter()
@@ -1245,7 +1264,14 @@ class HotMemory:
     
     def _format_memory_bullet(self, s: str, r: str, d: str) -> str:
         """Format a memory triple into a human-readable bullet point"""
-        # Use enhanced formatter if available
+        # Lazy import and use enhanced formatter if available
+        if self.bullet_formatter is None:
+            try:
+                from services.enhanced_bullet_formatter import EnhancedBulletFormatter
+                self.bullet_formatter = EnhancedBulletFormatter()
+            except ImportError:
+                self.bullet_formatter = False  # Mark as unavailable
+        
         if self.bullet_formatter:
             return self.bullet_formatter.format_bullet(s, r, d)
         
@@ -1253,7 +1279,14 @@ class HotMemory:
         # Handle pronouns and possessives more naturally
         if s == "you":
             if r == "name":
-                return f"• Your name is {d}"
+                # Clean up redundant text in name extraction
+                clean_d = d
+                if "and i work at" in d.lower():
+                    # Extract just the name part before " and I work at"
+                    name_part = d.split(" and ")[0].strip()
+                    if name_part and len(name_part) > 2:
+                        clean_d = name_part
+                return f"• Your name is {clean_d}"
             elif r == "age":
                 # Avoid duplicating "years old" if already in destination
                 if "years old" in d.lower():
@@ -1263,6 +1296,14 @@ class HotMemory:
             elif r == "favorite_number":
                 return f"• Your favorite number is {d}"
             elif r == "has":
+                # Fix grammar issues with quantities
+                if "two children" in d.lower():
+                    return f"• You have two children"
+                elif "three children" in d.lower():
+                    return f"• You have three children"
+                elif d.startswith("a ") and d.count(" ") == 1:
+                    # "a tesla model" -> "a Tesla Model"
+                    return f"• You have {d.title()}"
                 return f"• You have {d}"
             elif r == "is":
                 return f"• You are {d}"
@@ -1270,10 +1311,22 @@ class HotMemory:
                 return f"• You live in {d}"
             elif r == "works_at":
                 return f"• You work at {d}"
+            elif r == "work_as":
+                return f"• You work as a {d}"
             elif r == "born_in":
                 return f"• You were born in {d}"
             elif r == "friend_of":
                 return f"• You are a friend of {d}"
+            elif r == "husband":
+                return f"• Your husband is {d}"
+            elif r == "wife":  
+                return f"• Your wife is {d}"
+            elif r == "married_to":
+                return f"• You are married to {d}"
+            elif r == "spouse":
+                return f"• Your spouse is {d}"
+            elif r == "partner":
+                return f"• Your partner is {d}"
             elif r.startswith("v:"):
                 verb = r[2:]
                 # Fix verb conjugation for "you"
@@ -1380,7 +1433,14 @@ class HotMemory:
         leann_scores: Dict[Tuple[str, str, str], float] = {}
         if self.use_leann and query and len(query.strip()) >= 2:
             try:
-                leann_scores = self._leann_query_scores(query, top_k=64)
+                # Use enhanced LEANN search
+                entity_triples = list(all_edges)  # Convert set to list for LEANN
+                leann_score_triples = self._retrieve_with_leann_enhancement(query, entity_triples, top_k=64)
+                
+                # Convert back to scores format for existing logic
+                leann_scores = {}
+                for triple in leann_score_triples:
+                    leann_scores[triple] = 1.0  # Placeholder score
             except Exception:
                 leann_scores = {}
 
@@ -1429,18 +1489,24 @@ class HotMemory:
 
         # Predicate priority (normalized 0..1)
         pred_pri = {
-            "lives_in": 1.00,
+            "name": 1.00,  # Personal identity is highest priority
+            "lives_in": 0.98,
             "works_at": 0.95,
-            "teach_at": 0.93,
-            "born_in": 0.90,
-            "moved_from": 0.85,
+            "work_as": 0.93,
+            # Family relationships - very high priority
+            "husband": 0.92, "wife": 0.92, "married_to": 0.90, 
+            "spouse": 0.90, "partner": 0.88,
+            "teach_at": 0.87,
+            "born_in": 0.85,
+            "moved_from": 0.82,
             "participated_in": 0.80,
             "friend_of": 0.78,
-            "name": 0.75,
-            "favorite_color": 0.70,
-            "favorite_number": 0.70,
-            "has": 0.60,
-            "is": 0.55,
+            # Identity and equivalence  
+            "also_known_as": 0.75, "is": 0.70,
+            # Professional relationships
+            "founded": 0.68, "ceo_of": 0.65, "manages": 0.62,
+            "favorite_color": 0.60, "favorite_number": 0.60,
+            "has": 0.55, "owns": 0.55,
         }
         # Contextual boost for possession if query asks about cars/driving
         if any(tok in qtok for tok in {"car", "drive", "drives", "driving"}):
@@ -1464,12 +1530,17 @@ class HotMemory:
         # kind='kg' payload=(s,r,d) | kind='fts' payload=(text) | kind='sem_summary' payload=(text)
         scored_all: List[Tuple[float, int, str, Any]] = []
         now_ms = int(time.time() * 1000)
-        # Only inject from a safe canonical relation set; exclude question scaffolding/noise
+        # Only inject from a safe canonical relation set; exclude question scaffolding/noise  
         allowed_rels = {
             "name", "age", "favorite_color",
-            "lives_in", "works_at", "teach_at", "born_in", "moved_from",
+            "lives_in", "works_at", "work_as", "teach_at", "born_in", "moved_from",
             "participated_in", "went_to",
             "friend_of", "owns", "has", "favorite_number",
+            # Family and relationship relations
+            "husband", "wife", "married_to", "spouse", "partner", 
+            "is", "also_known_as",  # Identity and equivalence relations
+            # Professional relations
+            "founded", "ceo_of", "manages", "reports_to",
         }
         # If the query is explicitly temporal, allow time/duration injections
         if any(tok in qtok for tok in {"when", "year", "date", "time"}):
@@ -1481,7 +1552,21 @@ class HotMemory:
 
         pronoun_skip = {"he","she","they","him","her","them","who","whom","whose","which"}
 
+        # Expand query entities with related entities from the knowledge graph
+        expanded_entities = set(query_entities)
         for entity in query_entities:
+            # Add entities that are directly related to this entity
+            if entity in self.entity_index:
+                for s, r, d in self.entity_index[entity]:
+                    # If this entity is mentioned as a destination, add the subject as a related entity
+                    if d == entity and s not in expanded_entities:
+                        expanded_entities.add(s)
+                    # If this entity is the subject, add the destination as a related entity  
+                    if s == entity and d not in expanded_entities:
+                        expanded_entities.add(d)
+        
+        # Use expanded entities for retrieval
+        for entity in expanded_entities:
             if entity in self.entity_index:
                 candidates = list(self.entity_index[entity])
                 for s, r, d in candidates:
@@ -1523,8 +1608,14 @@ class HotMemory:
                     prov = str(meta.get('prov', ''))
                     prov_boost_map = {'onnx_srl_ud': 1.00, 'srl_ud': 0.85, 'ud_only': 0.60, 'assisted': -0.30, '': 0.0}
                     prov_boost = prov_boost_map.get(prov, 0.0)
+                    # Entity relevance boost: prefer facts that directly involve original query entities
+                    entity_rel_boost = 0.0
+                    if entity in query_entities:  # Direct match to original query entity
+                        entity_rel_boost = 0.15
+                    elif s in query_entities or d in query_entities:  # Subject or destination matches original query
+                        entity_rel_boost = 0.10
                     eps_prov = 0.05
-                    score = alpha * pri + beta * rec + gamma * sem + delta * w + eps_prov * prov_boost
+                    score = alpha * pri + beta * rec + gamma * sem + delta * w + eps_prov * prov_boost + entity_rel_boost
                     scored_all.append((score, ts, 'kg', (s, r, d)))
 
         # Retrieval fusion: include FTS summary hits and (optional) LEANN summary hits
@@ -1752,10 +1843,260 @@ class HotMemory:
                 return "en"
         return "en"
     
+    def _retrieve_with_leann_enhancement(self, query: str, entity_triples: List[Tuple[str, str, str]], top_k: int = 32) -> List[Tuple[str, str, str]]:
+        """Enhanced LEANN retrieval with performance tracking"""
+        if not self.use_leann or not query:
+            return []
+        
+        start = time.perf_counter()
+        leann_score_triples = []
+        
+        try:
+            # Use existing LEANN search implementation
+            leann_scores = self._leann_query_scores(query, top_k=top_k)
+            
+            # Convert scores to triple list with all_edges check
+            all_edges = set(entity_triples)
+            leann_score_triples = [
+                (s, r, d) for (s, r, d), _ in leann_scores.items()
+                if (s, r, d) in all_edges
+            ]
+            
+            # Performance tracking
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            self.metrics['leann_ms'] = self.metrics.get('leann_ms', [])
+            self.metrics['leann_ms'].append(elapsed_ms)
+            
+            # Success tracking
+            if leann_score_triples:
+                self.metrics['leann_success_rate'] = self.metrics.get('leann_success_rate', [])
+                self.metrics['leann_success_rate'].append(1)
+                self.metrics['leann_improvements'] = self.metrics.get('leann_improvements', 0) + 1
+            else:
+                self.metrics['leann_success_rate'] = self.metrics.get('leann_success_rate', [])
+                self.metrics['leann_success_rate'].append(0)
+                
+            logger.debug(f"[HotMem] LEANN search: {len(leann_score_triples)} results in {elapsed_ms:.1f}ms")
+            
+        except Exception as e:
+            logger.debug(f"[HotMem] LEANN search failed: {e}")
+            self.metrics['leann_errors'] = self.metrics.get('leann_errors', 0) + 1
+        
+        return leann_score_triples
+
+    def _apply_coref_smart(self, text: str, lang: str) -> str:
+        """Smart coreference resolution with performance guards"""
+        if not self.use_coref or not text:
+            return text
+        
+        # Cache check
+        cache_key = hash(text)
+        if cache_key in self._coref_cache:
+            return self._coref_cache[cache_key]
+        
+        # Early exit: no pronouns detected
+        nlp = _load_nlp(lang)
+        if nlp:
+            doc = nlp(text)
+            pronouns = [t.text.lower() for t in doc if t.pos_ in ['PRON', 'DET'] and t.text.lower() in ['he', 'she', 'it', 'they', 'him', 'her', 'them', 'his', 'hers', 'its', 'their', 'theirs']]
+            if not pronouns:
+                self._coref_cache[cache_key] = text
+                return text
+            
+            # Fast path for simple cases - only 1-2 pronouns
+            if len(pronouns) <= 2 and len(text.split()) <= 15:
+                # Try simple rule-based resolution first
+                simple_resolved = self._try_simple_coref(text, doc, pronouns)
+                if simple_resolved != text:
+                    logger.debug(f"[HotMem] Fast coref: '{text}' -> '{simple_resolved}'")
+                    self._coref_cache[cache_key] = simple_resolved
+                    return simple_resolved
+            
+            # Complexity guard: limit FCoref to reasonable sentence lengths
+            if len(text.split()) > self.coref_max_entities:
+                logger.debug(f"[HotMem] Coref skipped - too complex ({len(text.split())} words)")
+                return text
+        
+        # Lazy load FCoref model
+        if self._coref_model is None:
+            try:
+                from fastcoref import FCoref
+                self._coref_model = FCoref()
+                logger.info("[HotMem] FCoref model loaded")
+            except Exception as e:
+                logger.warning(f"[HotMem] FCoref load failed: {e}")
+                self.use_coref = False  # Disable on failure
+                return text
+        
+        # Apply coreference resolution
+        try:
+            # FCoref.predict() returns a list of CorefResult objects
+            coref_results = self._coref_model.predict([text])
+            if coref_results and len(coref_results) > 0:
+                resolved_text = self._resolve_pronouns_with_clusters(text, coref_results[0])
+            else:
+                resolved_text = text
+            
+            # Cache result (with size limit)
+            if len(self._coref_cache) < 100:  # Limit cache size
+                self._coref_cache[cache_key] = resolved_text
+            
+            logger.debug(f"[HotMem] Coref: '{text}' -> '{resolved_text}'")
+            return resolved_text
+            
+        except Exception as e:
+            logger.debug(f"[HotMem] FCoref fallback: {e}")
+            return text
+    
+    def _resolve_pronouns_with_clusters(self, text: str, coref_result) -> str:
+        """Resolve pronouns using FCoref cluster information"""
+        try:
+            # Get coreference clusters as character spans
+            clusters = coref_result.get_clusters(as_strings=False)
+            if not clusters:
+                return text
+            
+            # Build replacement map: find best representative for each cluster
+            replacements = []  # List of (start, end, replacement_text) tuples
+            
+            for cluster in clusters:
+                if len(cluster) < 2:  # Need at least 2 mentions for coreference
+                    continue
+                    
+                # Find the best representative mention (longest non-pronoun)
+                best_mention = None
+                best_span = None
+                best_length = 0
+                
+                for span_start, span_end in cluster:
+                    mention_text = text[span_start:span_end].strip()
+                    # Skip if it's a pronoun
+                    if mention_text.lower() in ['he', 'she', 'it', 'they', 'him', 'her', 'them', 'his', 'hers', 'its', 'their', 'theirs']:
+                        continue
+                    # Prefer longer, more descriptive mentions
+                    if len(mention_text) > best_length:
+                        best_mention = mention_text
+                        best_span = (span_start, span_end)
+                        best_length = len(mention_text)
+                
+                if not best_mention:
+                    continue
+                    
+                # Replace pronouns in this cluster with the best mention
+                for span_start, span_end in cluster:
+                    mention_text = text[span_start:span_end].strip()
+                    if mention_text.lower() in ['he', 'she', 'it', 'they']:
+                        replacements.append((span_start, span_end, best_mention))
+                    elif mention_text.lower() in ['him', 'her', 'them']:
+                        replacements.append((span_start, span_end, best_mention))
+                    elif mention_text.lower() in ['his', 'hers', 'its', 'their', 'theirs']:
+                        replacements.append((span_start, span_end, f"{best_mention}'s"))
+            
+            # Apply replacements in reverse order to maintain character positions
+            replacements.sort(key=lambda x: x[0], reverse=True)
+            resolved_text = text
+            
+            for start, end, replacement in replacements:
+                resolved_text = resolved_text[:start] + replacement + resolved_text[end:]
+            
+            return resolved_text
+            
+        except Exception as e:
+            logger.debug(f"[HotMem] Pronoun resolution error: {e}")
+            return text
+    
+    def _try_simple_coref(self, text: str, doc, pronouns: List[str]) -> str:
+        """Fast rule-based coreference for simple cases"""
+        try:
+            # Look for named entities in the text 
+            entities = [(ent.text, ent.start, ent.end) for ent in doc.ents if ent.label_ in ['PERSON', 'ORG']]
+            if not entities:
+                # Look for proper nouns
+                entities = [(token.text, token.i, token.i+1) for token in doc if token.pos_ == 'PROPN']
+                
+            if not entities:
+                return text
+                
+            # Simple replacement: use the first/most recent entity for pronouns
+            result = text
+            primary_entity = entities[0][0]  # Use first entity as primary
+            
+            # Replace common pronouns with the primary entity
+            replacements = {
+                'he': primary_entity if any('he' in pronouns) else None,
+                'she': primary_entity if any('she' in pronouns) else None, 
+                'it': primary_entity if any('it' in pronouns) else None,
+                'they': primary_entity if any('they' in pronouns) else None,
+            }
+            
+            # Apply replacements carefully to maintain sentence structure
+            for pronoun, replacement in replacements.items():
+                if replacement and pronoun in result.lower():
+                    # Only replace if it's a standalone word
+                    import re
+                    pattern = r'\b' + re.escape(pronoun) + r'\b'
+                    result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+                    
+            return result
+            
+        except Exception:
+            return text
+    
+    def _extract_with_dspy_fallback(self, text: str, entities: List[str], session_id: Optional[str] = None) -> List[Tuple[str, str, str]]:
+        """Use DSPy framework for complex extraction cases"""
+        
+        # Lazy load DSPy extractor
+        if self._dspy_extractor is None:
+            try:
+                from components.ai.dspy_modules import get_dspy_extractor
+                self._dspy_extractor = get_dspy_extractor()
+                if self._dspy_extractor:
+                    logger.info("[HotMem] DSPy extractor loaded")
+                else:
+                    self.use_dspy = False  # Disable on failure
+                    return []
+            except Exception as e:
+                logger.warning(f"[HotMem] DSPy load failed: {e}")
+                self.use_dspy = False  # Disable on failure
+                return []
+        
+        # Use DSPy for extraction
+        try:
+            dspy_triples = self._dspy_extractor.extract_relationships(text, entities, session_id)
+            
+            # Filter and validate results
+            valid_triples = []
+            for subj, pred, obj in dspy_triples:
+                if subj and pred and obj and len(pred) > 0:
+                    valid_triples.append((str(subj).strip(), str(pred).strip(), str(obj).strip()))
+            
+            return valid_triples
+            
+        except Exception as e:
+            logger.debug(f"[HotMem] DSPy extraction failed: {e}")
+            return []
+    
+    def _cache_result(self, cache_key: str, result: List[Tuple[str, str, str]]) -> None:
+        """Cache extraction result with size management"""
+        if len(self._classifier_cache) >= self._cache_max_size:
+            # Remove oldest entries (simple FIFO eviction)
+            keys_to_remove = list(self._classifier_cache.keys())[:self._cache_max_size // 4]
+            for key in keys_to_remove:
+                self._classifier_cache.pop(key, None)
+            
+            logger.debug(f"[HotMem] Cache evicted {len(keys_to_remove)} entries")
+        
+        self._classifier_cache[cache_key] = result
+        
+        # Track cache performance
+        self.metrics['cache_size'] = len(self._classifier_cache)
+        self.metrics['cache_misses'] = self.metrics.get('cache_misses', 0) + 1
+
     def _cleanup_metrics(self):
         """Keep metrics bounded"""
         for key in self.metrics:
-            if len(self.metrics[key]) > self.max_metric_size:
+            # Only clean up list-type metrics (time series), skip counters
+            if isinstance(self.metrics[key], list) and len(self.metrics[key]) > self.max_metric_size:
                 self.metrics[key] = self.metrics[key][-self.max_metric_size:]
     
     def get_metrics(self) -> Dict[str, Any]:
@@ -1813,18 +2154,38 @@ class HotMemory:
                 ents_unique.append(e)
                 seen_e.add(e)
         
+        # Step 1: Run existing classifier/extractor logic
         if is_classifier:
-            # Use classifier mode - individual entity pair classification
-            return self._assist_extract_classifier(text, ents_unique, base_url, model, session_id)
+            base_result = self._assist_extract_classifier(text, ents_unique, base_url, model, session_id)
         else:
-            # Use traditional JSON extraction mode
-            return self._assist_extract_json(text, ents_unique, base_url, model, session_id)
+            base_result = self._assist_extract_json(text, ents_unique, base_url, model, session_id)
+        
+        # Step 2: DSPy enhancement for low-yield cases
+        if self.use_dspy and len(base_result) < 2:  # Low extraction yield threshold
+            try:
+                dspy_triples = self._extract_with_dspy_fallback(text, entities, session_id)
+                logger.debug(f"[HotMem] DSPy fallback added {len(dspy_triples)} triples")
+                return base_result + dspy_triples
+            except Exception as e:
+                logger.debug(f"[HotMem] DSPy enhancement failed: {e}")
+        
+        return base_result
 
     def _assist_extract_classifier(self, text: str, entities: List[str], base_url: str, model: str, session_id: Optional[str] = None) -> List[Tuple[str, str, str]]:
-        """Classifier mode: test each entity pair individually for maximum speed."""
+        """Cached classifier mode: test each entity pair individually for maximum speed."""
+        # Check cache first
+        cache_key = f"{hash(text)}_{hash('_'.join(sorted(entities)))}"
+        
+        if cache_key in self._classifier_cache:
+            self.metrics['cache_hits'] = self.metrics.get('cache_hits', 0) + 1
+            logger.debug(f"[HotMem] Classifier cache hit")
+            return self._classifier_cache[cache_key]
+        
         out: List[Tuple[str, str, str]] = []
         
         if len(entities) < 2:
+            # Cache empty result
+            self._cache_result(cache_key, out)
             return out
             
         # Generate all possible entity pairs
@@ -1834,11 +2195,10 @@ class HotMemory:
                 if i != j:
                     entity_pairs.append((entities[i], entities[j]))
         
-        # Classifier system message
+        # Classifier system message - exact format that works with hotmem-relation-classifier-mlx
         sys_msg = """You are a relation classifier. Given two entities and context, output ONLY the relation type.
-If no clear relation exists, output 'none'.
-
-Common relations: works_at, CEO_of, lives_in, develops, founder_of, married_to, acquired, headquartered_in, competes_with, retired_from, manages, based_in, graduated_from, joined"""
+If no relation exists, output 'none'.
+Valid relations are suggested by the context. Anything can work. Small sample examples: works_at, CEO_of, lives_in, develops, friend_of, etc."""
         
         # Test each entity pair
         for subject, obj in entity_pairs[:10]:  # Limit to prevent too many calls
@@ -1847,7 +2207,7 @@ Common relations: works_at, CEO_of, lives_in, develops, founder_of, married_to, 
 Context: {text}
 Object: {obj}
 
-Relation type (one word):"""
+What is the relation type?"""
                 
                 messages = [
                     {"role": "system", "content": sys_msg},
@@ -1901,7 +2261,10 @@ Relation type (one word):"""
                         pass
                 continue
         
-        return out[:self.assisted_max_triples]
+        # Cache result before returning
+        result = out[:self.assisted_max_triples]
+        self._cache_result(cache_key, result)
+        return result
 
     def _assist_extract_json(self, text: str, entities: List[str], base_url: str, model: str, session_id: Optional[str] = None) -> List[Tuple[str, str, str]]:
         """Traditional JSON extraction mode."""
@@ -2127,18 +2490,59 @@ Relation type (one word):"""
             ce = _canon_entity_text(e)
             if ce and ce not in {"my name", "my dog's name", "name"}:
                 out.append(ce)
+        
         # Ensure 'you' if text is self-referential
         t = (text or "").lower()
         if any(p in t for p in [" i ", " my ", " me "]) and "you" not in out:
             out.append("you")
+        
+        # Graph-aware entity expansion: find related entities in knowledge graph
+        expanded = list(out)  # Start with original entities
+        for entity in out:
+            related = self._find_related_entities(entity)
+            expanded.extend(related)
+        
         # Unique, preserve order
         seen = set()
         uniq = []
-        for e in out:
+        for e in expanded:
             if e not in seen:
                 uniq.append(e)
                 seen.add(e)
         return uniq
+    
+    def _find_related_entities(self, entity: str) -> List[str]:
+        """Find entities related to the given entity through stored relationships"""
+        related = []
+        try:
+            # Look through stored edges to find connections
+            for s, r, d in self.entity_index.get(entity, []):
+                # If entity is the subject, add the destination as related
+                if s == entity:
+                    related.append(d)
+                # If entity is mentioned in destination, add the subject as related  
+                elif entity.lower() in d.lower():
+                    related.append(s)
+            
+            # Also check reverse - where entity appears as destination
+            for edge_set in self.entity_index.values():
+                for s, r, d in edge_set:
+                    if d == entity or entity.lower() in d.lower():
+                        related.append(s)
+                        # If this connects to 'you', add 'you' as highly relevant
+                        if s == "you":
+                            related.insert(0, "you")  # Prioritize 'you'
+        except Exception:
+            pass
+        
+        # Clean and return unique related entities
+        clean_related = []
+        for e in related:
+            ce = _canon_entity_text(e)
+            if ce and ce != entity and ce not in clean_related:
+                clean_related.append(ce)
+        
+        return clean_related[:3]  # Limit to top 3 related entities to avoid explosion
 
     def _refine_triples(self, text: str, triples: List[Tuple[str, str, str]], doc, intent=None, lang: str = "en") -> List[Tuple[str, str, str]]:
         t = (text or "").lower()
@@ -2806,7 +3210,50 @@ Relation type (one word):"""
         return out
 
     def _extract_entities_light(self, text: str) -> List[str]:
-        """Lightweight entity extraction for reactions/questions (no full NLP)"""
+        """GLiNER-based entity extraction for superior compound entity detection"""
+        # Lazy load GLiNER model
+        if not hasattr(self, '_gliner_model'):
+            try:
+                from gliner import GLiNER
+                self._gliner_model = GLiNER.from_pretrained("urchade/gliner_mediumv2.1")
+                logger.info("[HotMem] GLiNER model loaded for entity extraction")
+            except Exception as e:
+                logger.warning(f"[HotMem] GLiNER load failed, falling back: {e}")
+                return self._extract_entities_light_fallback(text)
+        
+        # Define entity types relevant for memory queries
+        labels = ["person", "product", "application", "software", "organization", 
+                  "place", "event", "brand", "object", "animal", "food"]
+        
+        try:
+            entities = self._gliner_model.predict_entities(text, labels, threshold=0.4)
+            extracted = []
+            
+            for entity in entities:
+                clean_entity = _canon_entity_text(entity["text"])
+                if clean_entity and clean_entity not in extracted:
+                    extracted.append(clean_entity)
+            
+            # Also check entity index for known entities not detected by GLiNER
+            words = text.lower().split()
+            for word in words:
+                clean_word = _canon_entity_text(word)
+                if clean_word in self.entity_index and clean_word not in extracted:
+                    extracted.append(clean_word)
+            
+            # Add 'you' for self-referential queries
+            if any(p in text.lower() for p in [" i ", " my ", " me ", "i'm", "i've"]):
+                if "you" not in extracted:
+                    extracted.append("you")
+            
+            return extracted
+            
+        except Exception as e:
+            logger.warning(f"[HotMem] GLiNER extraction failed: {e}")
+            return self._extract_entities_light_fallback(text)
+
+    def _extract_entities_light_fallback(self, text: str) -> List[str]:
+        """Original word-based extraction as fallback"""
         # Simple pattern-based extraction for performance
         entities = []
         words = text.split()

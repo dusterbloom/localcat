@@ -1,0 +1,69 @@
+{
+  "timestamp": "2025-09-10 21:50:55",
+  "baseline_performance": {
+    "classifier_ms_avg": 165.39331250241958,
+    "classifier_ms_p95": 267.12224999209866,
+    "pipeline_ms_avg": 394.79632766257663,
+    "pipeline_ms_p95": 4209.808249986963,
+    "extraction_accuracy": 0.9666666666666667,
+    "simple_facts_accuracy": 1.0,
+    "complex_facts_accuracy": 0.9,
+    "pronoun_resolution_accuracy": 1.0,
+    "throughput_extractions_per_sec": 17.457120221172676,
+    "memory_efficiency_mb": 50.0,
+    "error_rate": 0.0
+  },
+  "feature_comparisons": [
+    {
+      "feature": "COREF",
+      "extraction_improvement": -1,
+      "retrieval_improvement": 0,
+      "accuracy_improvement": -0.10000000000000009,
+      "latency_delta_ms": 998.7965000036638,
+      "error_delta": 0,
+      "recommendation": "DISABLE"
+    },
+    {
+      "feature": "LEANN",
+      "extraction_improvement": 0,
+      "retrieval_improvement": 0,
+      "accuracy_improvement": 0.0,
+      "latency_delta_ms": -130.2766670123674,
+      "error_delta": 0,
+      "recommendation": "DISABLE"
+    },
+    {
+      "feature": "DECOMP",
+      "extraction_improvement": 0,
+      "retrieval_improvement": 0,
+      "accuracy_improvement": 0.0,
+      "latency_delta_ms": 18.79775000270456,
+      "error_delta": 0,
+      "recommendation": "DISABLE"
+    }
+  ],
+  "overall_recommendations": [
+    "\u26a0\ufe0f Feature activation may impact 26x speed advantage - review latency budget",
+    "\ud83e\udd16 DSPy framework ready for production integration",
+    "\ud83d\udd27 Optimal configuration: HOTMEM_USE_DSPY=true"
+  ],
+  "performance_summary": {
+    "total_accuracy_improvement": -0.10000000000000009,
+    "total_latency_impact_ms": 887.317582994001,
+    "features_to_enable": [],
+    "baseline_classifier_ms": 165.39331250241958,
+    "baseline_pipeline_ms": 394.79632766257663,
+    "projected_accuracy": 0.8666666666666666,
+    "projected_latency_ms": 1282.1139106565777,
+    "dspy_ready": true,
+    "speed_advantage_maintained": false
+  },
+  "success_criteria_met": {
+    "maintain_54ms_classifier": false,
+    "overall_accuracy_80_percent": true,
+    "pipeline_under_100ms": false,
+    "feature_activation_successful": false,
+    "dspy_integration_ready": true,
+    "speed_advantage_preserved": false
+  }
+}

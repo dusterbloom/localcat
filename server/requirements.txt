@@ -36,10 +36,9 @@ unsloth>=2024.11.0  # 30x faster training, 70% less VRAM
 gepa-ai>=0.1.0  # Genetic-Pareto prompt optimization (auto-learns from failures)
 distillspec>=0.1.0  # Modern distillation with 6-10x speedup
 coremltools>=8.3.0  # For Mac Neural Engine deployment
+gliner>=0.2.22 # Generalist model for NER (Extract any entity types from texts)
 
 # ML dependencies (pinned for compatibility)
 scikit-learn==1.5.1  # Downgraded for coremltools compatibility
 torch==2.5.0  # Downgraded to tested version with coremltools
 coremltools==8.3.0
-
-# Note: vllm removed (not compatible with macOS)
