@@ -30,6 +30,13 @@ transformers==4.43.3  # Tokenizers + fast offset mapping for ONNX taggers
 Unidecode==1.3.8  # Transliteration for cross-lingual aliasing
 fastcoref==3.2.0  # Optional neural coreference (local, HF models)
 
+# 2025 AI Revolution Stack - Game-changing techniques
+dspy-ai>=2.5.0  # Declarative self-improving AI modules
+unsloth>=2024.11.0  # 30x faster training, 70% less VRAM
+gepa-ai>=0.1.0  # Genetic-Pareto prompt optimization (auto-learns from failures)
+distillspec>=0.1.0  # Modern distillation with 6-10x speedup
+coremltools>=8.3.0  # For Mac Neural Engine deployment
+
 # ML dependencies (pinned for compatibility)
 scikit-learn==1.5.1  # Downgraded for coremltools compatibility
 torch==2.5.0  # Downgraded to tested version with coremltools

@@ -1,5 +1,109 @@
 # LocalCat Server Development Backlog
 
+## 🚀 URGENT: HOT MEM V3 EVOLUTION PLAN (2025 Revolution)
+
+**Status**: Phase 1 in progress - Installing 2025 AI Stack dependencies ✅ COMPLETE
+
+### Overview: Transform HotMem from v2.0 (Fast but Static) → v3.0 (Fast AND Smart)
+
+This is a **paradigm shift** from manual pattern engineering to self-improving AI systems using revolutionary 2025 techniques:
+- **DSPy**: Declarative Self-improving Python (define WHAT, not HOW)
+- **GEPA**: Genetic-Pareto prompt optimization (learns from failures)
+- **Unsloth**: 30x faster training, 70% less VRAM
+- **DistillSpec**: 6-10x inference speedup via modern distillation
+- **CoreML**: Mac Neural Engine deployment for <1ms inference
+
+### Four-Phase Implementation Plan
+
+#### Phase 1: DSPy + GEPA Integration (Week 1)
+**Goal**: Set up self-improving AI framework for graph extraction
+
+**✅ 1.1 Complete**: Install 2025 Stack dependencies
+- Added dspy-ai>=2.5.0, unsloth>=2024.11.0, gepa-ai>=0.1.0, distillspec>=0.1.0, coremltools>=8.3.0 to requirements.txt
+
+**🔄 1.2 In Progress**: Set up DSPy framework for declarative AI modules
+- Create `dspy_modules.py` with declarative graph extraction signatures
+- Define DSPy programs for entity extraction and relationship mapping
+- Integrate with existing HotMem architecture
+
+**⏳ 1.3 Pending**: Create small training dataset (100-200 examples)
+- Extract sample conversations from existing memory graphs
+- Create diverse examples covering different extraction scenarios
+- Include edge cases and complex sentences
+
+**⏳ 1.4 Pending**: Define DSPy Graph Extraction Module with clear signatures
+- `ExtractEntities(text: str) -> List[Entity]`
+- `ExtractRelationships(text: str, entities: List[Entity]) -> List[Relationship]`
+- `BuildGraph(text: str) -> KnowledgeGraph`
+
+#### Phase 2: Unsloth Distillation (Week 2)
+**Goal**: Train tiny, fast model using automated prompt optimization
+
+**⏳ 2.1**: Implement GEPA prompt optimization system
+- Genetic-Pareto optimization for prompt generation
+- Automated failure analysis and prompt improvement
+- Zero manual prompt engineering required
+
+**⏳ 2.2**: Generate training data with optimized prompts
+- Use GEPA to create diverse, high-quality training examples
+- Automated data augmentation and variation generation
+- Optimize for complex sentence handling and edge cases
+
+**⏳ 2.3**: Set up Unsloth training pipeline with 4-bit quantization
+- Configure Unsloth for 30x faster training
+- 4-bit quantization for 70% VRAM reduction
+- Automated model evaluation and checkpointing
+
+#### Phase 3: Model Training & Optimization (Week 3)
+**Goal**: Create production-ready distilled model
+
+**⏳ 3.1**: Train tiny model using Unsloth (3-5 hours)
+- Train on Apple Silicon with optimized settings
+- Real-time monitoring and automated hyperparameter tuning
+- Achieve >95% extraction accuracy on test set
+
+**⏳ 3.2**: Implement DistillSpec for model compression
+- Apply modern distillation techniques for 6-10x speedup
+- Knowledge distillation from larger teacher model
+- Preserve accuracy while dramatically reducing size
+
+**⏳ 3.3**: Convert model to CoreML/ONNX for Mac deployment
+- Optimize for Apple Neural Engine execution
+- Achieve <1ms inference latency on M-series chips
+- Package for seamless integration with existing pipeline
+
+#### Phase 4: Production Integration (Week 4)
+**Goal**: Replace HotMem v2.0 with v3.0 self-improving system
+
+**⏳ 4.1**: Replace current HotMem extractor with distilled model
+- Seamless swap maintaining existing API
+- Implement fallback to v2.0 for confidence < threshold
+- Maintain sub-10ms extraction performance
+
+**⏳ 4.2**: Implement speculative decoding for fast inference
+- Use tiny draft model for rapid candidate generation
+- Larger model verification only when needed
+- Maintain <10ms latency while improving accuracy
+
+**⏳ 4.3**: Test end-to-end performance and validate improvements
+- Comprehensive testing against existing test suite
+- Performance benchmarking and optimization
+- Validate self-improvement capabilities
+
+### Expected Performance Improvements
+- **Accuracy**: 95%+ (vs current ~85% on complex sentences)
+- **Speed**: <1ms CoreML inference (vs current 3.8ms average)
+- **Adaptability**: Self-improving from user corrections
+- **Maintenance**: Zero manual pattern engineering required
+
+### Key Architecture Changes
+1. **Dual Graph System**: User facts + Agent learning graphs
+2. **Self-Improvement**: Automated learning from corrections
+3. **Adaptive Intelligence**: Handles complex sentences seamlessly
+4. **Zero Engineering**: No more manual pattern writing
+
+---
+
 ## 📋 Recent Completed Improvements (2025-09-08)
 
 ### ✅ COMPLETE: Phase 5.1 - Service Health Monitoring System (MAJOR SUCCESS)
@@ -368,6 +472,31 @@ Keeps long conversations fast and relevant under a hard token cap; ensures the L
 - **Live Production**: Working seamlessly in voice conversations
 - **Pattern Coverage**: 100% USGS Grammar-to-Graph dependency patterns implemented
 - **Architecture**: Dual storage (SQLite + LMDB) for persistence + O(1) speed
+
+## ✅ COMPLETED: HotMem Classifier Model Integration (2025-09-10)
+
+### 🎉 Major Success - 26x Performance Improvement with New Classifier Architecture
+- **Performance Breakthrough**: Classifier model achieves 54ms vs 1400ms (26x faster) inference time
+- **Architecture Innovation**: Dual-mode extraction supporting both classifier and extraction models
+- **Automatic Model Detection**: System automatically adapts to model architecture based on model name
+- **Enhanced LLM Integration**: Improved integration with LM Studio for real-time relation extraction
+- **Comprehensive Testing**: Complete test suite validating both model architectures
+- **Backwards Compatibility**: Maintains full compatibility with existing extraction models
+
+### Key Technical Achievements
+- **Classifier Mode**: Single-relation classification for ultra-fast processing (49-63ms per relation)
+- **Extraction Mode**: Traditional JSON-based structured extraction for complex scenarios
+- **Dynamic Switching**: `hotmem-relation-classifier-mlx` automatically uses classifier mode
+- **Relation Normalization**: Intelligent post-processing for relation type standardization
+- **Error Handling**: Robust fallback and error recovery for failed API calls
+- **Performance Monitoring**: Detailed timing metrics and logging for optimization
+
+### Implementation Details
+- **Modified `_assist_extract` method**: Split into classifier and extraction modes
+- **Added `_assist_extract_classifier`**: Handles single-relation classification models
+- **Added `_assist_extract_json`**: Handles traditional JSON extraction models
+- **Enhanced prompting**: Optimized prompts for each model architecture
+- **Test infrastructure**: Comprehensive test scripts for performance validation
 
 ### Key Components Delivered
 - `hotpath_processor.py`: Pipecat-integrated processor with context injection

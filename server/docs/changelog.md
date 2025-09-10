@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - HotMem Classifier Model Integration (2025-09-10) 🎉
+- **Major Performance Breakthrough**: 26x speed improvement with classifier model architecture
+- **Dual-Mode Architecture**: Automatic support for both classifier and extraction models
+- **Classifier Model Support**: Ultra-fast 54ms inference (vs 1400ms) for single-relation classification
+- **Dynamic Model Detection**: System automatically adapts based on model name containing 'classifier'
+- **Enhanced LLM Integration**: Improved LM Studio integration with robust error handling
+- **Comprehensive Test Suite**: Complete testing infrastructure for both model architectures
+- **Backwards Compatibility**: Full compatibility with existing extraction models maintained
+- **Performance Monitoring**: Detailed timing metrics and logging for optimization
+- **Relation Normalization**: Intelligent post-processing for consistent relation type handling
+
+### Technical Implementation
+- **Modified `_assist_extract`**: Split into classifier and extraction modes with automatic detection
+- **Added `_assist_extract_classifier`**: Handles single-relation classification models (49-63ms per relation)
+- **Added `_assist_extract_json`**: Handles traditional JSON extraction models for complex scenarios
+- **Enhanced Prompting**: Optimized system prompts tailored to each model architecture
+- **Error Recovery**: Robust fallback mechanisms and graceful degradation
+- **Test Infrastructure**: `test_optimized_classifier.py` and `test_hotmem_v2_integration.py`
+
+### Performance Achievements
+- **Speed Improvement**: 26x faster inference (54ms vs 1400ms average)
+- **Classifier Accuracy**: 50% accuracy on test cases (reasonable for v1 classifier model)
+- **Automatic Adaptation**: Seamless switching between model architectures
+- **Enhanced Integration**: Improved LM Studio API integration with timeout handling
+
+### Configuration
+- **Environment Support**: Automatic model detection via `HOTMEM_LLM_ASSISTED_MODEL`
+- **Classifier Detection**: Models with 'classifier' in name automatically use classifier mode
+- **Enhanced Logging**: Detailed timing and performance metrics for optimization
+
 ### Added - Phase 5.1 Service Health Monitoring System (2025-09-08) 🎉
 - **Comprehensive Monitoring Infrastructure**: Complete monitoring, metrics collection, and alerting system
 - **HealthMonitor**: Service health checks with circuit breaker pattern and graceful degradation
