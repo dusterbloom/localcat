@@ -1,0 +1,924 @@
+{
+  "quality_results": {
+    "total_tests": 8,
+    "correct_extractions": 3,
+    "partial_extractions": 3,
+    "failed_extractions": 2,
+    "entity_accuracy": 0.8333333333333334,
+    "relation_accuracy": 0.375,
+    "confidence_distribution": [
+      0.95,
+      0.85,
+      0.9,
+      0.95,
+      1,
+      0.95,
+      0.95,
+      0.85
+    ],
+    "error_analysis": [
+      {
+        "test_id": 1,
+        "text": "Tim Cook is the CEO of Apple.",
+        "errors": [
+          "Missing relations: ['tim cook|ceo_of|apple']",
+          "Extra relations: ['tim cook|develops|apple']"
+        ]
+      },
+      {
+        "test_id": 3,
+        "text": "Microsoft is headquartered in Redmond, Washington.",
+        "errors": [
+          "Missing entities: ['redmond', 'washington']",
+          "Extra entities: ['redmond, washington']",
+          "Missing relations: ['microsoft|headquartered_in|redmond']",
+          "Extra relations: ['microsoft|located_in|redmond, washington']"
+        ]
+      },
+      {
+        "test_id": 5,
+        "text": "I bought an iPhone from Apple.",
+        "errors": [
+          "Missing relations: ['apple|manufactures|iphone']",
+          "Extra relations: ['apple|works_for|iphone', 'iphone|located_in|apple']"
+        ]
+      },
+      {
+        "test_id": 6,
+        "text": "John and Mary are colleagues at Microsoft.",
+        "errors": [
+          "Missing relations: ['john|colleagues_with|mary', 'mary|works_for|microsoft', 'john|works_for|microsoft']",
+          "Extra relations: ['microsoft|located_in|mary', 'mary|friends_with|microsoft', 'john|works_for|mary']"
+        ]
+      },
+      {
+        "test_id": 7,
+        "text": "Amazon is based in Seattle, Washington.",
+        "errors": [
+          "Missing entities: ['washington', 'seattle']",
+          "Extra entities: ['seattle, washington']",
+          "Missing relations: ['amazon|based_in|seattle']",
+          "Extra relations: ['amazon|located_in|seattle, washington']"
+        ]
+      }
+    ],
+    "detailed_results": [
+      {
+        "test_id": 1,
+        "text": "Tim Cook is the CEO of Apple.",
+        "expected_entities": [
+          "Tim Cook",
+          "Apple"
+        ],
+        "predicted_entities": [
+          "Tim Cook",
+          "Apple"
+        ],
+        "expected_relations": [
+          {
+            "subject": "Tim Cook",
+            "predicate": "CEO_of",
+            "object": "Apple"
+          }
+        ],
+        "predicted_relations": [
+          {
+            "subject": "Tim Cook",
+            "predicate": "develops",
+            "object": "Apple",
+            "confidence": 0.8
+          }
+        ],
+        "entity_accuracy": 1.0,
+        "relation_accuracy": 0.0,
+        "overall_accuracy": 0.5,
+        "confidence": 0.95,
+        "processing_time": 1757499158.155107
+      },
+      {
+        "test_id": 2,
+        "text": "Sarah works at Google as a software engineer.",
+        "expected_entities": [
+          "Sarah",
+          "Google"
+        ],
+        "predicted_entities": [
+          "Sarah",
+          "Google",
+          "software engineer"
+        ],
+        "expected_relations": [
+          {
+            "subject": "Sarah",
+            "predicate": "works_for",
+            "object": "Google"
+          }
+        ],
+        "predicted_relations": [
+          {
+            "subject": "Sarah",
+            "predicate": "works_for",
+            "object": "Google",
+            "confidence": 0.9
+          },
+          {
+            "subject": "Google",
+            "predicate": "located_in",
+            "object": "software engineering",
+            "confidence": 0.9
+          }
+        ],
+        "entity_accuracy": 1.0,
+        "relation_accuracy": 1.0,
+        "overall_accuracy": 1.0,
+        "confidence": 0.85,
+        "processing_time": 1757499159.1752079
+      },
+      {
+        "test_id": 3,
+        "text": "Microsoft is headquartered in Redmond, Washington.",
+        "expected_entities": [
+          "Microsoft",
+          "Redmond",
+          "Washington"
+        ],
+        "predicted_entities": [
+          "Microsoft",
+          "Redmond, Washington"
+        ],
+        "expected_relations": [
+          {
+            "subject": "Microsoft",
+            "predicate": "headquartered_in",
+            "object": "Redmond"
+          }
+        ],
+        "predicted_relations": [
+          {
+            "subject": "Microsoft",
+            "predicate": "located_in",
+            "object": "Redmond, Washington",
+            "confidence": 0.95
+          }
+        ],
+        "entity_accuracy": 0.3333333333333333,
+        "relation_accuracy": 0.0,
+        "overall_accuracy": 0.16666666666666666,
+        "confidence": 0.9,
+        "processing_time": 1757499159.891262
+      },
+      {
+        "test_id": 4,
+        "text": "Tesla was founded by Elon Musk.",
+        "expected_entities": [
+          "Tesla",
+          "Elon Musk"
+        ],
+        "predicted_entities": [
+          "Tesla",
+          "Elon Musk"
+        ],
+        "expected_relations": [
+          {
+            "subject": "Tesla",
+            "predicate": "founded_by",
+            "object": "Elon Musk"
+          }
+        ],
+        "predicted_relations": [
+          {
+            "subject": "Tesla",
+            "predicate": "founded_by",
+            "object": "Elon Musk",
+            "confidence": 0.95
+          }
+        ],
+        "entity_accuracy": 1.0,
+        "relation_accuracy": 1.0,
+        "overall_accuracy": 1.0,
+        "confidence": 0.95,
+        "processing_time": 1757499160.60989
+      },
+      {
+        "test_id": 5,
+        "text": "I bought an iPhone from Apple.",
+        "expected_entities": [
+          "iPhone",
+          "Apple"
+        ],
+        "predicted_entities": [
+          "iPhone",
+          "Apple"
+        ],
+        "expected_relations": [
+          {
+            "subject": "Apple",
+            "predicate": "manufactures",
+            "object": "iPhone"
+          }
+        ],
+        "predicted_relations": [
+          {
+            "subject": "iPhone",
+            "predicate": "located_in",
+            "object": "Apple",
+            "confidence": 0.9
+          },
+          {
+            "subject": "Apple",
+            "predicate": "works_for",
+            "object": "iPhone",
+            "confidence": 0.95
+          }
+        ],
+        "entity_accuracy": 1.0,
+        "relation_accuracy": 0.0,
+        "overall_accuracy": 0.5,
+        "confidence": 1,
+        "processing_time": 1757499161.438227
+      },
+      {
+        "test_id": 6,
+        "text": "John and Mary are colleagues at Microsoft.",
+        "expected_entities": [
+          "John",
+          "Mary",
+          "Microsoft"
+        ],
+        "predicted_entities": [
+          "John",
+          "Mary",
+          "Microsoft"
+        ],
+        "expected_relations": [
+          {
+            "subject": "John",
+            "predicate": "colleagues_with",
+            "object": "Mary"
+          },
+          {
+            "subject": "John",
+            "predicate": "works_for",
+            "object": "Microsoft"
+          },
+          {
+            "subject": "Mary",
+            "predicate": "works_for",
+            "object": "Microsoft"
+          }
+        ],
+        "predicted_relations": [
+          {
+            "subject": "John",
+            "predicate": "works_for",
+            "object": "Mary",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Microsoft",
+            "predicate": "located_in",
+            "object": "Mary",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Mary",
+            "predicate": "friends_with",
+            "object": "Microsoft",
+            "confidence": 0.8
+          }
+        ],
+        "entity_accuracy": 1.0,
+        "relation_accuracy": 0.0,
+        "overall_accuracy": 0.5,
+        "confidence": 0.95,
+        "processing_time": 1757499162.552323
+      },
+      {
+        "test_id": 7,
+        "text": "Amazon is based in Seattle, Washington.",
+        "expected_entities": [
+          "Amazon",
+          "Seattle",
+          "Washington"
+        ],
+        "predicted_entities": [
+          "Amazon",
+          "Seattle, Washington"
+        ],
+        "expected_relations": [
+          {
+            "subject": "Amazon",
+            "predicate": "based_in",
+            "object": "Seattle"
+          }
+        ],
+        "predicted_relations": [
+          {
+            "subject": "Amazon",
+            "predicate": "located_in",
+            "object": "Seattle, Washington",
+            "confidence": 0.95
+          }
+        ],
+        "entity_accuracy": 0.3333333333333333,
+        "relation_accuracy": 0.0,
+        "overall_accuracy": 0.16666666666666666,
+        "confidence": 0.95,
+        "processing_time": 1757499163.251484
+      },
+      {
+        "test_id": 8,
+        "text": "Netflix produces original content.",
+        "expected_entities": [
+          "Netflix"
+        ],
+        "predicted_entities": [
+          "Netflix",
+          "produces",
+          "original content"
+        ],
+        "expected_relations": [
+          {
+            "subject": "Netflix",
+            "predicate": "produces",
+            "object": "original content"
+          }
+        ],
+        "predicted_relations": [
+          {
+            "subject": "Netflix",
+            "predicate": "produces",
+            "object": "original content",
+            "confidence": 0.9
+          }
+        ],
+        "entity_accuracy": 1.0,
+        "relation_accuracy": 1.0,
+        "overall_accuracy": 1.0,
+        "confidence": 0.85,
+        "processing_time": 1757499164.102978
+      }
+    ]
+  },
+  "behavior_results": {
+    "total_tests": 10,
+    "category_performance": {
+      "entity_recognition": [
+        {
+          "entity_count": 2,
+          "relation_count": 1,
+          "confidence": 0.95
+        },
+        {
+          "entity_count": 2,
+          "relation_count": 1,
+          "confidence": 0.9
+        },
+        {
+          "entity_count": 5,
+          "relation_count": 3,
+          "confidence": 0.85
+        }
+      ],
+      "relation_extraction": [
+        {
+          "entity_count": 3,
+          "relation_count": 2,
+          "confidence": 0.85
+        },
+        {
+          "entity_count": 3,
+          "relation_count": 2,
+          "confidence": 0.95
+        },
+        {
+          "entity_count": 2,
+          "relation_count": 1,
+          "confidence": 0.95
+        }
+      ],
+      "complex_sentences": [
+        {
+          "entity_count": 4,
+          "relation_count": 4,
+          "confidence": 1.0
+        },
+        {
+          "entity_count": 7,
+          "relation_count": 4,
+          "confidence": 0.95
+        }
+      ],
+      "conversational": [
+        {
+          "entity_count": 2,
+          "relation_count": 3,
+          "confidence": 0.85
+        },
+        {
+          "entity_count": 3,
+          "relation_count": 4,
+          "confidence": 1
+        }
+      ]
+    },
+    "pattern_recognition": {
+      "entity_PERSON": 10,
+      "entity_ORGANIZATION": 10,
+      "relation_develops": 5,
+      "entity_ORG": 2,
+      "entity_LOC": 2,
+      "relation_located_in": 9,
+      "entity_MISC": 1,
+      "entity_PRODUCT": 4,
+      "entity_LOCATION": 4,
+      "relation_works_for": 7,
+      "relation_friends_with": 4
+    },
+    "confidence_by_category": {
+      "entity_recognition": [
+        0.95,
+        0.9,
+        0.85
+      ],
+      "relation_extraction": [
+        0.85,
+        0.95,
+        0.95
+      ],
+      "complex_sentences": [
+        1.0,
+        0.95
+      ],
+      "conversational": [
+        0.85,
+        1
+      ]
+    },
+    "detailed_behavior": [
+      {
+        "text": "Tim Cook is the CEO of Apple.",
+        "category": "entity_recognition",
+        "expected_patterns": [
+          "PERSON",
+          "ORGANIZATION",
+          "leadership"
+        ],
+        "extracted_entities": [
+          {
+            "text": "Tim Cook",
+            "type": "PERSON",
+            "confidence": 0.9
+          },
+          {
+            "text": "Apple",
+            "type": "ORGANIZATION",
+            "confidence": 0.9
+          }
+        ],
+        "extracted_relations": [
+          {
+            "subject": "Tim Cook",
+            "predicate": "develops",
+            "object": "Apple",
+            "confidence": 0.8
+          }
+        ],
+        "confidence": 0.95,
+        "performance_score": 1.0
+      },
+      {
+        "text": "Microsoft is headquartered in Redmond, Washington.",
+        "category": "entity_recognition",
+        "expected_patterns": [
+          "ORGANIZATION",
+          "LOCATION"
+        ],
+        "extracted_entities": [
+          {
+            "text": "Microsoft",
+            "type": "ORG",
+            "confidence": 0.9
+          },
+          {
+            "text": "Redmond, Washington",
+            "type": "LOC",
+            "confidence": 0.95
+          }
+        ],
+        "extracted_relations": [
+          {
+            "subject": "Microsoft",
+            "predicate": "located_in",
+            "object": "Redmond, Washington",
+            "confidence": 0.95
+          }
+        ],
+        "confidence": 0.9,
+        "performance_score": 1.5
+      },
+      {
+        "text": "I bought a new iPhone from the Apple Store.",
+        "category": "entity_recognition",
+        "expected_patterns": [
+          "PRODUCT",
+          "ORGANIZATION"
+        ],
+        "extracted_entities": [
+          {
+            "text": "I",
+            "type": "PERSON",
+            "confidence": 0.9
+          },
+          {
+            "text": "bought",
+            "type": "MISC",
+            "confidence": 0.9
+          },
+          {
+            "text": "new",
+            "type": "PRODUCT",
+            "confidence": 0.9
+          },
+          {
+            "text": "iPhone",
+            "type": "ORGANIZATION",
+            "confidence": 0.9
+          },
+          {
+            "text": "Apple Store",
+            "type": "LOCATION",
+            "confidence": 0.9
+          }
+        ],
+        "extracted_relations": [
+          {
+            "subject": "Apple Store",
+            "predicate": "located_in",
+            "object": "iPhone",
+            "confidence": 0.9
+          },
+          {
+            "subject": "I",
+            "predicate": "develops",
+            "object": "Apple Store",
+            "confidence": 0.9
+          },
+          {
+            "subject": "new",
+            "predicate": "works_for",
+            "object": "Apple Store",
+            "confidence": 0.9
+          }
+        ],
+        "confidence": 0.85,
+        "performance_score": 4.0
+      },
+      {
+        "text": "Sarah works at Google as a software engineer.",
+        "category": "relation_extraction",
+        "expected_patterns": [
+          "employment",
+          "organization",
+          "profession"
+        ],
+        "extracted_entities": [
+          {
+            "text": "Sarah",
+            "type": "PERSON",
+            "confidence": 0.9
+          },
+          {
+            "text": "Google",
+            "type": "ORGANIZATION",
+            "confidence": 0.9
+          },
+          {
+            "text": "software engineer",
+            "type": "PRODUCT",
+            "confidence": 0.9
+          }
+        ],
+        "extracted_relations": [
+          {
+            "subject": "Sarah",
+            "predicate": "works_for",
+            "object": "Google",
+            "confidence": 0.9
+          },
+          {
+            "subject": "Google",
+            "predicate": "located_in",
+            "object": "software engineering",
+            "confidence": 0.9
+          }
+        ],
+        "confidence": 0.85,
+        "performance_score": 1.6666666666666667
+      },
+      {
+        "text": "Tesla was founded by Elon Musk in 2003.",
+        "category": "relation_extraction",
+        "expected_patterns": [
+          "founding",
+          "leadership",
+          "temporal"
+        ],
+        "extracted_entities": [
+          {
+            "text": "Tesla",
+            "type": "ORGANIZATION",
+            "confidence": 0.9
+          },
+          {
+            "text": "Elon Musk",
+            "type": "PERSON",
+            "confidence": 0.9
+          },
+          {
+            "text": "2003",
+            "type": "LOCATION",
+            "confidence": 0.9
+          }
+        ],
+        "extracted_relations": [
+          {
+            "subject": "Elon Musk",
+            "predicate": "works_for",
+            "object": "Tesla",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Tesla",
+            "predicate": "located_in",
+            "object": "2003",
+            "confidence": 0.8
+          }
+        ],
+        "confidence": 0.95,
+        "performance_score": 1.6666666666666667
+      },
+      {
+        "text": "Amazon is headquartered in Seattle, Washington.",
+        "category": "relation_extraction",
+        "expected_patterns": [
+          "location",
+          "headquarters"
+        ],
+        "extracted_entities": [
+          {
+            "text": "Amazon",
+            "type": "ORG",
+            "confidence": 0.9
+          },
+          {
+            "text": "Seattle, Washington",
+            "type": "LOC",
+            "confidence": 0.9
+          }
+        ],
+        "extracted_relations": [
+          {
+            "subject": "Amazon",
+            "predicate": "located_in",
+            "object": "Seattle, Washington",
+            "confidence": 0.95
+          }
+        ],
+        "confidence": 0.95,
+        "performance_score": 1.5
+      },
+      {
+        "text": "My colleague John, who works at Microsoft, told me that his friend Sarah recently joined Google as a product manager.",
+        "category": "complex_sentences",
+        "expected_patterns": [
+          "multiple_entities",
+          "multiple_relations",
+          "nested_clauses"
+        ],
+        "extracted_entities": [
+          {
+            "text": "John",
+            "type": "PERSON",
+            "confidence": 0.9
+          },
+          {
+            "text": "Microsoft",
+            "type": "ORGANIZATION",
+            "confidence": 0.9
+          },
+          {
+            "text": "Sarah",
+            "type": "PERSON",
+            "confidence": 0.85
+          },
+          {
+            "text": "Google",
+            "type": "ORGANIZATION",
+            "confidence": 0.85
+          }
+        ],
+        "extracted_relations": [
+          {
+            "subject": "John",
+            "predicate": "works_for",
+            "object": "Sarah",
+            "confidence": 0.85
+          },
+          {
+            "subject": "Microsoft",
+            "predicate": "located_in",
+            "object": "Google",
+            "confidence": 0.85
+          },
+          {
+            "subject": "Sarah",
+            "predicate": "develops",
+            "object": "Google",
+            "confidence": 0.85
+          },
+          {
+            "subject": "Google",
+            "predicate": "friends_with",
+            "object": "John",
+            "confidence": 0.85
+          }
+        ],
+        "confidence": 1.0,
+        "performance_score": 2.6666666666666665
+      },
+      {
+        "text": "The new MacBook Pro, developed by Apple in Cupertino, was released last month and is now available in stores worldwide.",
+        "category": "complex_sentences",
+        "expected_patterns": [
+          "product_development",
+          "location",
+          "temporal",
+          "distribution"
+        ],
+        "extracted_entities": [
+          {
+            "text": "Macbook Pro",
+            "type": "PRODUCT",
+            "confidence": 0.9
+          },
+          {
+            "text": "Apple",
+            "type": "ORGANIZATION",
+            "confidence": 0.9
+          },
+          {
+            "text": "Cupertino",
+            "type": "LOCATION",
+            "confidence": 0.9
+          },
+          {
+            "text": "released",
+            "type": "PERSON",
+            "confidence": 0.9
+          },
+          {
+            "text": "last month",
+            "type": "PERSON",
+            "confidence": 0.9
+          },
+          {
+            "text": "now available",
+            "type": "PRODUCT",
+            "confidence": 0.9
+          },
+          {
+            "text": "stores worldwide",
+            "type": "ORGANIZATION",
+            "confidence": 0.9
+          }
+        ],
+        "extracted_relations": [
+          {
+            "subject": "Macbook Pro",
+            "predicate": "develops",
+            "object": "Apple",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Cupertino",
+            "predicate": "located_in",
+            "object": "Apple",
+            "confidence": 0.8
+          },
+          {
+            "subject": "last month",
+            "predicate": "works_for",
+            "object": "Apple",
+            "confidence": 0.8
+          },
+          {
+            "subject": "stores worldwide",
+            "predicate": "friends_with",
+            "object": "stores",
+            "confidence": 0.8
+          }
+        ],
+        "confidence": 0.95,
+        "performance_score": 2.75
+      },
+      {
+        "text": "Hi, I'm Alex and I work at Spotify. What about you?",
+        "category": "conversational",
+        "expected_patterns": [
+          "self_introduction",
+          "employment",
+          "question"
+        ],
+        "extracted_entities": [
+          {
+            "text": "Alex",
+            "type": "PERSON",
+            "confidence": 0.9
+          },
+          {
+            "text": "Spotify",
+            "type": "ORGANIZATION",
+            "confidence": 0.9
+          }
+        ],
+        "extracted_relations": [
+          {
+            "subject": "Alex",
+            "predicate": "works_for",
+            "object": "Spotify",
+            "confidence": 0.9
+          },
+          {
+            "subject": "Alex",
+            "predicate": "located_in",
+            "object": "Spotify",
+            "confidence": 0.9
+          },
+          {
+            "subject": "Alex",
+            "predicate": "friends_with",
+            "object": "Spotify",
+            "confidence": 0.9
+          }
+        ],
+        "confidence": 0.85,
+        "performance_score": 1.6666666666666667
+      },
+      {
+        "text": "I heard that Michael left Apple to join a startup in San Francisco.",
+        "category": "conversational",
+        "expected_patterns": [
+          "career_change",
+          "organization_change",
+          "location"
+        ],
+        "extracted_entities": [
+          {
+            "text": "Michael",
+            "type": "PERSON",
+            "confidence": 0.9
+          },
+          {
+            "text": "Apple",
+            "type": "ORGANIZATION",
+            "confidence": 0.9
+          },
+          {
+            "text": "San Francisco",
+            "type": "LOCATION",
+            "confidence": 0.9
+          }
+        ],
+        "extracted_relations": [
+          {
+            "subject": "Michael",
+            "predicate": "develops",
+            "object": "Apple",
+            "confidence": 0.8
+          },
+          {
+            "subject": "San Francisco",
+            "predicate": "located_in",
+            "object": "Apple",
+            "confidence": 0.8
+          },
+          {
+            "subject": "I",
+            "predicate": "friends_with",
+            "object": "Michael",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Apple",
+            "predicate": "works_for",
+            "object": "San Francisco",
+            "confidence": 0.8
+          }
+        ],
+        "confidence": 1,
+        "performance_score": 2.3333333333333335
+      }
+    ]
+  }
+}

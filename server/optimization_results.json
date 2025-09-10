@@ -1,0 +1,2043 @@
+{
+  "optimization_results": {
+    "best_config": {
+      "system_prompt_id": 2,
+      "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+      "temperature": 0.2,
+      "max_tokens": 768,
+      "confidence_threshold": 0.3
+    },
+    "best_score": 0.2995635112126668,
+    "top_results": [
+      {
+        "avg_score": 0.2995635112126668,
+        "avg_entity_score": 0.6666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.47226805686950685,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.29016181786855066,
+        "avg_entity_score": 0.6666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5305965423583985,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.23827914555867516,
+        "avg_entity_score": 0.5666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.45054187774658205,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.2283326578140259,
+        "avg_entity_score": 0.3,
+        "avg_relation_score": 0.2,
+        "avg_processing_time": 0.5237889766693116,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.20918539365132646,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.48850479125976565,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.2082125695546468,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4200268268585205,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.1996998341878255,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3363349914550781,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.19884962399800615,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3448370933532715,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.1980707057317098,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.35262627601623536,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.19766205151875815,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.35671281814575195,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      }
+    ],
+    "all_results": [
+      {
+        "avg_score": 0.2995635112126668,
+        "avg_entity_score": 0.6666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.47226805686950685,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.29016181786855066,
+        "avg_entity_score": 0.6666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5305965423583985,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.23827914555867516,
+        "avg_entity_score": 0.5666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.45054187774658205,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.2283326578140259,
+        "avg_entity_score": 0.3,
+        "avg_relation_score": 0.2,
+        "avg_processing_time": 0.5237889766693116,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.20918539365132646,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.48850479125976565,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.2082125695546468,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4200268268585205,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.1996998341878255,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3363349914550781,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.19884962399800615,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3448370933532715,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.1980707057317098,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.35262627601623536,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.19766205151875815,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.35671281814575195,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.19742961247762042,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3590372085571289,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.19713306268056235,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.36200270652770994,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.1,
+          "max_tokens": 256,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.19710566838582355,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.36227664947509763,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.1969351895650228,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3639814376831055,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.19630810101826984,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3702523231506348,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.19617202599843342,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.371613073348999,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.1959983237584432,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3733500957489014,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.19584448655446368,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3748884677886963,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.2,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.19552712281545004,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.378062105178833,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.19541998704274494,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3791334629058838,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.1,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.19537238915761312,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3796094417572021,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.19522371133168537,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.38109622001647947,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.1950875886281331,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.38245744705200196,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.19507638772328695,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3825694561004639,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.1,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.19500631650288897,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3832701683044434,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.19483653386433922,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3849679946899414,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.2,
+          "max_tokens": 512,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.19477165540059407,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3856167793273926,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.1,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.19465697606404622,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3867635726928711,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.1945235761006673,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.38809757232666015,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.19424984296162923,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.390834903717041,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.1,
+          "max_tokens": 256,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.19392590363820392,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3940742969512939,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.2,
+          "max_tokens": 256,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.19387054761250813,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.39462785720825194,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.19362733205159505,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.3970600128173828,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.193080571492513,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4025276184082031,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.1,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.19293081124623618,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4040252208709717,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.19275025208791097,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.40583081245422364,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.1,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.19271986802419025,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.40613465309143065,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.2,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.19267874558766682,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.40654587745666504,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.2,
+          "max_tokens": 256,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.1920836861928304,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4124964714050293,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.1918475039800008,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4148582935333252,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.2,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.19173514684041343,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4159818649291992,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.1,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.19166644891103107,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.41666884422302247,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.1915371640523275,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.41796169281005857,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.2,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.19146531422932941,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.41868019104003906,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.19142696698506673,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.419063663482666,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.1,
+          "max_tokens": 512,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.19133037408192952,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4200295925140381,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.19122371514638264,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4210961818695068,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.2,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.19116919358571371,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4216413974761963,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.19087181409200032,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.42461519241333007,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.1,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.19028255303700764,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.43050780296325686,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.1,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.19004927476247152,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.43284058570861816,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.1892492707570394,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4408406257629395,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.188991649945577,
+        "avg_entity_score": 0.4666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4434168338775635,
+        "config": {
+          "system_prompt_id": 0,
+          "system_prompt": "You are an expert relation extraction system. Extract entities and relations from the given text and output them in JSON format.\n\nEntities should include people, organizations, locations, and other important nouns with their types.\nRelations should connect entities with meaningful predicates like 'works_for', 'located_in', 'develops', 'friends_with', etc.\n\nOutput format:\n{\n  \"entities\": [\n    {\"text\": \"Entity Name\", \"type\": \"PERSON/ORG/LOC/PRODUCT\", \"confidence\": 0.9}\n  ],\n  \"relations\": [\n    {\"subject\": \"Entity1\", \"predicate\": \"relation_type\", \"object\": \"Entity2\", \"confidence\": 0.8}\n  ],\n  \"confidence\": 0.85\n}\n\nOnly output the JSON, no other text.",
+          "temperature": 0.1,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.1826058578491211,
+        "avg_entity_score": 0.4,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5112234115600586,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.1818584632873535,
+        "avg_entity_score": 0.4,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5174529552459717,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.1818182420730591,
+        "avg_entity_score": 0.4,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5169288158416748,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.1802965021133423,
+        "avg_entity_score": 0.4,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5601509571075439,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.18022151470184328,
+        "avg_entity_score": 0.4,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6908815860748291,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 256,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.17796167850494385,
+        "avg_entity_score": 0.4,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5328940391540528,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.11834314664204917,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.45891485214233396,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.11821236928304035,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4553628444671631,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.11817662556966146,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4565002918243408,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.11815853436787922,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.45512919425964354,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.11750001748402913,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.49117112159729004,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.11736707528432211,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4714193820953369,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.11726756890614827,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.46436777114868166,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.1,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.11722979863484699,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.46257915496826174,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.1,
+          "max_tokens": 256,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.11719604810078939,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4914727687835693,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 512,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.11708106835683188,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.500117015838623,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.11707987149556479,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4283884048461914,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.11705047448476155,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4277347564697266,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.1,
+          "max_tokens": 256,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.11687084992726644,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4783846378326416,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.1,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.11643919785817465,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4792534828186035,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.11642793496449788,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4906009197235107,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.1,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.11635645707448324,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.47784175872802737,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.11630153020222982,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5143542289733887,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.11630009492238362,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5066903591156006,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.11617306073506672,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4898199558258057,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.1,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.1160282309850057,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5090672492980957,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.11594891866048178,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.7441524505615235,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.11530404408772787,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4968247413635254,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.1,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.11516765912373861,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.515329647064209,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.1,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.11505661805470783,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5130019664764405,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.1,
+          "max_tokens": 512,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.11502845128377279,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5039541244506835,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.11479861577351888,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5238070487976074,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.1,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.11474876721700034,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5572802066802979,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.11404181321461995,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5315634250640869,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.1,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.10951195081075031,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5902252197265625,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.0983592160542806,
+        "avg_entity_score": 0.26666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.7467008113861084,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.2,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.0920299768447876,
+        "avg_entity_score": 0.2,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.44020938873291016,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.09157805919647218,
+        "avg_entity_score": 0.2,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5206699848175049,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.09116379737854004,
+        "avg_entity_score": 0.2,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6909078121185303,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.08978917598724365,
+        "avg_entity_score": 0.2,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5378472805023193,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.08,
+        "avg_entity_score": 0.2,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6627106666564941,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.06803219636281331,
+        "avg_entity_score": 0.16666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4366129398345947,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.06136003335316975,
+        "avg_entity_score": 0.16666666666666666,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6098578453063965,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.04288877964019776,
+        "avg_entity_score": 0.1,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5083850383758545,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.2,
+          "max_tokens": 256,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.0421404218673706,
+        "avg_entity_score": 0.1,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.567249345779419,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.042103023529052735,
+        "avg_entity_score": 0.1,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4169334888458252,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.2,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.042043199539184575,
+        "avg_entity_score": 0.1,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6267603397369385,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.04154873847961425,
+        "avg_entity_score": 0.1,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6865370750427247,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.024686473210652666,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5557762145996094,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.1,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.02401321252187093,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5357359886169434,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 256,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.022094815572102862,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.593248701095581,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.020870412190755205,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.7006627082824707,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.02053475220998128,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5950616359710693,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.2,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.019368055661519366,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.7984518527984619,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.2,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.017424252827962235,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4800079822540283,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.014698556264241533,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5798332214355468,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.014647510846455889,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6031236171722412,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.014619592030843096,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6185525894165039,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.014618471463521318,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5814388751983642,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.0,
+          "max_tokens": 256,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.014098828633626298,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5973836421966553,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.014084552129109699,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6020251274108886,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.014083779652913408,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5958249568939209,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.01352871259053548,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6210382461547852,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.013378156026204424,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6223773956298828,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.01333333333333333,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6617464065551758,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.0,
+          "max_tokens": 512,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.01333333333333333,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6551904201507568,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.01333333333333333,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6510715007781982,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.0,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.01333333333333333,
+        "avg_entity_score": 0.06666666666666667,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.8002011775970459,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.2,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.7080497741699219,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.1,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5112733364105224,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.1,
+          "max_tokens": 256,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5767808437347413,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.1,
+          "max_tokens": 256,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6297021865844726,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.1,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5206603050231934,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.1,
+          "max_tokens": 512,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5415462493896485,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.1,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5643476486206055,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.1,
+          "max_tokens": 512,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6601683616638183,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.1,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4898670196533203,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.1,
+          "max_tokens": 768,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5018469333648682,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.1,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5097221851348877,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.1,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5595968246459961,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.1,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.6170660018920898,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.2,
+          "max_tokens": 256,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.48198862075805665,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.2,
+          "max_tokens": 512,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.8420128345489502,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.7166050910949707,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.2,
+          "max_tokens": 768,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.7152519702911377,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.3
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.7459420204162598,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.7
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.787523889541626,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.45363402366638184,
+        "config": {
+          "system_prompt_id": 1,
+          "system_prompt": "You are a highly accurate relation extraction system specializing in conversational text. Your task is to identify entities and their relationships with high precision.\n\nENTITY TYPES:\n- PERSON: Names of people (e.g., \"John Smith\", \"Sarah\")\n- ORGANIZATION: Companies, institutions (e.g., \"Google\", \"Microsoft\")\n- LOCATION: Places, cities, addresses (e.g., \"San Francisco\", \"Seattle\")\n- PRODUCT: Products, services (e.g., \"iPhone\", \"Windows\")\n\nRELATION TYPES:\n- works_for: Person employed by organization\n- located_in: Organization based in location\n- develops: Organization creates product\n- founded_by: Organization established by person\n- friends_with: Personal relationships\n- headquartered_in: Organization headquarters location\n\nINSTRUCTIONS:\n1. Extract ALL entities mentioned in the text\n2. Identify meaningful relationships between entities\n3. Assign confidence scores (0.0-1.0) based on certainty\n4. Output ONLY valid JSON\n\nOutput format:\n{\n  \"entities\": [{\"text\": \"Entity\", \"type\": \"TYPE\", \"confidence\": 0.9}],\n  \"relations\": [{\"subject\": \"Entity1\", \"predicate\": \"relation\", \"object\": \"Entity2\", \"confidence\": 0.8}],\n  \"confidence\": 0.85\n}",
+          "temperature": 0.3,
+          "max_tokens": 768,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5594749450683594,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.2,
+          "max_tokens": 512,
+          "confidence_threshold": 0.8
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.4380973815917969,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 256,
+          "confidence_threshold": 0.5
+        }
+      },
+      {
+        "avg_score": 0.0,
+        "avg_entity_score": 0.0,
+        "avg_relation_score": 0.0,
+        "avg_processing_time": 0.5110725402832031,
+        "config": {
+          "system_prompt_id": 2,
+          "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+          "temperature": 0.3,
+          "max_tokens": 512,
+          "confidence_threshold": 0.5
+        }
+      }
+    ]
+  },
+  "validation_result": {
+    "avg_score": 0.14945799509684246,
+    "avg_entity_score": 0.3333333333333333,
+    "avg_relation_score": 0.0,
+    "avg_processing_time": 0.7149393558502197,
+    "config": {
+      "system_prompt_id": 2,
+      "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+      "temperature": 0.2,
+      "max_tokens": 768,
+      "confidence_threshold": 0.3
+    }
+  },
+  "optimized_config": {
+    "model_name": "relation-extractor-v2-mlx",
+    "api_base": "http://localhost:1234",
+    "system_prompt": "Extract entities and relations from the text following these rules:\n\nENTITIES: Identify all proper nouns, organization names, locations, and products\nRELATIONS: Connect entities with logical relationships (works_for, located_in, develops, etc.)\n\nREQUIREMENTS:\n- Extract ALL entities, even if they don't have relations\n- Use standard entity types: PERSON, ORG, LOC, PRODUCT\n- Use specific relation predicates\n- Include confidence scores for each extraction\n\nOutput JSON format only:\n{\"entities\": [{\"text\": \"entity\", \"type\": \"TYPE\", \"confidence\": 0.9}], \"relations\": [{\"subject\": \"entity1\", \"predicate\": \"relation\", \"object\": \"entity2\", \"confidence\": 0.8}], \"confidence\": 0.85}",
+    "temperature": 0.2,
+    "max_tokens": 768,
+    "confidence_threshold": 0.3,
+    "performance_metrics": {
+      "optimized_score": 0.2995635112126668,
+      "validation_date": "2025-09-10 12:06:00"
+    }
+  }
+}
