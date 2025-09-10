@@ -1801,6 +1801,110 @@ class HotMemory:
         """Call a tiny LLM to link relations only between provided entities. Returns list of (s,r,d)."""
         model = self.assisted_model
         base_url = self.assisted_base_url.rstrip('/') + '/chat/completions'
+        
+        # Determine if this is a classifier model
+        is_classifier = 'classifier' in model.lower()
+        
+        ents = [ _canon_entity_text(e) for e in (entities or []) if _canon_entity_text(e) ]
+        ents_unique = []
+        seen_e = set()
+        for e in ents:
+            if e not in seen_e:
+                ents_unique.append(e)
+                seen_e.add(e)
+        
+        if is_classifier:
+            # Use classifier mode - individual entity pair classification
+            return self._assist_extract_classifier(text, ents_unique, base_url, model, session_id)
+        else:
+            # Use traditional JSON extraction mode
+            return self._assist_extract_json(text, ents_unique, base_url, model, session_id)
+
+    def _assist_extract_classifier(self, text: str, entities: List[str], base_url: str, model: str, session_id: Optional[str] = None) -> List[Tuple[str, str, str]]:
+        """Classifier mode: test each entity pair individually for maximum speed."""
+        out: List[Tuple[str, str, str]] = []
+        
+        if len(entities) < 2:
+            return out
+            
+        # Generate all possible entity pairs
+        entity_pairs = []
+        for i in range(len(entities)):
+            for j in range(len(entities)):
+                if i != j:
+                    entity_pairs.append((entities[i], entities[j]))
+        
+        # Classifier system message
+        sys_msg = """You are a relation classifier. Given two entities and context, output ONLY the relation type.
+If no clear relation exists, output 'none'.
+
+Common relations: works_at, CEO_of, lives_in, develops, founder_of, married_to, acquired, headquartered_in, competes_with, retired_from, manages, based_in, graduated_from, joined"""
+        
+        # Test each entity pair
+        for subject, obj in entity_pairs[:10]:  # Limit to prevent too many calls
+            try:
+                user_msg = f"""Subject: {subject}
+Context: {text}
+Object: {obj}
+
+Relation type (one word):"""
+                
+                messages = [
+                    {"role": "system", "content": sys_msg},
+                    {"role": "user", "content": user_msg}
+                ]
+                
+                payload = {
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": 20,
+                    "temperature": 0.1
+                }
+                
+                if session_id:
+                    payload["session_id"] = f"assist_{session_id}"
+                
+                data = json.dumps(payload).encode('utf-8')
+                headers = {"Content-Type": "application/json", "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY','')}"}
+                req = urllib.request.Request(base_url, data=data, headers=headers, method='POST')
+                timeout = max(0.05, self.assisted_timeout_ms / 1000.0)
+                
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    body = resp.read().decode('utf-8')
+                    obj = json.loads(body)
+                    choice = (obj.get('choices') or [{}])[0]
+                content = ((choice.get('message') or {}).get('content') or '').strip()
+                    
+                if content and content.lower() != 'none':
+                        # Clean and normalize relation
+                        relation = content.lower().strip()
+                        if ',' in relation:
+                            relation = relation.split(',')[0]  # Take first if multiple
+                        
+                        # Remove common prefixes
+                        for prefix in ['is_', 'was_', 'the_', 'a_', 'an_']:
+                            if relation.startswith(prefix):
+                                relation = relation[len(prefix):]
+                        
+                        # Normalize underscores and spaces
+                        relation = relation.replace(' ', '_').replace('-', '_')
+                        
+                        # Basic validation
+                        if relation and len(relation) > 1 and relation.isalnum():
+                            out.append((subject, relation, obj))
+                            
+            except Exception as e:
+                if os.getenv('HOTMEM_ASSISTED_LOG_REQUEST','false').lower() in ('1','true','yes'):
+                    try:
+                        logger.info(f"[HotMem Classifier] Pair ({subject}, {obj}) failed: {e}")
+                    except Exception:
+                        pass
+                continue
+        
+        return out[:self.assisted_max_triples]
+
+    def _assist_extract_json(self, text: str, entities: List[str], base_url: str, model: str, session_id: Optional[str] = None) -> List[Tuple[str, str, str]]:
+        """Traditional JSON extraction mode."""
         # Strict instructions for structured output (enum-free; relation chosen from text)
         sys_msg = (
             "You are a relation linker. Link relations only between the provided ENTITIES based on the USER message.\n"
@@ -1825,14 +1929,7 @@ class HotMemory:
             "USER: Tom lives in Portland and teaches at Reed College.\n"
             "ASSISTANT: {\"triples\":[{\"s\":\"tom\",\"r\":\"lives_in\",\"d\":\"portland\"},{\"s\":\"tom\",\"r\":\"teaches_at\",\"d\":\"reed college\"}]}"
         )
-        ents = [ _canon_entity_text(e) for e in (entities or []) if _canon_entity_text(e) ]
-        ents_unique = []
-        seen_e = set()
-        for e in ents:
-            if e not in seen_e:
-                ents_unique.append(e)
-                seen_e.add(e)
-        ents_json = json.dumps(ents_unique)
+        ents_json = json.dumps(entities)
         messages = [
             {"role": "system", "content": sys_msg},
             {"role": "system", "content": ex1},
@@ -1860,10 +1957,10 @@ class HotMemory:
                 try:
                     logger.info(
                         f"[HotMem Assisted] POST {base_url} model={model} session_id={'assist_'+session_id if session_id else ''} "
-                        f"ents={len(ents_unique)} timeout_ms={int(self.assisted_timeout_ms)}"
+                        f"ents={len(entities)} timeout_ms={int(self.assisted_timeout_ms)}"
                     )
-                    if ents_unique:
-                        logger.info(f"[HotMem Assisted] ENTITIES sample: {ents_unique[:6]}")
+                    if entities:
+                        logger.info(f"[HotMem Assisted] ENTITIES sample: {entities[:6]}")
                 except Exception:
                     pass
             with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -1892,7 +1989,7 @@ class HotMemory:
                 pass
         # Parse JSON object `{ "triples": [ ... ] }` or JSONL fallback
         out: List[Tuple[str, str, str]] = []
-        entity_set = set(ents_unique)
+        entity_set = set(entities)
         pronouns = {"it","this","that","he","she","they","we"}
 
         def _match_entity(cand: str) -> Optional[str]:
@@ -1901,10 +1998,10 @@ class HotMemory:
                 return None
             if c in entity_set:
                 return c
-            for ent in ents_unique:
+            for ent in entities:
                 if c and (c in ent) and (len(ent) >= len(c)):
                     return ent
-            for ent in ents_unique:
+            for ent in entities:
                 if ent in c:
                     return ent
             return None
