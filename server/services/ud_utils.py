@@ -85,28 +85,182 @@ class UDPatternMatcher:
         self._init_patterns()
     
     def _init_patterns(self):
-        """Initialize UD patterns for relation extraction"""
+        """Initialize all 27 UD patterns for relation extraction"""
         
-        # Copula patterns
-        self.patterns.append({
-            'name': 'copula_attribute',
-            'deps': [('nsubj', 'cop', 'attr')],
-            'extract': self._extract_copula
-        })
+        # Core grammatical relations
+        self.patterns.extend([
+            {
+                'name': 'nominal_subject',
+                'deps': [('nsubj',)],
+                'extract': self._extract_nsubj
+            },
+            {
+                'name': 'passive_subject', 
+                'deps': [('nsubjpass',)],
+                'extract': self._extract_nsubjpass
+            },
+            {
+                'name': 'direct_object',
+                'deps': [('dobj',)],
+                'extract': self._extract_dobj
+            },
+            {
+                'name': 'indirect_object',
+                'deps': [('iobj',)],
+                'extract': self._extract_iobj
+            },
+            {
+                'name': 'object',
+                'deps': [('obj',)],
+                'extract': self._extract_obj
+            }
+        ])
         
-        # SVO patterns
-        self.patterns.append({
-            'name': 'subject_verb_object',
-            'deps': [('nsubj', 'ROOT', 'obj')],
-            'extract': self._extract_svo
-        })
+        # Clausal relations
+        self.patterns.extend([
+            {
+                'name': 'adnominal_clause',
+                'deps': [('acl',)],
+                'extract': self._extract_acl
+            },
+            {
+                'name': 'adverbial_clause',
+                'deps': [('advcl',)],
+                'extract': self._extract_advcl
+            },
+            {
+                'name': 'clausal_complement',
+                'deps': [('ccomp',)],
+                'extract': self._extract_ccomp
+            },
+            {
+                'name': 'clausal_subject',
+                'deps': [('csubj',)],
+                'extract': self._extract_csubj
+            },
+            {
+                'name': 'open_clausal_comp',
+                'deps': [('xcomp',)],
+                'extract': self._extract_xcomp
+            }
+        ])
         
-        # Possessive patterns
-        self.patterns.append({
-            'name': 'possessive',
-            'deps': [('nmod:poss', 'poss')],
-            'extract': self._extract_possession
-        })
+        # Modifier relations
+        self.patterns.extend([
+            {
+                'name': 'adverbial_modifier',
+                'deps': [('advmod',)],
+                'extract': self._extract_advmod
+            },
+            {
+                'name': 'adjectival_modifier',
+                'deps': [('amod',)],
+                'extract': self._extract_amod
+            },
+            {
+                'name': 'nominal_modifier',
+                'deps': [('nmod',)],
+                'extract': self._extract_nmod
+            },
+            {
+                'name': 'numeric_modifier',
+                'deps': [('nummod',)],
+                'extract': self._extract_nummod
+            }
+        ])
+        
+        # Function word relations
+        self.patterns.extend([
+            {
+                'name': 'auxiliary',
+                'deps': [('aux',)],
+                'extract': self._extract_aux
+            },
+            {
+                'name': 'passive_auxiliary',
+                'deps': [('auxpass',)],
+                'extract': self._extract_auxpass
+            },
+            {
+                'name': 'case_marker',
+                'deps': [('case',)],
+                'extract': self._extract_case
+            },
+            {
+                'name': 'coordination',
+                'deps': [('cc',)],
+                'extract': self._extract_cc
+            },
+            {
+                'name': 'copula',
+                'deps': [('cop',)],
+                'extract': self._extract_copula
+            },
+            {
+                'name': 'determiner',
+                'deps': [('det',)],
+                'extract': self._extract_det
+            },
+            {
+                'name': 'marker',
+                'deps': [('mark',)],
+                'extract': self._extract_mark
+            },
+            {
+                'name': 'negation',
+                'deps': [('neg',)],
+                'extract': self._extract_neg
+            }
+        ])
+        
+        # Special relations
+        self.patterns.extend([
+            {
+                'name': 'agent',
+                'deps': [('agent',)],
+                'extract': self._extract_agent
+            },
+            {
+                'name': 'attribute',
+                'deps': [('attr',)],
+                'extract': self._extract_attr
+            },
+            {
+                'name': 'compound',
+                'deps': [('compound',)],
+                'extract': self._extract_compound
+            },
+            {
+                'name': 'conjunction',
+                'deps': [('conj',)],
+                'extract': self._extract_conj
+            },
+            {
+                'name': 'possessive',
+                'deps': [('poss',)],
+                'extract': self._extract_possession
+            },
+            {
+                'name': 'prepositional_object',
+                'deps': [('pobj',)],
+                'extract': self._extract_pobj
+            },
+            {
+                'name': 'preposition',
+                'deps': [('prep',)],
+                'extract': self._extract_prep
+            },
+            {
+                'name': 'object_predicate',
+                'deps': [('oprd',)],
+                'extract': self._extract_oprd
+            },
+            {
+                'name': 'root',
+                'deps': [('root',)],
+                'extract': self._extract_root
+            }
+        ])
     
     def match(self, doc) -> List[ExtractedRelation]:
         """Match all patterns against document"""

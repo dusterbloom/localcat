@@ -27,6 +27,13 @@ except ImportError:
     GLiNERExtractor = None
     logger.debug("[TieredExtractor] GLiNER not available")
 
+# Import centralized UD patterns
+try:
+    from services.ud_utils import extract_all_ud_patterns, ExtractedRelation
+except ImportError:
+    logger.debug("[TieredExtractor] UD patterns not available")
+    extract_all_ud_patterns = None
+
 
 class ComplexityLevel(Enum):
     """Sentence complexity levels"""
@@ -68,7 +75,7 @@ class TieredRelationExtractor:
                  enable_coref: bool = True,
                  enable_gliner: bool = True,
                  llm_base_url: str = "http://127.0.0.1:1234/v1",
-                 llm_timeout_ms: int = 500):
+                 llm_timeout_ms: int = 2000):
         """
         Initialize tiered extractor
         
@@ -106,6 +113,31 @@ class TieredRelationExtractor:
         }
         
         logger.info(f"[TieredExtractor] Initialized with SRL={enable_srl}, Coref={enable_coref}")
+        
+        # Warm up Tier 2 model to eliminate loading time during first extraction
+        self._warmup_tier2()
+    
+    def _warmup_tier2(self):
+        """Warm up Tier 2 model to prevent loading time during first extraction"""
+        try:
+            import httpx
+            warmup_prompt = "Hello"
+            response = httpx.post(
+                f"{self.llm_base_url}/completions",
+                json={
+                    "model": self.tier2_model,
+                    "prompt": warmup_prompt,
+                    "max_tokens": 5,
+                    "stop": ["\n\n"]
+                },
+                timeout=10
+            )
+            if response.status_code == 200:
+                logger.debug("[TieredExtractor] Tier 2 model warmed up successfully")
+            else:
+                logger.debug(f"[TieredExtractor] Tier 2 warmup failed: {response.status_code}")
+        except Exception as e:
+            logger.debug(f"[TieredExtractor] Tier 2 warmup error: {e}")
     
     def analyze_complexity(self, text: str, doc: Optional[Doc] = None) -> ComplexityAnalysis:
         """
@@ -354,8 +386,44 @@ class TieredRelationExtractor:
                                     break
                             break
                     else:
-                        # Regular "X is Y" pattern
-                        relationships.append((subj, "is", attr))
+                        # Special: "My/Your/X's name is Y" → (X, has, Z), (Z, name, Y)
+                        if subj.lower().endswith("name") and attr:
+                            # Find the possessor and compound object
+                            possessor = None
+                            compound_obj = None
+                            
+                            # Look for the actual subject token that produced this entity
+                            for child in token.head.children:
+                                if child.dep_ in ["nsubj", "nsubjpass"] and child.text.lower() == "name":
+                                    # Check children of the name token
+                                    for gc in child.children:
+                                        if gc.dep_ == "poss":
+                                            if gc.text.lower() in {"my", "mine"}:
+                                                possessor = "speaker"
+                                            elif gc.text.lower() in {"your", "yours"}:
+                                                possessor = "listener"
+                                            else:
+                                                possessor = self._get_entity_text(gc)
+                                        elif gc.dep_ == "compound":
+                                            compound_obj = self._get_entity_text(gc)
+                                    break
+                            
+                            # If we have both possessor and compound object: "My dog name is Potola"
+                            if possessor and compound_obj:
+                                relationships.append((possessor, "has", compound_obj))
+                                relationships.append((compound_obj, "name", attr))
+                            # If only possessor: "My name is Potola"  
+                            elif possessor:
+                                relationships.append((possessor, "name", attr))
+                            # If only compound object: "Dog name is Potola"
+                            elif compound_obj:
+                                relationships.append((compound_obj, "name", attr))
+                            else:
+                                # Fallback to regular copula pattern
+                                relationships.append((subj, "is", attr))
+                        else:
+                            # Regular "X is Y" pattern
+                            relationships.append((subj, "is", attr))
             
             # Adjectival modifier patterns (amod): "big house", "old car"
             elif token.dep_ == "amod" and token.head.pos_ in ["NOUN", "PROPN"]:
@@ -517,6 +585,20 @@ class TieredRelationExtractor:
         if self.enable_coref and relationships:
             relationships = self._apply_coreference(relationships, doc)
         
+        # Add centralized UD patterns for comprehensive coverage
+        if extract_all_ud_patterns:
+            try:
+                ud_relations = extract_all_ud_patterns(text, self._nlp)
+                for rel in ud_relations:
+                    # Convert ExtractedRelation to tuple format and filter out low-confidence relations
+                    if rel.confidence >= 0.6:  # Only include high-confidence relations
+                        relationship = (rel.subject, rel.relation, rel.object)
+                        if relationship not in relationships:  # Avoid duplicates
+                            relationships.append(relationship)
+                logger.debug(f"[TieredExtractor] Added {len([r for r in ud_relations if r.confidence >= 0.6])} centralized UD relations")
+            except Exception as e:
+                logger.debug(f"[TieredExtractor] Centralized UD patterns failed: {e}")
+        
         # Calculate confidence based on extraction quality
         confidence = min(1.0, len(relationships) * 0.3) if relationships else 0.3
         
@@ -533,23 +615,20 @@ class TieredRelationExtractor:
         Tier 2: Small LLM (qwen3-0.6b-mlx)
         Target: <200ms for medium complexity
         """
-        prompt = f"""Extract the key facts from this text.
+        prompt = f"""
+                /no_think
+                You are SOTA AI text to graph converter, you take text and return JSON compliant RDF graphs.
+                Instructions:
+                1. Find all entities 
+                2. Find the main relationships between them
+                3. Ignore repetitions
 
-Instructions:
-1. Find all people, companies, and products
-2. Find the main relationships between them  
-3. Ignore repetitions
-4. Keep it simple
+                Output clean JSON with:
+                - entities: array of {"name", "type"}
+                - relationships: array of {"source", "relation", "target"}
 
-Text: {text}
-
-Output clean JSON with:
-- entities: array of {{"name", "type"}}
-- relationships: array of {{"source", "relation", "target"}}
-
-Limit to the 10 most important relationships.
-
-JSON:"""
+                Text: {text}
+                JSON:"""
         
         try:
             result = self._call_llm_tier2(prompt, self.tier2_model)
@@ -831,7 +910,7 @@ Output valid JSON only:"""
                 json={
                     "model": model,
                     "prompt": prompt,
-                    "max_tokens": 200,  # Reduced to prevent repetition
+                    "max_tokens": 100,  # Optimized: 100 tokens is sufficient for clean JSON
                     "temperature": 0.1,
                     "stop": ["\n\n"]  # Critical: stops qwen3 repetition
                 },
@@ -849,11 +928,26 @@ Output valid JSON only:"""
                     json_end = text.rfind('}') + 1
                     if json_start >= 0 and json_end > json_start:
                         json_text = text[json_start:json_end]
-                        return json.loads(json_text)
+                        
+                        # Try to parse as-is first
+                        try:
+                            return json.loads(json_text)
+                        except json.JSONDecodeError:
+                            # Try to fix common JSON issues
+                            try:
+                                # Fix missing quotes around keys
+                                json_text = json_text.replace('name', '"name"').replace('type', '"type"')
+                                json_text = json_text.replace('source', '"source"').replace('relation', '"relation"').replace('target', '"target"')
+                                return json.loads(json_text)
+                            except json.JSONDecodeError as e:
+                                logger.debug(f"[Tier2] JSON fix failed: {e}, attempting partial parse...")
+                                
+                                # Try to extract entities and relationships manually as last resort
+                                return self._extract_partial_json(json_text)
                     else:
                         logger.debug(f"[Tier2] No JSON found in response: {text[:100]}...")
                         return None
-                except json.JSONDecodeError as e:
+                except Exception as e:
                     logger.debug(f"[Tier2] JSON parse error: {e}")
                     return None
         except Exception as e:
