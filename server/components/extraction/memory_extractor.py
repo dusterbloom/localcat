@@ -28,6 +28,13 @@ try:
     from services.onnx_nlp import OnnxTokenNER, OnnxSRLTagger  # type: ignore
 except Exception:
     OnnxTokenNER = None
+
+# Import centralized UD patterns
+try:
+    from services.ud_utils import extract_all_ud_patterns, ExtractedRelation
+except ImportError:
+    extract_all_ud_patterns = None
+    logger.debug("[MemoryExtractor] UD patterns not available")
     OnnxSRLTagger = None
 try:
     from components.extraction.hotmem_extractor import HotMemExtractor  # type: ignore
@@ -300,9 +307,46 @@ class MemoryExtractor:
                     for ch in head.children:
                         if ch.dep_ in {"attr", "acomp"}:
                             obj = get_entity(ch)
-                            # Special: "My name is X" → (speaker, name, x)
-                            if tok.text.lower() == "name" and any(gc.dep_ == "poss" and gc.text.lower() in {"my", "mine"} for gc in tok.children):
-                                add_triple("speaker", "name", obj)
+                            # Special: "My/Your/X's name is Y" → (X, has, Z), (Z, name, Y)
+                            if tok.text.lower() == "name":
+                                print(f"DEBUG: Found 'name' as subject, checking children...")
+                                # Find the possessor through possessive relationships
+                                possessor = None
+                                compound_obj = None
+                                
+                                print(f"DEBUG: 'name' token children: {[f'{c.text} ({c.dep_})' for c in tok.children]}")
+                                for gc in tok.children:
+                                    print(f"DEBUG: Checking child '{gc.text}' with dep '{gc.dep_}'")
+                                    if gc.dep_ == "poss":
+                                        if gc.text.lower() in {"my", "mine"}:
+                                            possessor = "speaker"
+                                        elif gc.text.lower() in {"your", "yours"}:
+                                            possessor = "listener"
+                                        else:
+                                            possessor = get_entity(gc)
+                                        print(f"DEBUG: Found possessor: {possessor}")
+                                    elif gc.dep_ == "compound":
+                                        compound_obj = get_entity(gc)
+                                        print(f"DEBUG: Found compound: {compound_obj}")
+                                
+                                print(f"DEBUG: possessor={possessor}, compound_obj={compound_obj}, obj={obj}")
+                                # If we have both possessor and compound object: "My dog name is Potola"
+                                if possessor and compound_obj:
+                                    print(f"DEBUG: Adding triples: ({possessor}, has, {compound_obj}) and ({compound_obj}, name, {obj})")
+                                    add_triple(possessor, "has", compound_obj)
+                                    add_triple(compound_obj, "name", obj)
+                                # If only possessor: "My name is Potola"  
+                                elif possessor:
+                                    print(f"DEBUG: Adding triple: ({possessor}, name, {obj})")
+                                    add_triple(possessor, "name", obj)
+                                # If only compound object: "Dog name is Potola"
+                                elif compound_obj:
+                                    print(f"DEBUG: Adding triple: ({compound_obj}, name, {obj})")
+                                    add_triple(compound_obj, "name", obj)
+                                else:
+                                    print(f"DEBUG: Fallback: adding ({subj}, is, {obj})")
+                                    # Fallback to regular copula pattern
+                                    add_triple(subj, "is", obj)
                             else:
                                 add_triple(subj, "is", obj)
 

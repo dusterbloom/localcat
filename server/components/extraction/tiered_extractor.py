@@ -75,7 +75,7 @@ class TieredRelationExtractor:
                  enable_coref: bool = True,
                  enable_gliner: bool = True,
                  llm_base_url: str = "http://127.0.0.1:1234/v1",
-                 llm_timeout_ms: int = 2000):
+                 llm_timeout_ms: int = 5000):
         """
         Initialize tiered extractor
         
@@ -100,7 +100,11 @@ class TieredRelationExtractor:
         
         # Tier 2 & 3: LLM models
         self.tier2_model = "qwen3-0.6b-mlx"
-        self.tier3_model = "mlx-community/llama-3.2-1b-instruct"
+        self.tier3_model = "llama-3.2-1b-instruct"
+        
+        # Tier 2 & 3 warmup flags
+        self._tier2_warmed = False
+        self._tier3_warmed = False
         
         # Performance tracking
         self.metrics = {
@@ -111,6 +115,9 @@ class TieredRelationExtractor:
             'tier2_time': [],
             'tier3_time': []
         }
+        
+        # Warm up Tier 2 model
+        self._warmup_tier2()
         
         logger.info(f"[TieredExtractor] Initialized with SRL={enable_srl}, Coref={enable_coref}")
         
@@ -133,11 +140,37 @@ class TieredRelationExtractor:
                 timeout=10
             )
             if response.status_code == 200:
+                self._tier2_warmed = True
                 logger.debug("[TieredExtractor] Tier 2 model warmed up successfully")
             else:
                 logger.debug(f"[TieredExtractor] Tier 2 warmup failed: {response.status_code}")
+                self._tier2_warmed = True  # Mark as warmed even if failed, to avoid repeated attempts
         except Exception as e:
             logger.debug(f"[TieredExtractor] Tier 2 warmup error: {e}")
+            self._tier2_warmed = True  # Mark as warmed even if failed, to avoid repeated attempts
+    
+    def _warmup_tier3(self):
+        """Warm up Tier 3 model to prevent loading time during first extraction"""
+        try:
+            import httpx
+            warmup_prompt = '{"entities": [], "relationships": []}'
+            response = httpx.post(
+                f"{self.llm_base_url}/chat/completions",
+                json={
+                    "model": self.tier3_model,
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "max_tokens": 5,
+                    "temperature": 0.1
+                },
+                timeout=self.llm_timeout_ms / 1000
+            )
+            if response.status_code == 200:
+                self._tier3_warmed = True
+                logger.debug("[TieredExtractor] Tier 3 model warmed up successfully")
+            else:
+                logger.debug(f"[TieredExtractor] Tier 3 warmup failed: {response.status_code}")
+        except Exception as e:
+            logger.debug(f"[TieredExtractor] Tier 3 warmup error: {e}")
     
     def analyze_complexity(self, text: str, doc: Optional[Doc] = None) -> ComplexityAnalysis:
         """
@@ -217,7 +250,7 @@ class TieredRelationExtractor:
         elif complexity.level == ComplexityLevel.MEDIUM:
             # Try tier 1 first, fall back to tier 2 if poor results
             result = self._extract_tier1(text, doc)
-            if len(result.relationships) < 1 or result.confidence < 0.5:
+            if len(result.relationships) < 3 or result.confidence < 0.7:
                 result = self._extract_tier2(text)
                 self.metrics['tier2_count'] += 1
                 tier_used = 2
@@ -572,6 +605,53 @@ class TieredRelationExtractor:
                             obj = self._get_entity_text(token)
                             relationships.append((subj, verb, obj))
                             break
+            
+            # ========== MISSING UD PATTERNS ==========
+            
+            # Clausal subject patterns (csubj): "That he lied surprised me"
+            elif token.dep_ == "csubj" and token.head.pos_ == "VERB":
+                clause_subject = self._get_entity_text(token)
+                main_verb = token.head.lemma_.lower()
+                
+                # Find the object/predicate of the main clause
+                objects = self._find_objects(token.head)
+                if "attribute" in objects:
+                    relationships.append((clause_subject, main_verb, objects["attribute"]))
+                elif "direct" in objects:
+                    relationships.append((clause_subject, main_verb, objects["direct"]))
+            
+            # Open clausal complement patterns (xcomp): "She wants to leave"
+            elif token.dep_ == "xcomp" and token.pos_ == "VERB":
+                self._handle_clause_dependencies(token, relationships)
+            
+            # Clausal complement patterns (ccomp): "He says that you like to swim"
+            elif token.dep_ == "ccomp" and token.pos_ == "VERB":
+                self._handle_clause_dependencies(token, relationships)
+            
+            # Adverbial clause modifier patterns (advcl): "Leave when you're ready"
+            elif token.dep_ == "advcl" and token.pos_ == "VERB":
+                self._handle_clause_dependencies(token, relationships)
+            
+            # Adjectival clause modifier patterns (acl): "the book that I read"
+            elif token.dep_ in ["acl", "acl:relcl", "relcl"]:
+                self._handle_clause_dependencies(token, relationships)
+            
+            # Parataxis patterns: "I said: 'Go home'" or "Three muffins," he answered."
+            elif token.dep_ == "parataxis":
+                # Handle loose syntactic connections like direct speech
+                subject, main_verb = self._find_verb_with_subject(token.head)
+                if subject and main_verb:
+                    parataxis_content = self._get_entity_text(token)
+                    relationships.append((subject, main_verb, parataxis_content))
+            
+            # Numeric modifier patterns (nummod): "three cups"
+            elif token.dep_ == "nummod":
+                number = self._get_entity_text(token)
+                noun = self._get_entity_text(token.head)
+                if noun:
+                    relationships.append((noun, "has_quantity", number))
+            
+            # ========== END MISSING PATTERNS ==========
         
         # SRL extraction if enabled
         if self.enable_srl and self._srl:
@@ -613,143 +693,119 @@ class TieredRelationExtractor:
     def _extract_tier2(self, text: str) -> TieredExtractionResult:
         """
         Tier 2: Small LLM (qwen3-0.6b-mlx)
-        Target: <200ms for medium complexity
+        Hybrid approach: Uses Tier 1 entities + LLM for relationships only (JSON output)
+        Target: <500ms for medium complexity
         """
-        prompt = f"""
-                /no_think
-                You are SOTA AI text to graph converter, you take text and return JSON compliant RDF graphs.
-                Instructions:
-                1. Find all entities 
-                2. Find the main relationships between them
-                3. Ignore repetitions
+        # Warm up model on first use
+        if not self._tier2_warmed:
+            self._warmup_tier2()
+        
+        # First, get high-quality entities from Tier 1 (GLiNER + spaCy)
+        tier1_result = self._extract_tier1(text)
+        
+        if not tier1_result.entities:
+            # No entities found, return tier 1 result
+            return tier1_result
+        
+        # Use Tier 1 entities and only ask LLM to find relationships
+        entities = tier1_result.entities
+        
+        system_prompt = """/no_think 
+            Extract all relationships between pre-identified entities from the text given.
+            Instructions:
+            1. Read text
+            2. Read entities from list
+            3. Find the relationships between them 
+            
+            Format:
+            {
+            "relationships": [
+                {"source": "entity_from_list", "target": "entity_from_list", "relation": "relationship_type"}
+            ]
+            }
+            """
 
-                Output clean JSON with:
-                - entities: array of {"name", "type"}
-                - relationships: array of {"source", "relation", "target"}
 
-                Text: {text}
-                JSON:"""
+
+
+        # Format entities for the prompt
+        entity_list = "\n".join([f"- {entity}" for entity in entities])
+        user_prompt = f"Text: {text}\n\nEntities found in text:\n{entity_list}\n\n JSON:"
         
         try:
-            result = self._call_llm_tier2(prompt, self.tier2_model)
-            if result:
-                # Enhanced JSON parsing with better error handling
-                entities = []
-                relationships = []
+            json_result = self._call_llm_tier2_hybrid(system_prompt, user_prompt, self.tier2_model)
+            if json_result:
+                # Parse relationships from simplified response
+                relationships = self._parse_relationships_only(json_result)
                 
-                # Parse entities with type information
-                for entity in result.get('entities', []):
-                    if isinstance(entity, dict):
-                        entity_name = entity.get('name', '').lower()
-                        entity_type = entity.get('type', 'unknown')
-                        if entity_name:
-                            entities.append(entity_name)
-                            # Store entity type for better relationship context
-                            if hasattr(self, '_entity_types'):
-                                self._entity_types[entity_name] = entity_type
+                # Calculate confidence based on relationship quality
+                confidence = min(0.85, len(relationships) * 0.15 + 0.4)
                 
-                # Parse relationships with validation
-                for rel in result.get('relationships', []):
-                    if isinstance(rel, dict) and all(k in rel for k in ['source', 'relation', 'target']):
-                        source = rel['source'].lower()
-                        relation = rel['relation'].lower()
-                        target = rel['target'].lower()
-                        
-                        # Filter out self-references and empty relations
-                        if source and target and relation and source != target:
-                            # Apply world-centric entity normalization
-                            source = self._normalize_entity(source)
-                            target = self._normalize_entity(target)
-                            relationships.append((source, relation, target))
-                
-                logger.debug(f"[Tier2 LLM] Extracted {len(entities)} entities, {len(relationships)} relationships")
+                logger.debug(f"[Tier2 Hybrid] Extracted {len(relationships)} relationships from {len(entities)} entities")
                 
                 return TieredExtractionResult(
                     entities=entities,
                     relationships=relationships,
                     tier_used=2,
                     extraction_time_ms=0,
-                    confidence=min(0.9, len(relationships) * 0.1)  # Scale confidence with extraction quality
+                    confidence=confidence
                 )
         except Exception as e:
-            logger.debug(f"[Tier2 LLM] Failed: {e}")
+            logger.debug(f"[Tier2 Hybrid] Failed: {e}")
         
         # Fallback to tier 1
-        return self._extract_tier1(text)
+        return tier1_result
     
     def _extract_tier3(self, text: str) -> TieredExtractionResult:
         """
-        Tier 3: Larger LLM (llama-3.2-1b-instruct) 
-        Target: <500ms for complex sentences  
+        Tier 3: Larger LLM (llama-3.2-1b-instruct)
+        Hybrid approach: Uses Tier 1 entities + LLM for relationships only
+        Works with model's natural markdown output strengths
+        Target: <1500ms for complex sentences  
         """
-        system_prompt = """You are a world-class AI model specialized in extracting knowledge graphs from text. You must output ONLY valid JSON in the following schema. Do not add explanations or extra text.
+        # Warm up model on first use
+        if not self._tier3_warmed:
+            self._warmup_tier3()
+        
+        # First, get high-quality entities from Tier 1 (GLiNER + spaCy)
+        tier1_result = self._extract_tier1(text)
+        
+        if not tier1_result.entities:
+            # No entities found, fall back to full extraction
+            return self._extract_tier3_full(text)
+        
+        # Use Tier 1 entities and only ask LLM to find relationships
+        entities = tier1_result.entities
+        
+        system_prompt = """You are a relationship extraction expert. Given text and pre-identified entities, find relationships between them.
 
-JSON Schema:
-{
-  "nodes": [
-    {
-      "id": "string",  // Unique identifier (e.g., "n1")
-      "name": "string",  // Entity name
-      "type": "string"  // Entity type (e.g., "Person", "Location", "Organization")
-    }
-  ],
-  "edges": [
-    {
-      "source": "string",  // ID of source node
-      "target": "string",  // ID of target node
-      "label": "string"  // Relationship label (e.g., "lives_in", "works_for")
-    }
-  ]
-}
+Output in markdown format:
 
-Extract all key entities and their relationships. Cluster similar entities to avoid duplicates. If no relationships, return empty edges array."""
+## Relationships
+- Entity1 -> relationship_type -> Entity2
+- Entity3 -> relationship_type -> Entity4
 
-        user_prompt = f"""Extract a knowledge graph from this text:
+Use only exact entity names from the provided list. If no relationships exist, output "## Relationships" followed by "No relationships found."""
 
-Text: "{text}"
+        # Format entities for the prompt
+        entity_list = "\n".join([f"- {entity}" for entity in entities])
+        user_prompt = f"""Text: {text}
 
-Output valid JSON only:"""
+Entities found in text:
+{entity_list}
+
+Extract relationships between these entities:"""
         
         try:
-            json_result = self._call_llm_tier3_json(system_prompt, user_prompt, self.tier3_model)
-            if json_result:
-                entities, relationships = self._parse_knowledge_graph_json(json_result)
+            markdown_result = self._call_llm_tier3_markdown(system_prompt, user_prompt, self.tier3_model)
+            if markdown_result:
+                # Parse relationships from markdown response
+                relationships = self._parse_markdown_relationships(markdown_result, entities)
                 
-                # Enhanced post-processing for world-centric knowledge graphs
-                if entities and relationships:
-                    # Apply entity normalization and deduplication
-                    entities = list(set(self._normalize_entity(e) for e in entities if e))
-                    
-                    # Process relationships with world-centric normalization
-                    processed_relationships = []
-                    for source, relation, target in relationships:
-                        # Normalize entities
-                        norm_source = self._normalize_entity(source)
-                        norm_target = self._normalize_entity(target)
-                        
-                        # Skip self-references and ensure both entities exist
-                        if (norm_source and norm_target and 
-                            norm_source != norm_target and
-                            norm_source in entities and 
-                            norm_target in entities):
-                            
-                            # Enhance relation types based on context
-                            enhanced_relation = self._enhance_relation_type(relation, norm_source, norm_target)
-                            processed_relationships.append((norm_source, enhanced_relation, norm_target))
-                    
-                    relationships = processed_relationships
+                # Calculate confidence based on relationship quality
+                confidence = min(0.95, len(relationships) * 0.2 + 0.3)
                 
-                # Apply coreference if available
-                if self.enable_coref and relationships:
-                    if not self._nlp:
-                        self._load_nlp()
-                    doc = self._nlp(text)
-                    relationships = self._apply_coreference(relationships, doc)
-                
-                # Calculate confidence based on graph quality
-                confidence = min(0.95, len(relationships) * 0.15 + 0.3)
-                
-                logger.debug(f"[Tier3 LLM] Extracted knowledge graph with {len(entities)} entities, {len(relationships)} relationships")
+                logger.debug(f"[Tier3 Markdown] Extracted {len(relationships)} relationships from {len(entities)} entities")
                 
                 return TieredExtractionResult(
                     entities=entities,
@@ -759,10 +815,107 @@ Output valid JSON only:"""
                     confidence=confidence
                 )
         except Exception as e:
-            logger.debug(f"[Tier3 LLM] Failed: {e}")
+            logger.debug(f"[Tier3 Markdown] Failed: {e}")
+        
+        # Fallback to JSON approach
+        try:
+            logger.debug("[Tier3] Falling back to JSON approach")
+            json_result = self._call_llm_tier3_json_old(system_prompt, user_prompt, self.tier3_model)
+            if json_result:
+                # Parse relationships from simplified response
+                relationships = self._parse_relationships_only(json_result)
+                
+                # Calculate confidence based on relationship quality
+                confidence = min(0.95, len(relationships) * 0.2 + 0.3)
+                
+                logger.debug(f"[Tier3 JSON Fallback] Extracted {len(relationships)} relationships")
+                
+                return TieredExtractionResult(
+                    entities=entities,
+                    relationships=relationships,
+                    tier_used=3,
+                    extraction_time_ms=0,
+                    confidence=confidence
+                )
+        except Exception as e:
+            logger.debug(f"[Tier3 JSON Fallback] Failed: {e}")
+        
+        # Final fallback to full extraction
+        return self._extract_tier3_full(text)
+    
+    def _extract_tier3_full(self, text: str) -> TieredExtractionResult:
+        """Fallback full extraction method for Tier 3"""
+        # Warm up model on first use
+        if not self._tier3_warmed:
+            self._warmup_tier3()
+        
+        system_prompt = """You are a world-class AI model specialized in extracting knowledge graphs from text. You analyze the input text to identify key entities and their relationships.
+        Output ONLY valid JSON matching the provided schema. Do not add explanations, markdown, or extra text. If no entities/relationships are found, return an empty graph.
+
+JSON Schema: {
+  "entities": [
+    {
+      "id": "unique_id",
+      "label": "entity_type",
+      "name": "entity_name"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "source_node_id",
+      "target": "target_node_id",
+      "label": "relationship_type",
+      "confidence": "Float"
+    }
+  ]
+}
+
+User: Extract a knowledge graph from this text. First, identify main entities (e.g., people, places, concepts). Then, find relationships between them (e.g., "works at", "located in"). Assign unique IDs to nodes starting from 1."""
+
+        user_prompt = f"Text: {text}. "
+        
+        try:
+            json_result = self._call_llm_tier3_json(system_prompt, user_prompt, self.tier3_model)
+            if json_result:
+                entities, relationships = self._parse_knowledge_graph_json(json_result)
+                
+                # Calculate confidence based on graph quality
+                confidence = min(0.95, len(relationships) * 0.15 + 0.3)
+                
+                logger.debug(f"[Tier3 Full] Extracted knowledge graph with {len(entities)} entities, {len(relationships)} relationships")
+                
+                return TieredExtractionResult(
+                    entities=entities,
+                    relationships=relationships,
+                    tier_used=3,
+                    extraction_time_ms=0,
+                    confidence=confidence
+                )
+        except Exception as e:
+            logger.debug(f"[Tier3 Full] Failed: {e}")
         
         # Fallback to tier 2
         return self._extract_tier2(text)
+    
+    def _parse_relationships_only(self, json_result: Dict) -> List[Tuple[str, str, str]]:
+        """Parse simplified relationships-only JSON from Tier 3 hybrid"""
+        relationships = []
+        
+        try:
+            relationships_data = json_result.get('relationships', [])
+            for rel in relationships_data:
+                if all(k in rel for k in ['source', 'target', 'relation']):
+                    source = rel['source'].lower()
+                    target = rel['target'].lower()
+                    relation = rel['relation'].lower()
+                    
+                    # Skip self-references
+                    if source != target:
+                        relationships.append((source, relation, target))
+        except Exception as e:
+            logger.debug(f"[Tier3 Hybrid] Error parsing relationships JSON: {e}")
+        
+        return relationships
     
     def _load_nlp(self):
         """Load spaCy model"""
@@ -847,6 +1000,121 @@ Output valid JSON only:"""
         
         # Return token text
         return token.text.lower()
+    
+    # ========== CENTRALIZED HELPER FUNCTIONS ==========
+    
+    def _find_subject(self, token) -> Optional[str]:
+        """Find subject of any token (nsubj, nsubjpass, csubj, csubjpass)"""
+        # Check direct children first
+        for child in token.children:
+            if child.dep_ in ["nsubj", "nsubjpass", "csubj", "csubjpass"]:
+                return self._get_entity_text(child)
+        
+        # Check the token itself if it's a subject
+        if token.dep_ in ["nsubj", "nsubjpass", "csubj", "csubjpass"]:
+            return self._get_entity_text(token)
+        
+        return None
+    
+    def _find_objects(self, token) -> Dict[str, str]:
+        """Find all objects related to a token: {dep_type: entity_text}"""
+        objects = {}
+        
+        for child in token.children:
+            if child.dep_ in ["dobj", "obj"]:
+                objects["direct"] = self._get_entity_text(child)
+            elif child.dep_ in ["iobj", "dative"]:
+                objects["indirect"] = self._get_entity_text(child)
+            elif child.dep_ in ["attr", "acomp"]:
+                objects["attribute"] = self._get_entity_text(child)
+            elif child.dep_ == "pobj" and child.head.dep_ == "prep":
+                objects["prepositional"] = self._get_entity_text(child)
+        
+        return objects
+    
+    def _find_verb_with_subject(self, token) -> Tuple[Optional[str], Optional[str]]:
+        """Find verb and its subject from any token"""
+        # If token is a verb, find its subject
+        if token.pos_ == "VERB":
+            verb = token.lemma_.lower()
+            subject = self._find_subject(token)
+            return subject, verb
+        
+        # If token has a verb head, find head and its subject
+        if token.head.pos_ == "VERB":
+            verb = token.head.lemma_.lower()
+            subject = self._find_subject(token.head)
+            return subject, verb
+        
+        return None, None
+    
+    def _add_smart_relationship(self, relationships: List[Tuple[str, str, str]], 
+                              subj: str, verb: str, obj: str, prep: Optional[str] = None):
+        """Add relationship with smart naming based on verb and preposition"""
+        if not subj or not obj:
+            return
+        
+        if prep:
+            # Smart preposition-based naming
+            if verb == "work" and prep in ["at", "for"]:
+                relationships.append((subj, "works_at", obj))
+            elif verb == "live" and prep == "in":
+                relationships.append((subj, "lives_in", obj))
+            elif verb == "teach" and prep in ["at", "in"]:
+                relationships.append((subj, "teaches_at", obj))
+            elif verb == "study" and prep == "at":
+                relationships.append((subj, "studied_at", obj))
+            elif verb == "marry" and prep == "in":
+                relationships.append((subj, "married_in", obj))
+            elif verb in ["be", "is"] and prep == "of":
+                relationships.append((subj, f"{verb}_of", obj))
+            elif verb == "report" and prep == "to":
+                relationships.append((subj, "reports_to", obj))
+            else:
+                relationships.append((subj, f"{verb}_{prep}", obj))
+        else:
+            relationships.append((subj, verb, obj))
+    
+    def _handle_clause_dependencies(self, token, relationships: List[Tuple[str, str, str]]) -> bool:
+        """Generic handler for clause dependencies (xcomp, ccomp, advcl, acl)"""
+        subject, main_verb = self._find_verb_with_subject(token.head)
+        
+        if not subject or not main_verb:
+            return False
+        
+        # Get the clause verb
+        clause_verb = token.lemma_.lower() if token.pos_ == "VERB" else None
+        
+        if not clause_verb:
+            return False
+        
+        # Find objects of the clause
+        objects = self._find_objects(token)
+        
+        # Handle different clause types
+        if token.dep_ == "xcomp":
+            # Open clausal complement: "She wants to leave"
+            self._add_smart_relationship(relationships, subject, main_verb, clause_verb)
+            return True
+        elif token.dep_ == "ccomp":
+            # Clausal complement: "He says that you like to swim"
+            if "direct" in objects:
+                self._add_smart_relationship(relationships, subject, main_verb, objects["direct"])
+            return True
+        elif token.dep_ == "advcl":
+            # Adverbial clause: "Leave when you're ready"
+            self._add_smart_relationship(relationships, subject, main_verb, f"when_{clause_verb}")
+            return True
+        elif token.dep_ in ["acl", "relcl"]:
+            # Adjectival/relative clause: "the book that I read"
+            if "direct" in objects:
+                rel_name = "is_characterized_by" if token.dep_ == "relcl" else "has_property"
+                relationships.append((subject, rel_name, objects["direct"]))
+            return True
+        
+        return False
+    
+    # ========== END HELPER FUNCTIONS ==========
     
     def _extract_with_srl(self, doc) -> List[Tuple[str, str, str]]:
         """Extract using Semantic Role Labeling"""
@@ -955,8 +1223,8 @@ Output valid JSON only:"""
         
         return None
     
-    def _call_llm_tier3_json(self, system_prompt: str, user_prompt: str, model: str) -> Optional[Dict]:
-        """Call Tier 3 LLM API for JSON knowledge graph extraction"""
+    def _call_llm_tier2_hybrid(self, system_prompt: str, user_prompt: str, model: str) -> Optional[Dict]:
+        """Call Tier 2 LLM API for hybrid JSON relationship extraction"""
         try:
             import httpx
             
@@ -968,7 +1236,7 @@ Output valid JSON only:"""
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    "max_tokens": 400,
+                    "max_tokens": 80,  # Reduced for simple relationships
                     "temperature": 0.1
                 },
                 timeout=self.llm_timeout_ms / 1000
@@ -985,7 +1253,96 @@ Output valid JSON only:"""
                     json_end = content.rfind('}') + 1
                     if json_start >= 0 and json_end > json_start:
                         json_text = content[json_start:json_end]
-                        return json.loads(json_text)
+                        
+                        # Try to parse as-is first
+                        try:
+                            return json.loads(json_text)
+                        except json.JSONDecodeError:
+                            # Try to fix common JSON issues
+                            try:
+                                # Fix missing quotes around keys
+                                json_text = json_text.replace('source', '"source"').replace('relation', '"relation"').replace('target', '"target"')
+                                return json.loads(json_text)
+                            except json.JSONDecodeError:
+                                logger.debug(f"[Tier2 Hybrid] JSON fix failed")
+                                return None
+                    else:
+                        logger.debug(f"[Tier2 Hybrid] No JSON found in response: {content[:100]}...")
+                        return None
+                except Exception as e:
+                    logger.debug(f"[Tier2 Hybrid] JSON parse error: {e}")
+                    return None
+        except Exception as e:
+            logger.debug(f"[Tier2 Hybrid LLM] Call failed: {e}")
+        
+        return None
+    
+    def _extract_partial_json(self, json_text: str) -> Dict:
+        """Extract partial JSON from malformed response using regex"""
+        import re
+        
+        try:
+            # Try to extract entities array
+            entities_match = re.search(r'"entities":\s*\[(.*?)\]', json_text, re.DOTALL)
+            entities = []
+            if entities_match:
+                entities_text = entities_match.group(1)
+                # Extract individual entity objects
+                entity_matches = re.findall(r'\{"name":\s*"([^"]+)",\s*"type":\s*"([^"]+)"\}', entities_text)
+                entities = [name for name, _ in entity_matches]
+            
+            # Try to extract relationships array  
+            relationships_match = re.search(r'"relationships":\s*\[(.*?)\]', json_text, re.DOTALL)
+            relationships = []
+            if relationships_match:
+                relationships_text = relationships_match.group(1)
+                # Extract individual relationship objects
+                rel_matches = re.findall(r'\{"source":\s*"([^"]+)",\s*"relation":\s*"([^"]+)",\s*"target":\s*"([^"]+)"\}', relationships_text)
+                relationships = [(source, relation, target) for source, relation, target in rel_matches]
+            
+            return {"entities": entities, "relationships": relationships}
+        except Exception as e:
+            logger.debug(f"[Tier2] Partial JSON extraction failed: {e}")
+            return {"entities": [], "relationships": []}
+    
+    def _call_llm_tier3_json(self, system_prompt: str, user_prompt: str, model: str) -> Optional[Dict]:
+        """Call Tier 3 LLM API for JSON knowledge graph extraction"""
+        try:
+            import httpx
+            
+            response = httpx.post(
+                f"{self.llm_base_url}/chat/completions",
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "max_tokens": 150,  # Reduced from 400 for faster inference
+                    "temperature": 0.1
+                },
+                timeout=self.llm_timeout_ms / 1000
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                
+                # Try to extract JSON from the response
+                try:
+                    # Look for JSON content in the response
+                    json_start = content.find('{')
+                    json_end = content.rfind('}') + 1
+                    if json_start >= 0 and json_end > json_start:
+                        json_text = content[json_start:json_end]
+                        
+                        # Try to parse as-is first
+                        try:
+                            return json.loads(json_text)
+                        except json.JSONDecodeError as e:
+                            logger.debug(f"[Tier3] JSON parse error: {e}, attempting partial parse...")
+                            # Skip automatic fixes since they often corrupt valid JSON
+                            return self._extract_partial_json(json_text)
                     else:
                         logger.debug(f"[Tier3] No JSON found in response: {content[:100]}...")
                         return None
@@ -996,6 +1353,130 @@ Output valid JSON only:"""
             logger.debug(f"[Tier3 LLM] Call failed: {e}")
         
         return None
+    
+    def _call_llm_tier3_markdown(self, system_prompt: str, user_prompt: str, model: str) -> Optional[str]:
+        """Call Tier 3 LLM API for markdown relationship extraction"""
+        try:
+            import httpx
+            
+            response = httpx.post(
+                f"{self.llm_base_url}/chat/completions",
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "max_tokens": 100,  # Reduced for markdown output
+                    "temperature": 0.1
+                },
+                timeout=self.llm_timeout_ms / 1000
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                return content.strip()
+        except Exception as e:
+            logger.debug(f"[Tier3 Markdown LLM] Call failed: {e}")
+        
+        return None
+    
+    def _call_llm_tier3_json_old(self, system_prompt: str, user_prompt: str, model: str) -> Optional[Dict]:
+        """Old JSON method for fallback"""
+        try:
+            import httpx
+            
+            response = httpx.post(
+                f"{self.llm_base_url}/chat/completions",
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "max_tokens": 150,
+                    "temperature": 0.1
+                },
+                timeout=self.llm_timeout_ms / 1000
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                
+                # Try to extract JSON from the response
+                try:
+                    json_start = content.find('{')
+                    json_end = content.rfind('}') + 1
+                    if json_start >= 0 and json_end > json_start:
+                        json_text = content[json_start:json_end]
+                        try:
+                            return json.loads(json_text)
+                        except json.JSONDecodeError:
+                            return None
+                except json.JSONDecodeError:
+                    return None
+        except Exception as e:
+            logger.debug(f"[Tier3 JSON Fallback] Call failed: {e}")
+        
+        return None
+    
+    def _parse_markdown_relationships(self, markdown_text: str, valid_entities: List[str]) -> List[Tuple[str, str, str]]:
+        """Parse relationships from markdown output, validating against entity list"""
+        relationships = []
+        
+        lines = markdown_text.split('\n')
+        in_relationships = False
+        
+        for line in lines:
+            line = line.strip()
+            
+            # Check if we're in the relationships section
+            if line.startswith('## Relationships') or line.startswith('**Relationships'):
+                in_relationships = True
+                continue
+            
+            # Skip if not in relationships section
+            if not in_relationships:
+                continue
+            
+            # Parse relationship lines
+            if '->' in line and (line.startswith('-') or line.startswith('*')):
+                # Extract the relationship part
+                relationship_part = line.lstrip('- *').strip()
+                
+                # Split by -> to get source, relation, target
+                parts = relationship_part.split('->')
+                if len(parts) >= 3:
+                    source = parts[0].strip().lower()
+                    relation = parts[1].strip().lower()
+                    target = parts[2].strip().lower()
+                    
+                    # Validate that source and target are in our entity list
+                    source_valid = source in valid_entities
+                    target_valid = target in valid_entities
+                    
+                    # Try partial matches if exact match fails
+                    if not source_valid:
+                        for entity in valid_entities:
+                            if source in entity or entity in source:
+                                source = entity
+                                source_valid = True
+                                break
+                    
+                    if not target_valid:
+                        for entity in valid_entities:
+                            if target in entity or entity in target:
+                                target = entity
+                                target_valid = True
+                                break
+                    
+                    # Only add if both source and target are valid
+                    if source_valid and target_valid and relation:
+                        relationships.append((source, relation, target))
+        
+        return relationships
     
     def _parse_markdown_result(self, markdown_text: str) -> Tuple[List[str], List[Tuple[str, str, str]]]:
         """Parse markdown result from Tier 3 LLM"""
@@ -1047,30 +1528,56 @@ Output valid JSON only:"""
         relationships = []
         
         try:
-            # Parse nodes (entities)
-            nodes = json_result.get('nodes', [])
-            node_mapping = {}  # Map node IDs to names
+            # Parse entities (new format)
+            entities_data = json_result.get('entities', [])
+            entity_mapping = {}  # Map entity IDs to names
             
-            for node in nodes:
-                if 'name' in node and 'id' in node:
-                    entity_name = node['name'].lower()
+            for entity in entities_data:
+                if 'name' in entity:
+                    entity_name = entity['name'].lower()
                     entities.append(entity_name)
-                    node_mapping[node['id']] = entity_name
+                    # Store ID mapping if available
+                    if 'id' in entity:
+                        entity_mapping[entity['id']] = entity_name
             
-            # Parse edges (relationships)
-            edges = json_result.get('edges', [])
-            for edge in edges:
-                if all(k in edge for k in ['source', 'target', 'label']):
-                    source_id = edge['source']
-                    target_id = edge['target']
-                    label = edge['label'].lower()
+            # Parse relationships (new format)
+            relationships_data = json_result.get('relationships', [])
+            for rel in relationships_data:
+                if all(k in rel for k in ['source', 'target', 'label']):
+                    source_id = rel['source']
+                    target_id = rel['target']
+                    label = rel['label'].lower()
                     
-                    # Convert node IDs back to entity names
-                    source_name = node_mapping.get(source_id)
-                    target_name = node_mapping.get(target_id)
+                    # Convert entity IDs back to entity names
+                    source_name = entity_mapping.get(source_id)
+                    target_name = entity_mapping.get(target_id)
                     
                     if source_name and target_name:
                         relationships.append((source_name, label, target_name))
+                    
+            # Fallback: try old format for compatibility
+            if not entities and not relationships:
+                nodes = json_result.get('nodes', [])
+                node_mapping = {}
+                
+                for node in nodes:
+                    if 'name' in node and 'id' in node:
+                        entity_name = node['name'].lower()
+                        entities.append(entity_name)
+                        node_mapping[node['id']] = entity_name
+                
+                edges = json_result.get('edges', [])
+                for edge in edges:
+                    if all(k in edge for k in ['source', 'target', 'label']):
+                        source_id = edge['source']
+                        target_id = edge['target']
+                        label = edge['label'].lower()
+                        
+                        source_name = node_mapping.get(source_id)
+                        target_name = node_mapping.get(target_id)
+                        
+                        if source_name and target_name:
+                            relationships.append((source_name, label, target_name))
             
         except Exception as e:
             logger.debug(f"[Tier3] Error parsing knowledge graph JSON: {e}")

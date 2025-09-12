@@ -353,6 +353,446 @@ class UDPatternMatcher:
                     ))
         
         return relations
+    
+    # Core grammatical relations extraction methods
+    def _extract_nsubj(self, sent) -> List[ExtractedRelation]:
+        """Extract nominal subject relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "nsubj":
+                relations.append(ExtractedRelation(
+                    subject=eid(token),
+                    relation="subject_of",
+                    object=eid(token.head),
+                    confidence=0.9,
+                    source_text=sent.text,
+                    dependency_path=f"{token.dep_}-{token.head.dep_}"
+                ))
+        return relations
+    
+    def _extract_nsubjpass(self, sent) -> List[ExtractedRelation]:
+        """Extract passive subject relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "nsubjpass":
+                relations.append(ExtractedRelation(
+                    subject=eid(token),
+                    relation="passive_subject_of",
+                    object=eid(token.head),
+                    confidence=0.9,
+                    source_text=sent.text,
+                    dependency_path=f"{token.dep_}-{token.head.dep_}"
+                ))
+        return relations
+    
+    def _extract_dobj(self, sent) -> List[ExtractedRelation]:
+        """Extract direct object relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "dobj":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation=f"verb:{token.head.lemma_}",
+                    object=eid(token),
+                    confidence=0.8,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_iobj(self, sent) -> List[ExtractedRelation]:
+        """Extract indirect object relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "iobj":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation=f"indirect_object_of:{token.head.lemma_}",
+                    object=eid(token),
+                    confidence=0.8,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_obj(self, sent) -> List[ExtractedRelation]:
+        """Extract object relations (unified)"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "obj":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation=f"object_of:{token.head.lemma_}",
+                    object=eid(token),
+                    confidence=0.8,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    # Clausal relations extraction methods
+    def _extract_acl(self, sent) -> List[ExtractedRelation]:
+        """Extract adnominal clause relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "acl":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="modified_by",
+                    object=eid(token),
+                    confidence=0.7,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_advcl(self, sent) -> List[ExtractedRelation]:
+        """Extract adverbial clause relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "advcl":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="adverbially_modified_by",
+                    object=eid(token),
+                    confidence=0.7,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_ccomp(self, sent) -> List[ExtractedRelation]:
+        """Extract clausal complement relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "ccomp":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="complemented_by",
+                    object=eid(token),
+                    confidence=0.8,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_csubj(self, sent) -> List[ExtractedRelation]:
+        """Extract clausal subject relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "csubj":
+                relations.append(ExtractedRelation(
+                    subject=eid(token),
+                    relation="clausal_subject_of",
+                    object=eid(token.head),
+                    confidence=0.7,
+                    source_text=sent.text,
+                    dependency_path=f"{token.dep_}-{token.head.dep_}"
+                ))
+        return relations
+    
+    def _extract_xcomp(self, sent) -> List[ExtractedRelation]:
+        """Extract open clausal complement relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "xcomp":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="open_complement",
+                    object=eid(token),
+                    confidence=0.7,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    # Modifier relations extraction methods
+    def _extract_advmod(self, sent) -> List[ExtractedRelation]:
+        """Extract adverbial modifier relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "advmod":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="adverbially_modified_by",
+                    object=eid(token),
+                    confidence=0.8,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_amod(self, sent) -> List[ExtractedRelation]:
+        """Extract adjectival modifier relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "amod":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="has_property",
+                    object=eid(token),
+                    confidence=0.9,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_nmod(self, sent) -> List[ExtractedRelation]:
+        """Extract nominal modifier relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "nmod":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="nominally_modified_by",
+                    object=eid(token),
+                    confidence=0.7,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_nummod(self, sent) -> List[ExtractedRelation]:
+        """Extract numeric modifier relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "nummod":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="has_quantity",
+                    object=eid(token),
+                    confidence=0.9,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    # Function word relations extraction methods
+    def _extract_aux(self, sent) -> List[ExtractedRelation]:
+        """Extract auxiliary relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "aux":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="auxiliary_verb",
+                    object=eid(token),
+                    confidence=0.6,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_auxpass(self, sent) -> List[ExtractedRelation]:
+        """Extract passive auxiliary relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "auxpass":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="passive_auxiliary",
+                    object=eid(token),
+                    confidence=0.6,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_case(self, sent) -> List[ExtractedRelation]:
+        """Extract case marker relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "case":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="case",
+                    object=eid(token),
+                    confidence=0.5,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_cc(self, sent) -> List[ExtractedRelation]:
+        """Extract coordination relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "cc":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="coordinated_with",
+                    object=eid(token),
+                    confidence=0.7,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_det(self, sent) -> List[ExtractedRelation]:
+        """Extract determiner relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "det":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="determined_by",
+                    object=eid(token),
+                    confidence=0.6,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_mark(self, sent) -> List[ExtractedRelation]:
+        """Extract marker relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "mark":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="marked_by",
+                    object=eid(token),
+                    confidence=0.6,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_neg(self, sent) -> List[ExtractedRelation]:
+        """Extract negation relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "neg":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="negated",
+                    object=eid(token),
+                    confidence=0.9,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    # Special relations extraction methods
+    def _extract_agent(self, sent) -> List[ExtractedRelation]:
+        """Extract agent relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "agent":
+                relations.append(ExtractedRelation(
+                    subject=eid(token),
+                    relation="agent_of",
+                    object=eid(token.head),
+                    confidence=0.8,
+                    source_text=sent.text,
+                    dependency_path=f"{token.dep_}-{token.head.dep_}"
+                ))
+        return relations
+    
+    def _extract_attr(self, sent) -> List[ExtractedRelation]:
+        """Extract attribute relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "attr":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="has_attribute",
+                    object=eid(token),
+                    confidence=0.8,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_compound(self, sent) -> List[ExtractedRelation]:
+        """Extract compound relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "compound":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="compound_with",
+                    object=eid(token),
+                    confidence=0.9,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_conj(self, sent) -> List[ExtractedRelation]:
+        """Extract conjunction relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "conj":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="conjugated_with",
+                    object=eid(token),
+                    confidence=0.8,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_pobj(self, sent) -> List[ExtractedRelation]:
+        """Extract prepositional object relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "pobj":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="prepositional_object_of",
+                    object=eid(token),
+                    confidence=0.7,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_prep(self, sent) -> List[ExtractedRelation]:
+        """Extract preposition relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "prep":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation=f"preposition:{token.text}",
+                    object=eid(token),
+                    confidence=0.7,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_oprd(self, sent) -> List[ExtractedRelation]:
+        """Extract object predicate relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "oprd":
+                relations.append(ExtractedRelation(
+                    subject=eid(token.head),
+                    relation="object_predicate",
+                    object=eid(token),
+                    confidence=0.7,
+                    source_text=sent.text,
+                    dependency_path=f"{token.head.dep_}-{token.dep_}"
+                ))
+        return relations
+    
+    def _extract_root(self, sent) -> List[ExtractedRelation]:
+        """Extract root relations"""
+        relations = []
+        for token in sent:
+            if token.dep_ == "root":
+                relations.append(ExtractedRelation(
+                    subject=eid(token),
+                    relation="root",
+                    object="sentence",
+                    confidence=1.0,
+                    source_text=sent.text,
+                    dependency_path=f"{token.dep_}"
+                ))
+        return relations
 
 
 # Future: GLiNER integration placeholder
@@ -403,6 +843,21 @@ class GLiRELRelationExtractor:
         return []
 
 
+def extract_all_ud_patterns(text: str, nlp=None) -> List[ExtractedRelation]:
+    """
+    Convenience function to extract all UD patterns from text
+    Returns: List of ExtractedRelation objects
+    """
+    import spacy
+    
+    if nlp is None:
+        nlp = spacy.load("en_core_web_sm")
+    
+    doc = nlp(text)
+    matcher = UDPatternMatcher()
+    return matcher.match(doc)
+
+
 # Export convenience functions
 __all__ = [
     'norm',
@@ -413,6 +868,7 @@ __all__ = [
     'get_token_span',
     'ExtractedRelation',
     'UDPatternMatcher',
+    'extract_all_ud_patterns',
     'GLiNEREntityExtractor',
     'GLiRELRelationExtractor'
 ]
