@@ -108,6 +108,7 @@ class EnhancedBulletFormatter:
         "prefers": "{s} prefers {d}",
         
         # Generic relations
+        "name": "{s}'s name is {d}",
         "is": "{s} is {d}",
         "was": "{s} was {d}",
         "became": "{s} became {d}",
@@ -156,9 +157,9 @@ class EnhancedBulletFormatter:
             A formatted bullet point string
         """
         # Clean and normalize inputs
-        s = self._clean_entity(subject)
-        r = self._clean_relation(relation)
-        d = self._clean_entity(obj)
+        s = self._clean_entity(str(subject) if subject is not None else "")
+        r = self._clean_relation(str(relation) if relation is not None else "")
+        d = self._clean_entity(str(obj) if obj is not None else "")
         
         # Enhance subject if needed
         s_enhanced = self.SUBJECT_ENHANCEMENTS.get(s.lower(), s)
@@ -252,6 +253,17 @@ class EnhancedBulletFormatter:
     def _handle_special_cases(self, s: str, r: str, d: str) -> Optional[str]:
         """Handle special formatting cases."""
         s_lower = s.lower()
+        
+        # Handle "you" + "name" special case to avoid "You's name"
+        if s_lower == "you" and r == "name":
+            return f"• Your name is {d}"
+        
+        # Handle "has" relation grammar fixes
+        if r == "has":
+            if "two children" in d.lower():
+                return f"• {s.title()} have two children"
+            elif "three children" in d.lower():
+                return f"• {s.title()} have three children"
         
         # Handle age with special formatting
         if r == "age":

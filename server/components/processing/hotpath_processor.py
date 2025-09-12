@@ -21,8 +21,9 @@ except Exception:
 from pipecat.processors.frame_processor import FrameProcessor as BaseProcessor, FrameDirection
 
 from components.memory.memory_store import MemoryStore, Paths
-from components.memory.memory_hotpath import HotMemory
+from components.memory.hotmemory_facade import HotMemoryFacade
 from components.context.context_orchestrator import pack_context
+from components.session.session_store import get_session_store
 
 # Ensure we only add a file sink once per process
 _HOTMEM_LOG_SINK_ADDED = False
@@ -96,12 +97,15 @@ class HotPathMemoryProcessor(BaseProcessor):
             pass
         
         # Initialize hot memory
-        self.hot = HotMemory(self.store)
+        self.hot = HotMemoryFacade(self.store)
         # Pre-warm NLP to avoid first-turn latency
         try:
             self.hot.prewarm("en")
         except Exception:
             pass
+        
+        # Initialize session store
+        self.session_store = get_session_store()
         
         # Rebuild RAM indices from persistent store
         try:
@@ -109,9 +113,13 @@ class HotPathMemoryProcessor(BaseProcessor):
         except Exception as e:
             logger.warning(f"Could not rebuild from store (starting fresh): {e}")
         
+        # Store user ID for session management
+        self.user_id = user_id
+        
         # Session tracking
         self._turn_id = 0
-        self._session_id = user_id
+        self._session_id = user_id  # Legacy session ID
+        self._current_session_id = None
         self._enable_metrics = enable_metrics
         self._pending_bullets: List[str] = []
         self._inject_role = os.getenv("HOTMEM_INJECT_ROLE", "system").strip().lower()
@@ -161,17 +169,31 @@ class HotPathMemoryProcessor(BaseProcessor):
         items = list(self.hot.recency_buffer)
         if not items:
             return ""
-        start_ts = items[0].timestamp
-        end_ts = items[-1].timestamp
+        # RecencyItem from HotMemoryFacade uses 'ts' (milliseconds)
+        start_ts = getattr(items[0], 'ts', None) or getattr(items[0], 'timestamp', 0)
+        end_ts = getattr(items[-1], 'ts', None) or getattr(items[-1], 'timestamp', 0)
         # Deduplicate triples preserving recency
         seen = set()
         bullets = []
+        def _format_bullet(s: str, r: str, d: str) -> str:
+            # Prefer facade/retriever formatter if available; otherwise fallback
+            try:
+                if hasattr(self.hot, '_format_memory_bullet'):
+                    return self.hot._format_memory_bullet(s, r, d)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            try:
+                from services.enhanced_bullet_formatter import EnhancedBulletFormatter
+                return EnhancedBulletFormatter().format_bullet(s, r, d)
+            except Exception:
+                return f"• {s} {r} {d}"
+
         for it in reversed(items):
             key = (it.s, it.r, it.d)
             if key in seen:
                 continue
             seen.add(key)
-            bullets.append(self.hot._format_memory_bullet(it.s, it.r, it.d))
+            bullets.append(_format_bullet(it.s, it.r, it.d))
             if len(bullets) >= max_bullets:
                 break
         bullets = list(reversed(bullets))
@@ -194,6 +216,30 @@ class HotPathMemoryProcessor(BaseProcessor):
         except Exception as e:
             logger.warning(f"[HotMem] Failed to persist session summary: {e}")
             return None
+    
+    def _ensure_session(self):
+        """Ensure we have a current session"""
+        if self._current_session_id is None:
+            self._current_session_id = self.session_store.create_session(self.user_id)
+            self._turn_id = 0
+            logger.info(f"🆕 Created new session: {self._current_session_id}")
+    
+    def store_assistant_response(self, response: str):
+        """Store assistant response for the current session"""
+        if self._current_session_id:
+            self.hot.store_assistant_response(self._current_session_id, response, self._turn_id)
+            logger.debug(f"💾 Stored assistant response for session {self._current_session_id}")
+    
+    def get_current_session_id(self) -> Optional[str]:
+        """Get the current session ID"""
+        return self._current_session_id
+    
+    def create_new_session(self) -> str:
+        """Create a new session and return its ID"""
+        self._current_session_id = self.session_store.create_session(self.user_id)
+        self._turn_id = 0
+        logger.info(f"🆕 Created new session: {self._current_session_id}")
+        return self._current_session_id
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """
@@ -240,6 +286,8 @@ class HotPathMemoryProcessor(BaseProcessor):
             logger.info(f"[HotMem] TranscriptionFrame received: is_final={is_final} text_len={len(text)} text='{text[:120]}'")
             # WhisperSTTServiceMLX doesn't set is_final, so treat None as final (non-streaming)
             if is_final is True or is_final is None:
+                # Ensure we have a current session
+                self._ensure_session()
                 # Recap-now command: inject latest summary on demand
                 try:
                     t = text.strip().lower()
@@ -283,11 +331,17 @@ class HotPathMemoryProcessor(BaseProcessor):
             correction_result = await self._handle_correction_intent(text)
             
             # Extract facts and retrieve relevant memories
-            bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id)
+            try:
+                bullets, triples = self.hot.process_turn(text, self._current_session_id, self._turn_id)
+            except Exception as inner_e:
+                logger.error(f"[HotMem] Error in hot.process_turn: {inner_e}")
+                import traceback
+                logger.error(f"[HotMem] Traceback: {traceback.format_exc()}")
+                raise
             
-            # Log what we extracted
+            # Log what we stored this turn (after quality filtering)
             if triples:
-                logger.info(f"[HotMem] Extracted {len(triples)} facts (showing up to 3): {triples[:3]}")
+                logger.info(f"[HotMem] Stored {len(triples)} facts (showing up to 3): {triples[:3]}")
             
             # Add correction feedback to bullets if correction was applied
             if correction_result and correction_result.get('success'):
@@ -297,7 +351,7 @@ class HotPathMemoryProcessor(BaseProcessor):
             # Stash bullets to inject just before the aggregated user message
             if bullets:
                 logger.info(f"[HotMem] Prepared {len(bullets)} memory bullets for injection")
-                # Dynamic 1..5 already applied by HotMemory; cap by env
+                # Dynamic 1..5 already applied by HotMemoryFacade; cap by env
                 self._pending_bullets = bullets[: self._bullets_max]
             
             # Track performance
@@ -485,8 +539,17 @@ class HotPathMemoryProcessor(BaseProcessor):
             logger.info(f"HotMem metrics - Total: {elapsed_ms:.1f}ms")
             
             for key, stats in metrics.items():
+                # Support both summarized dict metrics and raw lists
                 if isinstance(stats, dict) and 'p95' in stats:
-                    logger.info(f"  {key}: p95={stats['p95']:.1f}ms, mean={stats['mean']:.1f}ms")
+                    logger.info(f"  {key}: p95={stats['p95']:.1f}ms, mean={stats.get('mean', 0):.1f}ms")
+                elif isinstance(stats, (list, tuple)) and stats:
+                    try:
+                        import statistics
+                        p95 = statistics.quantiles(stats, n=20)[18] if len(stats) >= 20 else max(stats)
+                        mean = statistics.mean(stats)
+                        logger.info(f"  {key}: p95={p95:.1f}ms, mean={mean:.1f}ms")
+                    except Exception:
+                        logger.info(f"  {key}: {stats}")
                 else:
                     logger.info(f"  {key}: {stats}")
             
@@ -497,8 +560,21 @@ class HotPathMemoryProcessor(BaseProcessor):
             self._last_metrics_log = now
             
             # Warn if we're exceeding budget
-            if 'total_ms' in metrics and metrics['total_ms'].get('p95', 0) > 200:
-                logger.warning(f"HotMem exceeding 200ms budget: p95={metrics['total_ms']['p95']:.1f}ms")
+            try:
+                if 'total_ms' in metrics:
+                    total_stats = metrics['total_ms']
+                    if isinstance(total_stats, dict):
+                        p95 = float(total_stats.get('p95', 0))
+                    elif isinstance(total_stats, (list, tuple)) and total_stats:
+                        import statistics
+                        p95 = statistics.quantiles(total_stats, n=20)[18] if len(total_stats) >= 20 else max(total_stats)
+                    else:
+                        p95 = 0.0
+                    if p95 > 200:
+                        logger.warning(f"HotMem exceeding 200ms budget: p95={p95:.1f}ms")
+            except Exception:
+                # Never let metrics logging impact the hot path
+                pass
     
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get current memory statistics"""

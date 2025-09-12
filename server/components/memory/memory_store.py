@@ -485,33 +485,65 @@ class MemoryStore:
     def search_fts(self, query: str, limit: int = 10) -> List[Tuple[str, str]]:
         """Full-text search using SQLite FTS5 (text, eid).
 
-        Kept stable for existing callers. See `search_fts_detailed` to also get timestamps.
+        Uses bm25 ranking when available; falls back to default order.
         """
         cur = self.sql.cursor()
         results: List[Tuple[str, str]] = []
-        for (text, eid) in cur.execute(
-            "SELECT text, eid FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?",
-            (query, limit)
-        ):
+        try:
+            rows = cur.execute(
+                "SELECT text, eid FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts) LIMIT ?",
+                (query, limit)
+            ).fetchall()
+        except Exception:
+            rows = cur.execute(
+                "SELECT text, eid FROM chunks_fts WHERE chunks_fts MATCH ? LIMIT ?",
+                (query, limit)
+            ).fetchall()
+        for (text, eid) in rows:
             results.append((str(text or ''), str(eid or '')))
         return results
 
     def search_fts_detailed(self, query: str, limit: int = 10) -> List[Tuple[str, str, int]]:
         """Full-text search returning (text, eid, ts).
 
-        Uses the same FTS table which stores `ts` as an UNINDEXED column.
+        Uses bm25 ranking when available; falls back to default order.
         """
         cur = self.sql.cursor()
         results: List[Tuple[str, str, int]] = []
-        for (text, eid, ts) in cur.execute(
-            "SELECT text, eid, ts FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?",
-            (query, limit)
-        ):
+        try:
+            rows = cur.execute(
+                "SELECT text, eid, ts FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts) LIMIT ?",
+                (query, limit)
+            ).fetchall()
+        except Exception:
+            rows = cur.execute(
+                "SELECT text, eid, ts FROM chunks_fts WHERE chunks_fts MATCH ? LIMIT ?",
+                (query, limit)
+            ).fetchall()
+        for (text, eid, ts) in rows:
             try:
                 results.append((str(text or ''), str(eid or ''), int(ts or 0)))
             except Exception:
                 results.append((str(text or ''), str(eid or ''), 0))
         return results
+    
+    def update_session_triples(self, session_id: str, triples: List[Tuple[str, str, str]]) -> None:
+        """Store triples for a specific session - creates mentions for each triple"""
+        now_ts = int(time.time() * 1000)
+        
+        for i, (s, r, d) in enumerate(triples):
+            # Create entity mentions for each triple component
+            self.enqueue_mention(s, f"{s} {r} {d}", now_ts + i, session_id, i)
+            self.enqueue_mention(d, f"{s} {r} {d}", now_ts + i, session_id, i)
+            
+            # Store the edge in memory graph
+            self.observe_edge(s, r, d, 0.8, now_ts + i)
+            
+            # Store edge metadata
+            self.enqueue_edge_meta(s, r, d, "session_memory", "en", None, {"session_id": session_id}, now_ts + i)
+        
+        # Flush to ensure persistence
+        self.flush()
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get performance metrics"""

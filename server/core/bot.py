@@ -39,7 +39,7 @@ from pipecat.services.openai.llm import OpenAILLMService
 
 from pipecat.services.whisper.stt import WhisperSTTServiceMLX, MLXModel
 
-from pipecat.frames.frames import LLMRunFrame
+from pipecat.frames.frames import LLMTextFrame
 
 # Import HotMem processor
 from components.processing.hotpath_processor import HotPathMemoryProcessor
@@ -51,8 +51,8 @@ from components.monitoring.alerting_system import AlertingSystem
 
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
-from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
-from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, IceServer
+from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
+from pipecat.transports.network.webrtc_connection import SmallWebRTCConnection, IceServer
 
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams, LLMAssistantAggregatorParams
 
@@ -139,12 +139,31 @@ SYSTEM_INSTRUCTION_BASE =  (
 
 
 async def run_bot(webrtc_connection):
+    # Runtime A/B hooks via env
+    try:
+        vad_stop_secs = float(os.getenv("VAD_STOP_SECS", "0.2"))
+    except Exception:
+        vad_stop_secs = 0.2
+
+    whisper_env = os.getenv("WHISPER_STT_MODEL", "MEDIUM").strip().upper()
+    try:
+        whisper_model = getattr(MLXModel, whisper_env)
+    except Exception:
+        whisper_model = MLXModel.MEDIUM
+
+    tts_model = os.getenv("TTS_MODEL", "mlx-community/Kokoro-82M-bf16")
+    tts_voice = os.getenv("TTS_VOICE", "af_heart") or None
+    try:
+        tts_sample_rate = int(os.getenv("TTS_SAMPLE_RATE", "24000"))
+    except Exception:
+        tts_sample_rate = 24000
+
     transport = SmallWebRTCTransport(
         webrtc_connection=webrtc_connection,
         params=TransportParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
-            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
+            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=vad_stop_secs)),
             turn_analyzer=LocalSmartTurnAnalyzerV2(
                 smart_turn_model_path="",  # Download from HuggingFace
                 params=SmartTurnParams(),
@@ -152,9 +171,9 @@ async def run_bot(webrtc_connection):
         ),
     )
 
-    stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
+    stt = WhisperSTTServiceMLX(model=whisper_model)
 
-    tts = TTSMLXIsolated(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
+    tts = TTSMLXIsolated(model=tts_model, voice=tts_voice, sample_rate=tts_sample_rate)
     # tts = TTSMLXIsolated(model="Marvis-AI/marvis-tts-250m-v0.1", voice=None)
 
 
@@ -243,12 +262,45 @@ async def run_bot(webrtc_connection):
 
     # Start periodic summarizer if enabled
     summarizer_task = None
+    assistant_logger_task = None
     try:
         if os.getenv("SUMMARIZER_ENABLED", "true").lower() in ("1", "true", "yes"):
             interval = float(os.getenv("SUMMARIZER_INTERVAL_SECS", "30"))
             summarizer_task = start_periodic_summarizer(context_aggregator, memory, int(interval))
     except Exception as e:
         logger.warning(f"Failed to start summarizer: {e}")
+
+    # Background task: persist every assistant reply verbatim
+    async def _watch_assistant_messages():
+        last_seen = 0
+        try:
+            while True:
+                await asyncio.sleep(0.5)
+                try:
+                    ctx = context_aggregator.user().context
+                    msgs = list(getattr(ctx, 'messages', []))
+                    # Count assistant messages seen so far
+                    assistant_msgs = [m for m in msgs if isinstance(m, dict) and m.get('role') == 'assistant']
+                    if len(assistant_msgs) > last_seen:
+                        new_msgs = assistant_msgs[last_seen:]
+                        for m in new_msgs:
+                            txt = str(m.get('content', '') or '').strip()
+                            if txt:
+                                try:
+                                    memory.store_assistant_response(txt)
+                                except Exception:
+                                    pass
+                        last_seen = len(assistant_msgs)
+                except Exception:
+                    # Non-fatal: continue watching
+                    pass
+        except asyncio.CancelledError:
+            return
+
+    try:
+        assistant_logger_task = asyncio.create_task(_watch_assistant_messages())
+    except Exception:
+        assistant_logger_task = None
 
     # Initialize monitoring system if enabled
     global health_monitor, metrics_collector, alerting_system, monitoring_enabled
@@ -331,6 +383,8 @@ async def run_bot(webrtc_connection):
         try:
             if summarizer_task:
                 summarizer_task.cancel()
+            if assistant_logger_task:
+                assistant_logger_task.cancel()
         except Exception:
             pass
         # Stop monitoring systems
@@ -383,6 +437,8 @@ async def run_bot(webrtc_connection):
         try:
             if summarizer_task:
                 summarizer_task.cancel()
+            if assistant_logger_task:
+                assistant_logger_task.cancel()
         except Exception:
             pass
         # Stop monitoring systems

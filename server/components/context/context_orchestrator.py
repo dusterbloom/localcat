@@ -92,10 +92,10 @@ def pack_context(
     before = msgs[: sys_idx + 1]
     dialogue = msgs[sys_idx + 1 :]
 
-    # Budget slices (tunable)
+    # Budget slices (tunable) - increased memory allocation for richer context
     B = max(512, int(budget_tokens or 4096))
     target_system = min(int(B * 0.12), 512)
-    target_memory = min(int(B * 0.15), 600)
+    target_memory = min(int(B * 0.25), 1200)  # Increased from 15% to 25%
     target_summary = min(int(B * 0.10), 400)
     # tools slice reserved for future
     target_dialogue = B - (target_system + target_memory + target_summary)

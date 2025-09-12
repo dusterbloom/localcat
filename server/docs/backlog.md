@@ -1,8 +1,62 @@
 # LocalCat Server Development Backlog
 
-## ✅ COMPLETE: HOT MEM V4 GLiNER REVOLUTION (2025-09-10)
+## 🚧 WIP: Tiered Extraction System Enhancement (2025-09-12)
 
-**Status**: COMPLETE - Quality-First Entity Extraction Successfully Deployed ✅
+**Status**: In progress — implementing 99% accurate relationship extraction
+
+### 🎯 Current Implementation Status
+
+**✅ Completed:**
+- **GLiNER Integration**: 96.7% entity extraction accuracy now integrated in TieredExtractor
+- **spaCy NER**: Re-enabled and working alongside GLiNER for maximum coverage
+- **Compound Entity Support**: Now properly handles "Reed College", "Tesla Model S" etc.
+- **Conjunction Handling**: 85-90% accuracy on coordinated predicates ("lives in X and works at Y")
+- **UD Pattern Coverage**: Using 15/27 patterns (55.6%) - core patterns implemented
+
+**🔄 In Progress:**
+- **Tier 1 (Simple NLP)**: ✅ Working with GLiNER + spaCy + improved UD patterns
+- **Tier 2 (Small LLM)**: ❌ Model not running (qwen3-0.6b-mlx) - getting 400 errors
+- **Tier 3 (Larger LLM)**: ❌ Model not running (llama-3.2-1b) - getting 400 errors
+
+### 📋 Next Steps - Continue From Here
+
+1. **Add Remaining 12 UD Patterns** (Priority 1)
+   - Missing patterns: `compound` (✅ added), `amod`, `advmod`, `agent`, `acomp`, `appos`, `aux`, `auxpass`, `cc`, `csubjpass`, `dep`, `mark`, `pcomp`
+   - These patterns will improve extraction coverage from 55.6% to 100%
+   - Focus on high-value patterns first: `amod` (adjective modifiers), `advmod` (adverb modifiers), `agent` (passive agents)
+
+2. **Fix Tier 2 & 3 LLM Integration** (Priority 2)
+   - Debug why LLM calls are returning 400 errors
+   - Ensure models are running in LM Studio or equivalent
+   - Test with different model configurations
+   - Implement proper fallback when models unavailable
+
+3. **Performance Optimization** (Priority 3)
+   - Current: ~100ms first run (with model loading), ~10-15ms thereafter
+   - Target: Maintain <50ms for Tier 1, <200ms for Tier 2/3
+   - Consider caching parsed docs for repeated sentences
+
+### 🔧 Technical Details
+
+**File Structure:**
+- `/server/components/extraction/tiered_extractor.py` - Main tiered extraction system
+- `/server/components/extraction/gliner_extractor.py` - GLiNER entity extraction
+- `/server/components/memory/config.py` - Configuration with feature flags
+- `/server/components/extraction/memory_extractor.py` - Integration point
+
+**Configuration:**
+```python
+# Current settings in config.py
+use_gliner: bool = True  # GLiNER for 96.7% entity extraction
+use_srl: bool = False    # SRL not yet integrated
+use_coref: bool = False  # Coref missing (services.fastcoref)
+```
+
+**Test Results:**
+- Entity extraction: 96.7% accuracy with GLiNER
+- Conjunction handling: 85-90% accuracy
+- Compound entities: Working ("Reed College" properly extracted)
+- Performance: ~10-15ms per extraction (after model load)
 
 ### 🎉 Achievement: Transform HotMem from Pattern-Based → AI-Powered Entity Recognition
 

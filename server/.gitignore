@@ -51,6 +51,8 @@ examples/**/web-build/
 # Documentation
 docs/api/_build/
 docs/api/api
+docs/repos/
+
 
 graph.*
 test_graph.*

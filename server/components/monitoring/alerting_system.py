@@ -506,7 +506,8 @@ class AlertingSystem:
         )
         
         # Store alert
-        self.active_alerts[rule_name] = alert
+        # Use the rule's name as the key; fix undefined variable 'rule_name'
+        self.active_alerts[rule.name] = alert
         await self._store_alert(alert)
         
         # Send notifications

@@ -209,6 +209,20 @@ async def periodic_summarizer(context_aggregator, memory_processor, interval_sec
                 except Exception as e:
                     logger.warning(f"[Summarizer] Failed to store summary: {e}")
                 last_len = len(messages)
+            
+            # Also persist the most recent assistant reply verbatim into the session store
+            try:
+                # Find the last assistant message in the new window
+                last_assistant_msg = None
+                for m in reversed(msgs):
+                    if m.get('role') == 'assistant':
+                        last_assistant_msg = str(m.get('content', '') or '')
+                        break
+                if last_assistant_msg:
+                    # Store via memory processor helper (links to current session/turn)
+                    memory_processor.store_assistant_response(last_assistant_msg)
+            except Exception as e:
+                logger.debug(f"[Summarizer] Skipped storing assistant verbatim: {e}")
     except asyncio.CancelledError:
         logger.info("[Summarizer] Cancelled")
     except Exception as e:
