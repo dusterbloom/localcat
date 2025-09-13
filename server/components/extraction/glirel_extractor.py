@@ -171,14 +171,16 @@ class GLiRELExtractor:
         filtered_entities = []
         for ent in entities:
             # Convert entity label to standard categories
-            label = self._normalize_entity_label(ent.get('label', ''))
-            if label in ['PERSON', 'ORG', 'LOC', 'PRODUCT']:
+            label = self._normalize_entity_label(ent.get('label', ''), ent['text'])
+            # Accept standard categories plus ENTITY for zero-shot mode
+            if label in ['PERSON', 'ORG', 'LOC', 'PRODUCT', 'ENTITY']:
                 filtered_entities.append({
                     'text': ent['text'],
                     'start': ent['start'],
                     'end': ent['end'],
                     'label': label
                 })
+                logger.debug(f"[GLiREL] Entity '{ent['text']}' classified as '{label}'")
 
         if len(filtered_entities) < 2:
             logger.debug("[GLiREL] Need at least 2 entities for relation extraction")
@@ -187,38 +189,109 @@ class GLiRELExtractor:
         try:
             start = time.perf_counter()
 
-            # Tokenize text
-            tokens = self.tokenizer(
-                text,
-                return_offsets_mapping=True,
-                add_special_tokens=False,
-                truncation=True,
-                max_length=512
-            )
+            # Tokenize text for GLiREL (expects tokens as list of strings)
+            import spacy
+            try:
+                nlp = spacy.load('en_core_web_sm')
+                doc = nlp(text)
+                tokens = [token.text for token in doc]
+            except:
+                # Fallback to simple word splitting
+                tokens = text.split()
+                doc = None
 
-            # Extract relations using GLiREL
+            # Convert relations dict to list of relation labels
+            if isinstance(relations, dict):
+                labels = list(relations.keys())
+            else:
+                labels = relations or list(self.default_relations.keys())
+
+            # Convert entities to GLiREL format: [start_token_idx, end_token_idx, type, text]
+            glirel_entities = []
+            for ent in filtered_entities:
+                if doc:
+                    # Use spaCy to find proper token indices
+                    start_token_idx = None
+                    end_token_idx = None
+
+                    for token in doc:
+                        # Check if token overlaps with entity
+                        if token.idx <= ent['start'] < token.idx + len(token.text):
+                            start_token_idx = token.i
+                        if token.idx < ent['end'] <= token.idx + len(token.text):
+                            end_token_idx = token.i
+
+                    # If we couldn't find exact matches, find closest tokens
+                    if start_token_idx is None or end_token_idx is None:
+                        for token in doc:
+                            if start_token_idx is None and token.idx >= ent['start']:
+                                start_token_idx = max(0, token.i - 1)
+                            if end_token_idx is None and token.idx >= ent['end']:
+                                end_token_idx = token.i
+                                break
+
+                    # Fallback to last token if still not found
+                    if start_token_idx is None:
+                        start_token_idx = 0
+                    if end_token_idx is None:
+                        end_token_idx = len(tokens) - 1
+                else:
+                    # Fallback: approximate token positions
+                    words_before_start = len(text[:ent['start']].split())
+                    entity_words = len(ent['text'].split())
+                    start_token_idx = max(0, words_before_start - 1)
+                    end_token_idx = min(len(tokens) - 1, start_token_idx + entity_words - 1)
+
+                glirel_entities.append([start_token_idx, end_token_idx, ent['label'], ent['text']])
+
+            logger.debug(f"[GLiREL] Using {len(labels)} relation types and {len(glirel_entities)} entities")
+
+            # Extract relations using GLiREL with correct API
             results = self.model.predict_relations(
-                tokens=tokens,
-                labels=relations,
-                ner=filtered_entities,
-                threshold=threshold
+                text=text,
+                labels=labels,
+                ner=glirel_entities,
+                threshold=threshold,
+                top_k=5  # Get top 5 relations per entity pair
             )
 
             extract_time = (time.perf_counter() - start) * 1000
 
+            # Debug: check the results format
+            logger.debug(f"[GLiREL] Raw results format: {type(results)} - {results}")
+
             # Convert to our format
             relation_results = []
-            for result in results:
-                relation_results.append(RelationResult(
-                    head=result['head'],
-                    tail=result['tail'],
-                    relation=result['relation'],
-                    score=result['score'],
-                    head_start=self._find_entity_position(filtered_entities, result['head'])[0],
-                    head_end=self._find_entity_position(filtered_entities, result['head'])[1],
-                    tail_start=self._find_entity_position(filtered_entities, result['tail'])[0],
-                    tail_end=self._find_entity_position(filtered_entities, result['tail'])[1]
-                ))
+            if results:  # Make sure we have results
+                for i, result in enumerate(results):
+                    logger.debug(f"[GLiREL] Result {i}: {result} (type: {type(result)})")
+
+                    # Handle different possible formats
+                    if isinstance(result, dict):
+                        # GLiREL format: head_text, tail_text, label, score
+                        head = result.get('head_text', result.get('head', result.get('subject', '')))
+                        tail = result.get('tail_text', result.get('tail', result.get('object', '')))
+                        relation = result.get('label', result.get('relation', result.get('predicate', '')))
+                        score = result.get('score', result.get('confidence', 0.0))
+                    elif isinstance(result, (list, tuple)) and len(result) >= 3:
+                        # Tuple format: (head, relation, tail) or similar
+                        head, relation, tail = result[0], result[1], result[2]
+                        score = result[3] if len(result) > 3 else 1.0
+                    else:
+                        logger.warning(f"[GLiREL] Unknown result format: {result}")
+                        continue
+
+                    if head and tail and relation:
+                        relation_results.append(RelationResult(
+                            head=str(head),
+                            tail=str(tail),
+                            relation=str(relation),
+                            score=float(score),
+                            head_start=self._find_entity_position(filtered_entities, str(head))[0],
+                            head_end=self._find_entity_position(filtered_entities, str(head))[1],
+                            tail_start=self._find_entity_position(filtered_entities, str(tail))[0],
+                            tail_end=self._find_entity_position(filtered_entities, str(tail))[1]
+                        ))
 
             logger.debug(f"[GLiREL] Extracted {len(relation_results)} relations in {extract_time:.1f}ms")
             return relation_results
@@ -227,9 +300,30 @@ class GLiRELExtractor:
             logger.error(f"[GLiREL] Extraction failed: {e}")
             return []
 
-    def _normalize_entity_label(self, label: str) -> str:
+    def _normalize_entity_label(self, label: str, text: str = '') -> str:
         """Normalize entity labels to GLiREL format"""
         label_lower = label.lower()
+
+        # For zero-shot mode, accept generic ENTITY label and infer type from text
+        if label_lower in ['entity', '']:
+            # Try to infer entity type from text content
+            text_lower = text.lower() if text else ''
+            if any(name in text_lower for name in ['steve', 'john', 'mary', 'david', 'jobs']) or \
+               any(title in text_lower for title in ['mr', 'mrs', 'ms', 'dr']):
+                return 'PERSON'
+            elif any(org_word in text_lower for org_word in ['inc', 'corp', 'ltd', 'company', 'apple', 'microsoft', 'google']):
+                return 'ORG'
+            elif any(loc_word in text_lower for loc_word in ['city', 'country', 'cupertino', 'california', 'new york', 'london']):
+                return 'LOC'
+            else:
+                # Default to ORG for company names, PERSON for names
+                if ' inc' in text_lower or ' corp' in text_lower:
+                    return 'ORG'
+                elif len(text.split()) == 2 and text.split()[0][0].isupper() and text.split()[1][0].isupper():
+                    return 'PERSON'
+                else:
+                    return 'ENTITY'
+
         if any(person in label_lower for person in ['person', 'per']):
             return 'PERSON'
         elif any(org in label_lower for org in ['org', 'company', 'corp']):

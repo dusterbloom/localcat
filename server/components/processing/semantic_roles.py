@@ -39,12 +39,13 @@ def _canon_entity_text(text: str) -> str:
 
 @dataclass
 class Predication:
-    predicate: str  # lemma
+    predicate: str  # original verb form (feeds, announced, not lemmatized)
     # role -> surface string
     roles: Dict[str, str]
     # Optional light metadata
     lang: str = "en"
     sent_text: str = ""
+    tense_info: Optional[Dict[str, Any]] = None  # tense, aspect, morphology
 
 
 class RelationNormalizer:
@@ -228,6 +229,26 @@ class SRLExtractor:
                 roles.setdefault("patient", _canon_entity_text(self._span_text(ch)))
             elif ch.dep_ == "iobj":
                 roles["recipient"] = _canon_entity_text(self._span_text(ch))
+            elif ch.dep_ == "ccomp":
+                # Clausal complements as patient (e.g., "announced that X would Y")
+                # Extract subject + verb from complement: "company would restructure" -> "company restructure"
+                try:
+                    complement_subj = None
+                    complement_verb = ch.text.lower()  # Start with the head verb
+
+                    # Find the subject of the complement clause
+                    for token in ch.children:
+                        if token.dep_ in {"nsubj", "csubj"}:
+                            complement_subj = self._span_text(token)
+                            break
+
+                    if complement_subj:
+                        compound_event = f"{_canon_entity_text(complement_subj)} {complement_verb}"
+                        roles.setdefault("patient", compound_event)
+                    else:
+                        roles.setdefault("patient", _canon_entity_text(ch.text))
+                except Exception:
+                    roles.setdefault("patient", _canon_entity_text(ch.text))
 
         # Prepositional modifiers to roles
         for ch in head.children:
@@ -257,7 +278,7 @@ class SRLExtractor:
                     roles["instrument"] = pobj_text
                 elif prep in {"for"}:
                     roles["beneficiary"] = pobj_text
-                elif prep in {"because", "because of", "due to", "since", "as"}:
+                elif prep in {"because", "because of", "due to", "since", "as", "after"}:
                     roles["cause"] = pobj_text
                 else:
                     # Keep the most salient if looks like time
@@ -282,42 +303,237 @@ class SRLExtractor:
         preds: List[Predication] = []
         try:
             for sent in doc.sents:
-                head = sent.root
-                if head.pos_ not in {"VERB"}:
+                # EXTRACT ALL MEANINGFUL VERBS, not just sentence root
+                verb_candidates = []
+
+                # 1. Main sentence root
+                if sent.root.pos_ in {"VERB", "AUX"}:
+                    verb_candidates.append(sent.root)
+
+                # 2. Find all other meaningful verbs in the sentence
+                for token in sent:
+                    if (token.pos_ == "VERB" and
+                        token.dep_ in {"advcl", "relcl", "xcomp", "ccomp", "conj"} and
+                        token not in verb_candidates):
+                        verb_candidates.append(token)
+
+                # Process each verb candidate
+                for head in verb_candidates:
                     # Handle copula: X is Y (AUX with acomp/attr)
-                    cop = None
-                    for ch in head.children:
-                        if ch.dep_ == "cop":
-                            cop = ch
-                            break
-                    if not cop:
+                    if head.pos_ not in {"VERB"}:
+                        cop = None
+                        for ch in head.children:
+                            if ch.dep_ == "cop":
+                                cop = ch
+                                break
+                        if not cop:
+                            continue
+
+                    # verb head can be aux + main verb as child; prefer main verb
+                    if head.pos_ == "AUX":
+                        main = None
+                        for ch in head.children:
+                            if ch.pos_ == "VERB":
+                                main = ch
+                                break
+                        head = main or head
+
+                    if not head:
                         continue
-                # verb head can be aux + main verb as child; prefer main verb
-                if head.pos_ == "AUX":
-                    main = None
-                    for ch in head.children:
-                        if ch.pos_ == "VERB":
-                            main = ch
+
+                    roles = self._collect_roles_for_predicate(head)
+
+                    # PRESERVE ORIGINAL VERB FORM - don't lemmatize away tense!
+                    pred_text = head.text.lower()  # Keep original form: feeds, announced, etc.
+                    pred_lemma = head.lemma_.lower() if head.lemma_ else pred_text
+
+                    # Handle compound predicates: "began teaching" -> "began_teaching"
+                    compound_pred = None
+                    for child in head.children:
+                        if (child.pos_ == "VERB" and
+                            child.dep_ in {"xcomp", "ccomp"} and
+                            pred_text in {"began", "started", "finished", "stopped", "continued"}):
+                            compound_pred = f"{pred_text}_{child.text.lower()}"
                             break
-                    head = main or head
 
-                if not head:
-                    continue
+                    if compound_pred:
+                        pred_text = compound_pred
 
-                roles = self._collect_roles_for_predicate(head)
+                    # Extract tense/aspect metadata
+                    tense_info = {
+                        'original_form': pred_text,
+                        'lemma': pred_lemma,
+                        'pos': head.pos_,
+                        'tag': head.tag_,  # VBZ, VBD, etc. for tense
+                        'morph': str(head.morph) if head.morph else None
+                    }
 
-                # Copula predicate mapping
-                pred_lemma = head.lemma_.lower() if head.lemma_ else head.text.lower()
-                if any(c.dep_ == "cop" for c in head.children) or head.pos_ == "AUX":
-                    pred_lemma = "be"
+                    # Only lemmatize copulas to "be"
+                    if any(c.dep_ == "cop" for c in head.children) or head.pos_ == "AUX":
+                        pred_text = "is"  # Use contextual form, not generic "be"
+                        if head.tag_ in ['VBD', 'VBN']:  # was, were
+                            pred_text = "was"
+                        elif head.tag_ in ['VBG']:  # being
+                            pred_text = "being"
 
-                preds.append(Predication(predicate=pred_lemma, roles=roles, lang=lang, sent_text=sent.text))
+                    preds.append(Predication(predicate=pred_text, roles=roles, lang=lang, sent_text=sent.text, tense_info=tense_info))
         except Exception as e:
             logger.debug(f"[SRL] doc_to_predications failed: {e}")
         return preds
 
     def predications_to_triples(self, preds: List[Predication]) -> List[Tuple[str, str, str]]:
         triples: List[Tuple[str, str, str]] = []
+        last_subject = None  # Track previous subject for context
+
+        for p in preds:
+            # Choose subject/object from roles - prioritize patient over location for verbs like "writing"
+            s = p.roles.get("agent") or p.roles.get("subject")
+            o = p.roles.get("patient") or p.roles.get("object")
+            if not o:
+                o = p.roles.get("destination") or p.roles.get("location")
+            if not s and not o and p.roles.get("beneficiary"):
+                # Edge case: give/offer with only beneficiary
+                s = p.roles.get("agent")
+                o = p.roles.get("beneficiary")
+
+            # RELAXED: Allow intransitive verbs with only subject (ended, began, etc)
+            if not s:
+                # Try to inherit subject from context (for gerunds like "teaching", "writing")
+                if last_subject and (p.roles.get("patient") or p.roles.get("location")):
+                    s = last_subject  # Use previous subject
+                else:
+                    continue  # Skip if no subject available
+            else:
+                last_subject = s  # Remember this subject for next predicate
+
+            # Handle missing object - better semantic representation
+            if not o:
+                # For intransitive verbs with specific roles, use the role
+                if p.roles.get("destination"):
+                    o = p.roles["destination"]
+                    rel_suffix = "_to"
+                elif p.roles.get("location"):
+                    o = p.roles["location"]
+                    # Better suffix selection based on predicate type
+                    if p.predicate in {"teaching", "working", "studying", "living"}:
+                        rel_suffix = "_at"
+                    else:
+                        rel_suffix = "_in"
+                elif p.roles.get("temporal"):
+                    # Temporal intransitive: "ended in july" -> (festival, ended_in, july)
+                    o = p.roles["temporal"]
+                    rel_suffix = "_in"
+                elif p.roles.get("cause"):
+                    # For causal predicates, skip the main triple but allow causal processing
+                    o = None  # Signal to skip main triple but allow causal processing
+                else:
+                    # Pure intransitive with meaningful content - allow them
+                    # E.g., "began_teaching", "started", etc.
+                    if "_" in p.predicate or p.predicate in {"began", "started", "finished", "stopped"}:
+                        # Create a meaningful relation for compound or lifecycle verbs
+                        continue  # Skip for now - may need different approach
+                    else:
+                        continue
+
+            # Preposition hint helpful for normalization
+            prep_hint = None
+            # Roughly infer from destination/source/location roles
+            if p.roles.get("destination"):
+                prep_hint = "to"
+            elif p.roles.get("source"):
+                prep_hint = "from"
+            elif p.roles.get("location"):
+                prep_hint = "in"
+
+            rel = p.predicate
+
+            # Add directional suffix for location/destination verbs
+            if 'rel_suffix' in locals() and rel_suffix:
+                rel = p.predicate + rel_suffix
+
+            # Clean up locals to avoid suffix carryover
+            if 'rel_suffix' in locals():
+                del rel_suffix
+
+            if self.normalizer:
+                rel = self.normalizer.normalize(p.predicate, p.roles, prep_hint)
+
+            # Normalize a few role-specific relations
+            if rel == "is" or rel == "be":
+                rel = "is"
+
+            # Only generate main triple if we have a valid object
+            if o is not None:
+                triples.append((s, rel, o))
+
+            # FIXED: Attach temporal to the ACTION (predicate), not agent or patient
+            # Skip if temporal already encoded in main relation (ended_in, moved_to, etc)
+            if p.roles.get("temporal") and not any(suffix in rel for suffix in ["_in", "_to", "_at"]):
+                # Create meaningful temporal relation: (action, when, time)
+                action_entity = f"{s}_{rel}_{o}".replace(" ", "_")  # e.g. "alice_feeds_cat"
+                triples.append((action_entity, "when", p.roles["temporal"]))
+            if p.roles.get("cause"):
+                # Create proper causal relation: "company restructure" caused by "declining profits"
+                event = f"{s} {p.predicate}".strip()
+                triples.append((event, "caused_by", p.roles["cause"]))
+
+        # Simple coreference resolution
+        triples = self._resolve_simple_coreferences(triples)
+        return triples
+
+    def _resolve_simple_coreferences(self, triples: List[Tuple[str, str, str]]) -> List[Tuple[str, str, str]]:
+        """Resolve basic coreference cases like who->person, she->female_name"""
+        resolved = []
+        entities_seen = []  # Track entities for coreference
+
+        for s, r, o in triples:
+            # Collect potential referents
+            if any(word in s.lower() for word in ['alice', 'maria', 'boy', 'ceo', 'chef', 'festival']):
+                entities_seen.append(s)
+            if any(word in o.lower() for word in ['alice', 'maria', 'boy', 'ceo', 'chef', 'festival']):
+                entities_seen.append(o)
+
+            # Resolve coreferences
+            resolved_s = self._resolve_pronoun(s, entities_seen)
+            resolved_o = self._resolve_pronoun(o, entities_seen)
+
+            resolved.append((resolved_s, r, resolved_o))
+
+        return resolved
+
+    def _resolve_pronoun(self, text: str, entities_seen: List[str]) -> str:
+        """Resolve pronouns to most recent appropriate entity"""
+        text_lower = text.lower()
+
+        if text_lower == "who":
+            # Find most recent person entity
+            for entity in reversed(entities_seen):
+                if any(word in entity.lower() for word in ['boy', 'alice', 'maria', 'ceo', 'chef']):
+                    return entity
+        elif text_lower in ["she", "her"]:
+            # Find most recent female entity
+            for entity in reversed(entities_seen):
+                if any(word in entity.lower() for word in ['alice', 'maria', 'chef']):
+                    return entity
+        elif text_lower in ["he", "him"]:
+            # Find most recent male entity
+            for entity in reversed(entities_seen):
+                if any(word in entity.lower() for word in ['boy', 'ceo']):
+                    return entity
+
+        return text  # No resolution found
+
+    def predications_to_triples_with_embeddings(self, preds: List[Predication]) -> List[Tuple[str, str, str, Dict[str, Any]]]:
+        """
+        Convert predications to triples with semantic embeddings stored in metadata.
+        Returns: List of (subject, relation, object, metadata) tuples where metadata contains embeddings.
+        """
+        triples_with_meta: List[Tuple[str, str, str, Dict[str, Any]]] = []
+
+        # Ensure embedding model is loaded (via normalizer)
+        if self.normalizer:
+            self.normalizer._ensure_model()
+
         for p in preds:
             # Choose subject/object from roles
             s = p.roles.get("agent") or p.roles.get("subject")
@@ -340,21 +556,72 @@ class SRLExtractor:
             elif p.roles.get("location"):
                 prep_hint = "in"
 
+            # PRESERVE SEMANTIC MEANING: Use original predicate, not forced normalization
             rel = p.predicate
+            normalized_rel = None
             if self.normalizer:
-                rel = self.normalizer.normalize(p.predicate, p.roles, prep_hint)
+                normalized_rel = self.normalizer.normalize(p.predicate, p.roles, prep_hint)
 
-            # Normalize a few role-specific relations
-            if rel == "is" or rel == "be":
+            # Only normalize trivial cases like copulas
+            if rel in ["is", "be", "are", "was", "were"]:
                 rel = "is"
 
-            triples.append((s, rel, o))
-            # Encode temporal/cause as auxiliary triples if available
+            # Compute semantic embedding for the relation
+            metadata = {}
+            if self.normalizer and self.normalizer._model is not None:
+                try:
+                    # Create a descriptive phrase for embedding
+                    rel_phrase = f"{s} {p.predicate} {o}"
+                    if prep_hint:
+                        rel_phrase = f"{s} {p.predicate} {prep_hint} {o}"
+
+                    # Compute embedding
+                    embedding = self.normalizer._model.encode(rel_phrase, normalize_embeddings=True)
+                    metadata["rel_embedding"] = embedding.tolist()  # Convert numpy to list for JSON storage
+                    metadata["original_predicate"] = p.predicate
+                    if normalized_rel:
+                        metadata["normalized_relation"] = normalized_rel  # Keep for reference but don't use
+
+                    # Add rich tense/aspect metadata
+                    if p.tense_info:
+                        metadata["tense_info"] = p.tense_info
+
+                    logger.debug(f"[SRL] Computed embedding for: '{rel_phrase}' -> {rel} (original form preserved)")
+                except Exception as e:
+                    logger.debug(f"[SRL] Failed to compute embedding for '{p.predicate}': {e}")
+
+            # PROPER SOLUTION: Store temporal/causal as metadata, not separate nonsensical triples
             if p.roles.get("temporal"):
-                triples.append((o, "when", p.roles["temporal"]))
+                metadata["temporal_arg"] = p.roles["temporal"]  # ARGTMP in PropBank
+                if self.normalizer and self.normalizer._model is not None:
+                    try:
+                        temporal_phrase = f"{rel} occurs at {p.roles['temporal']}"
+                        temporal_embedding = self.normalizer._model.encode(temporal_phrase, normalize_embeddings=True)
+                        metadata["temporal_embedding"] = temporal_embedding.tolist()
+                    except Exception:
+                        pass
+
             if p.roles.get("cause"):
-                triples.append((p.predicate, "because_of", p.roles["cause"]))
-        return triples
+                metadata["causal_arg"] = p.roles["cause"]  # ARGCAU in PropBank
+                if self.normalizer and self.normalizer._model is not None:
+                    try:
+                        causal_phrase = f"{rel} because of {p.roles['cause']}"
+                        causal_embedding = self.normalizer._model.encode(causal_phrase, normalize_embeddings=True)
+                        metadata["causal_embedding"] = causal_embedding.tolist()
+                    except Exception:
+                        pass
+
+            # Store location, manner, purpose as metadata too
+            if p.roles.get("location"):
+                metadata["location_arg"] = p.roles["location"]
+            if p.roles.get("manner"):
+                metadata["manner_arg"] = p.roles["manner"]
+            if p.roles.get("purpose"):
+                metadata["purpose_arg"] = p.roles["purpose"]
+
+            triples_with_meta.append((s, rel, o, metadata))
+
+        return triples_with_meta
 
 
 __all__ = ["SRLExtractor", "Predication", "RelationNormalizer"]

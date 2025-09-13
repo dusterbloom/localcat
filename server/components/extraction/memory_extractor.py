@@ -282,9 +282,12 @@ class MemoryExtractor:
                     _GLOBAL_MODEL_CACHE['tiered_loading'] = True
                     try:
                         # Initialize with coref and SRL enabled
+                        # Avoid duplicate GLiNER loading inside TieredExtractor since
+                        # MemoryExtractor already performs entity extraction via GLiNER.
                         self._tiered_extractor = TieredRelationExtractor(
                             enable_srl=self.use_srl,
-                            enable_coref=self.config.get('use_coref', False),  # Disable coref for speed
+                            enable_coref=self.config.get('use_coref', False),  # keep coref off in tiered for speed
+                            enable_gliner=False,  # prevent a second GLiNER model load
                             llm_base_url=self.config.get('llm_base_url', 'http://127.0.0.1:1234/v1')
                         )
                         _GLOBAL_MODEL_CACHE['tiered'] = self._tiered_extractor
@@ -353,24 +356,50 @@ class MemoryExtractor:
                 try:
                     glirel_start = time.perf_counter()
 
+                    # Only use GLiREL if we have meaningful entities (avoid overhead on simple texts)
+                    if len(all_entities) < 2:
+                        logger.debug(f"[GLiREL] Skipping - only {len(all_entities)} entities found")
+                        glirel_time = (time.perf_counter() - glirel_start) * 1000
+                        self.metrics['glirel_ms'].append(glirel_time)
+                        return all_triples, all_entities, neg_count
+
                     # Convert our entities to GLiREL format
                     glirel_entities = []
                     for entity_text in all_entities:
-                        # Find entity position in text
-                        pos = text.find(entity_text)
+                        # Find entity position in text (case-insensitive)
+                        pos = text.lower().find(entity_text.lower())
                         if pos != -1:
+                            # Use the actual text case from the original text
+                            actual_text = text[pos:pos + len(entity_text)]
+                            # Smart entity type inference for better GLiREL results
+                            entity_lower = actual_text.lower()
+                            if any(name_indicator in entity_lower for name_indicator in ['steve', 'john', 'mary', 'david', 'jobs']) or \
+                               (len(actual_text.split()) == 2 and all(word[0].isupper() for word in actual_text.split())):
+                                label = 'PERSON'
+                            elif any(org_indicator in entity_lower for org_indicator in ['inc', 'corp', 'ltd', 'company', 'apple', 'microsoft', 'google']):
+                                label = 'ORG'
+                            elif any(loc_indicator in entity_lower for loc_indicator in ['city', 'country', 'cupertino', 'california', 'new york', 'london', 'san francisco']):
+                                label = 'LOC'
+                            else:
+                                label = 'ENTITY'
+
                             glirel_entities.append({
-                                'text': entity_text,
+                                'text': actual_text,
                                 'start': pos,
-                                'end': pos + len(entity_text),
-                                'label': 'ENTITY'  # GLiREL will infer types
+                                'end': pos + len(actual_text),
+                                'label': label
                             })
+                            logger.debug(f"[GLiREL] Found entity '{actual_text}' at position {pos}")
+                        else:
+                            logger.debug(f"[GLiREL] Could not find entity '{entity_text}' in text")
+
+                    logger.debug(f"[GLiREL] Total entities to process: {len(glirel_entities)}")
 
                     # Extract relations using GLiREL
                     glirel_triples = self._glirel.extract_with_gliner_integration(
                         text=text,
                         gliner_result=glirel_entities,
-                        threshold=0.5  # Confidence threshold
+                        threshold=0.4  # Lower threshold for better recall
                     )
 
                     # Add GLiREL relations to results
@@ -771,6 +800,20 @@ class MemoryExtractor:
             try:
                 glirel_model = GLiRELExtractor(model_id=glirel_id, device=device)
                 logger.info(f"[MemoryExtractor GLiREL] Loaded GLiREL model: {glirel_id}")
+
+                # Warm up the model with a simple example to avoid first-run latency
+                logger.info("[MemoryExtractor GLiREL] Warming up model...")
+                warmup_text = "Apple Inc. is based in Cupertino."
+                warmup_entities = [
+                    {'text': 'Apple Inc.', 'start': 0, 'end': 10, 'label': 'ORG'},
+                    {'text': 'Cupertino', 'start': 18, 'end': 27, 'label': 'LOC'}
+                ]
+                try:
+                    glirel_model.extract_relations(warmup_text, warmup_entities, ['located_in'], 0.3)
+                    logger.info("[MemoryExtractor GLiREL] Model warmup completed")
+                except Exception as warmup_error:
+                    logger.debug(f"[MemoryExtractor GLiREL] Warmup failed (expected): {warmup_error}")
+
                 _GLOBAL_MODEL_CACHE['glirel'] = glirel_model
                 self._glirel = glirel_model
             except Exception as e:

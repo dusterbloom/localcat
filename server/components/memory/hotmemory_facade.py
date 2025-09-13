@@ -53,6 +53,23 @@ try:
 except Exception:
     FCoref = None
 
+# Layer 3: Relationship refinement
+try:
+    from components.semantic.semantic_filter import SemanticRelationshipFilter
+except Exception:
+    SemanticRelationshipFilter = None
+
+try:
+    from components.temporal.temporal_extractor import TemporalExtractor
+except Exception:
+    TemporalExtractor = None
+
+# Layer 4: Graph optimization
+try:
+    from components.graph.graph_analyzer import GraphAnalyzer
+except Exception:
+    GraphAnalyzer = None
+
 
 @dataclass
 class RecencyItem:
@@ -85,6 +102,25 @@ class HotMemoryFacade:
         self.retriever = MemoryRetriever(store, defaultdict(set), self.config.get_retriever_config())
         self.coreference_resolver = CoreferenceResolver(self.config.get_coreference_config())
         self.assisted_extractor = AssistedExtractor(self.config.get_assisted_config())
+
+        # Initialize Layer 3: Relationship refinement
+        semantic_config = {
+            'semantic_filtering_enabled': self.config.features.use_semantic_filter,
+            'semantic_similarity_threshold': 0.7
+        }
+        self.semantic_filter = SemanticRelationshipFilter(semantic_config) if SemanticRelationshipFilter else None
+
+        temporal_config = {
+            'temporal_extraction_enabled': self.config.features.use_temporal_extraction
+        }
+        self.temporal_extractor = TemporalExtractor(temporal_config) if TemporalExtractor else None
+
+        # Initialize Layer 4: Graph optimization
+        graph_config = {
+            'graph_analysis_enabled': self.config.features.use_graph_analysis,
+            'community_detection_enabled': True
+        }
+        self.graph_analyzer = GraphAnalyzer(graph_config) if GraphAnalyzer else None
         
         # Initialize session store for comprehensive session management
         self.session_store = get_session_store()
@@ -247,6 +283,24 @@ class HotMemoryFacade:
             coreference_result = self.coreference_resolver.resolve_coreferences(triples, doc, text)
             triples = coreference_result.resolved_triples
             logger.debug(f"[HotMem] Coreference resolved: {len(coreference_result.resolved_triples)} triples")
+
+        # Layer 3: Apply semantic filtering if enabled
+        if self.config.features.use_semantic_filter and self.semantic_filter:
+            semantic_start = time.perf_counter()
+            semantic_result = self.semantic_filter.filter_relationships(triples, text)
+            triples = semantic_result.filtered_triples
+            semantic_ms = (time.perf_counter() - semantic_start) * 1000
+            logger.debug(f"[HotMem] Semantic filtering: {len(semantic_result.filtered_triples)} triples (removed: {len(semantic_result.removed_triples)}, time: {semantic_ms:.1f}ms)")
+
+        # Layer 3: Apply temporal extraction if enabled
+        if self.config.features.use_temporal_extraction and self.temporal_extractor:
+            temporal_start = time.perf_counter()
+            temporal_result = self.temporal_extractor.extract_temporal_relationships(triples, text)
+            # Add temporal relationships to existing triples
+            if temporal_result.temporal_triples:
+                triples.extend(temporal_result.temporal_triples)
+            temporal_ms = (time.perf_counter() - temporal_start) * 1000
+            logger.debug(f"[HotMem] Temporal extraction: added {len(temporal_result.temporal_triples)} temporal triples (time: {temporal_ms:.1f}ms)")
         
         # Rebuild entities from refined triples + text context
         ent_from_triples: Set[str] = set()
@@ -254,7 +308,17 @@ class HotMemoryFacade:
             ent_from_triples.add(s)
             ent_from_triples.add(d)
         entities = self._refine_entities_from_text(text, list(ent_from_triples))
-        
+
+        # Layer 4: Apply graph analysis if enabled
+        if self.config.features.use_graph_analysis and self.graph_analyzer:
+            graph_start = time.perf_counter()
+            graph_result = self.graph_analyzer.analyze_graph(triples, entities)
+            # Enhance triples with community information if available
+            if graph_result.enhanced_triples:
+                triples = graph_result.enhanced_triples
+            graph_ms = (time.perf_counter() - graph_start) * 1000
+            logger.debug(f"[HotMem] Graph analysis: processed {len(triples)} triples, found {len(graph_result.communities)} communities (time: {graph_ms:.1f}ms)")
+
         # Stage 3: Quality filtering and storage
         update_start = time.perf_counter()
         now_ts = int(time.time() * 1000)
