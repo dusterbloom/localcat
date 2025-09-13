@@ -75,7 +75,8 @@ class TieredRelationExtractor:
                  enable_coref: bool = True,
                  enable_gliner: bool = True,
                  llm_base_url: str = "http://127.0.0.1:1234/v1",
-                 llm_timeout_ms: int = 5000):
+                 llm_timeout_ms: int = 5000,
+                 auto_warmup: bool = False):
         """
         Initialize tiered extractor
         
@@ -115,14 +116,11 @@ class TieredRelationExtractor:
             'tier2_time': [],
             'tier3_time': []
         }
-        
-        # Warm up Tier 2 model
-        self._warmup_tier2()
-        
         logger.info(f"[TieredExtractor] Initialized with SRL={enable_srl}, Coref={enable_coref}")
-        
-        # Warm up Tier 2 model to eliminate loading time during first extraction
-        self._warmup_tier2()
+
+        # Optional: pre-warm models to reduce first-call latency
+        if auto_warmup:
+            self._warmup_tier2()
     
     def _warmup_tier2(self):
         """Warm up Tier 2 model to prevent loading time during first extraction"""
@@ -309,7 +307,23 @@ class TieredRelationExtractor:
             if entity not in entities:
                 entities.append(entity)
         
-        # UD pattern extraction (simplified for speed)
+        # Use centralized comprehensive 27 UD patterns instead of manual patterns
+        # This provides better coverage and avoids duplication
+        if extract_all_ud_patterns:
+            try:
+                ud_relations = extract_all_ud_patterns(text, self._nlp)
+                for rel in ud_relations:
+                    if rel.confidence >= 0.6:  # Only include high-confidence relations
+                        relationship = (rel.subject, rel.relation, rel.object)
+                        if relationship not in relationships:  # Avoid duplicates
+                            relationships.append(relationship)
+                logger.debug(f"[TieredExtractor] Extracted {len([r for r in ud_relations if r.confidence >= 0.6])} UD relations")
+            except Exception as e:
+                logger.debug(f"[TieredExtractor] Centralized UD patterns failed: {e}")
+
+        # REMOVED 350+ lines of manual UD pattern extraction to avoid duplication
+        # The centralized extract_all_ud_patterns provides all 27 comprehensive patterns
+        """
         for token in doc:
             # Subject-Verb-Object patterns
             if token.dep_ in ["nsubj", "nsubjpass"] and token.head.pos_ == "VERB":
@@ -652,7 +666,8 @@ class TieredRelationExtractor:
                     relationships.append((noun, "has_quantity", number))
             
             # ========== END MISSING PATTERNS ==========
-        
+        """
+
         # SRL extraction if enabled
         if self.enable_srl and self._srl:
             try:
@@ -665,19 +680,7 @@ class TieredRelationExtractor:
         if self.enable_coref and relationships:
             relationships = self._apply_coreference(relationships, doc)
         
-        # Add centralized UD patterns for comprehensive coverage
-        if extract_all_ud_patterns:
-            try:
-                ud_relations = extract_all_ud_patterns(text, self._nlp)
-                for rel in ud_relations:
-                    # Convert ExtractedRelation to tuple format and filter out low-confidence relations
-                    if rel.confidence >= 0.6:  # Only include high-confidence relations
-                        relationship = (rel.subject, rel.relation, rel.object)
-                        if relationship not in relationships:  # Avoid duplicates
-                            relationships.append(relationship)
-                logger.debug(f"[TieredExtractor] Added {len([r for r in ud_relations if r.confidence >= 0.6])} centralized UD relations")
-            except Exception as e:
-                logger.debug(f"[TieredExtractor] Centralized UD patterns failed: {e}")
+        # REMOVED duplicate call to extract_all_ud_patterns - already called above
         
         # Calculate confidence based on extraction quality
         confidence = min(1.0, len(relationships) * 0.3) if relationships else 0.3
@@ -710,27 +713,38 @@ class TieredRelationExtractor:
         # Use Tier 1 entities and only ask LLM to find relationships
         entities = tier1_result.entities
         
-        system_prompt = """/no_think 
-            Extract all relationships between pre-identified entities from the text given.
-            Instructions:
-            1. Read text
-            2. Read entities from list
-            3. Find the relationships between them 
+        # system_prompt = """/no_think 
+        #     Extract all relationships between pre-identified entities from the text given.
+        #     Instructions:
+        #     1. Read text
+        #     2. Read entities from list
+        #     3. Find the relationships between them 
             
-            Format:
+        #     Format:
+            # {
+            # "relationships": [
+            #     {"source": "entity_from_list", "target": "entity_from_list", "relation": "relationship_type"}
+            # ]
+            # }
+        #     """
+
+        system_prompt = """/no_think 
+
+            You are an assistant trained to process any text and extract relations from it. "
+            Your task is to analyze user-provided text and infer meaningful relationships between all provided entities:"
+            "Output the annotated data in JSON format, structured as follows
             {
             "relationships": [
                 {"source": "entity_from_list", "target": "entity_from_list", "relation": "relationship_type"}
             ]
-            }
-            """
+            }"""
 
 
 
 
         # Format entities for the prompt
         entity_list = "\n".join([f"- {entity}" for entity in entities])
-        user_prompt = f"Text: {text}\n\nEntities found in text:\n{entity_list}\n\n JSON:"
+        user_prompt = f"Text: {text}\n\nEntities:\n{entity_list}\n\n JSON:"
         
         try:
             json_result = self._call_llm_tier2_hybrid(system_prompt, user_prompt, self.tier2_model)
@@ -951,8 +965,13 @@ User: Extract a knowledge graph from this text. First, identify main entities (e
     def _load_coref(self):
         """Load coreference resolver"""
         try:
-            from services.fastcoref import FCoref
-            self._coref = FCoref(device='cpu')
+            from components.coreference.coreference_resolver import CoreferenceResolver
+            config = {
+                'use_coref': True,
+                'coref_max_entities': 24,
+                'coref_device': 'cpu'
+            }
+            self._coref = CoreferenceResolver(config)
             logger.info("[TieredExtractor] Loaded coreference resolver")
         except Exception as e:
             logger.debug(f"[TieredExtractor] Coref not available: {e}")
@@ -1138,32 +1157,9 @@ User: Extract a knowledge graph from this text. First, identify main entities (e
                 return relationships
         
         try:
-            # Get coreference clusters
-            clusters = self._coref.predict(doc.text)
-            
-            # Build replacement map
-            replacements = {}
-            for cluster in clusters:
-                # Use first mention as canonical
-                canonical = cluster[0].lower()
-                for mention in cluster[1:]:
-                    replacements[mention.lower()] = canonical
-            
-            # Apply replacements
-            resolved = []
-            for s, r, o in relationships:
-                s_resolved = replacements.get(s, s)
-                o_resolved = replacements.get(o, o)
-                
-                # Convert pronouns
-                if s_resolved in ["i", "me", "my"]:
-                    s_resolved = "you"
-                if o_resolved in ["i", "me", "my"]:
-                    o_resolved = "you"
-                
-                resolved.append((s_resolved, r, o_resolved))
-            
-            return resolved
+            # Use CoreferenceResolver instead of raw model
+            result = self._coref.resolve_coreferences(relationships, doc, doc.text if hasattr(doc, 'text') else "")
+            return result.resolved_triples
         except Exception as e:
             logger.debug(f"[Coref] Resolution failed: {e}")
             return relationships

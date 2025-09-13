@@ -17,9 +17,12 @@ from dataclasses import dataclass
 from loguru import logger
 
 try:
-    from services.fastcoref import FCoref
-except Exception:
+    from fastcoref import FCoref
+    FASTCOREF_AVAILABLE = True
+except Exception as e:
     FCoref = None
+    FASTCOREF_AVAILABLE = False
+    logger.warning(f"[CoreferenceResolver] fastcoref not available: {e}")
 
 
 @dataclass
@@ -38,7 +41,7 @@ class CoreferenceResolver:
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize coreference resolver with configuration"""
-        self.use_coref = config.get('use_coref', False) and FCoref is not None
+        self.use_coref = config.get('use_coref', False) and FASTCOREF_AVAILABLE and FCoref is not None
         self.coref_max_entities = config.get('coref_max_entities', 24)
         self.device = config.get('coref_device', 'cpu')
         

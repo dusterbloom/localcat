@@ -171,7 +171,7 @@ class HotMemoryConfig:
     def _has_coref(self) -> bool:
         """Check if coreference is available"""
         try:
-            from services.fastcoref import FCoref
+            from fastcoref import FCoref
             return FCoref is not None
         except Exception:
             return False

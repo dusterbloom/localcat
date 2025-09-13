@@ -49,7 +49,7 @@ try:
 except Exception:
     HybridRelationExtractor = None
 try:
-    from services.fastcoref import FCoref
+    from fastcoref import FCoref
 except Exception:
     FCoref = None
 
