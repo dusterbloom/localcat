@@ -1,0 +1,97 @@
+meta:
+  language: universal
+  version: 5.0
+  performance:
+    target_latency: "<200ms"
+    max_triples_per_sentence: 15
+
+# Adapted from ASI_UNIVERSAL.yaml - testing basic patterns
+rules:
+
+  # 1. Universal SVO (adapted from ASI)
+  - name: ASI_UNIVERSAL_SVO
+    kind: relation
+    priority: 200
+    pattern:
+      anchor: {pos: "VERB", dep: "ROOT"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj}
+        - {from: anchor, rel: "^obj|^dobj", as: obj}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{anchor.lemma}"
+        obj: "{obj.text}"
+        canon: "ASI_SVO"
+
+  # 2. Universal SVO with oblique (works at, lives in) - spaCy format
+  - name: ASI_UNIVERSAL_SVO_OBL
+    kind: relation
+    priority: 195
+    pattern:
+      anchor: {pos: "VERB", dep: "ROOT"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj}
+        - {from: anchor, rel: "^prep", as: prep}
+        - {from: prep, rel: "^pobj", as: obl}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{anchor.lemma}_{prep.lemma}"
+        obj: "{obl.text}"
+        canon: "ASI_SVO_OBL"
+
+  # 3. Universal Ditransitive (give X to Y)
+  - name: ASI_UNIVERSAL_DITRANS
+    kind: relation
+    priority: 190
+    pattern:
+      anchor: {pos: "VERB", dep: "ROOT"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subj}
+        - {from: anchor, rel: "^obj", as: theme}
+        - {from: anchor, rel: "^obl", as: recip}
+        - {from: recip, rel: "^case", as: prep}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{anchor.lemma}"
+        obj: "{theme.text}"
+        canon: "ASI_DITRANS_THEME"
+      - subj: "{subj.text}"
+        pred: "{anchor.lemma}_{prep.lemma}"
+        obj: "{recip.text}"
+        canon: "ASI_DITRANS_RECIP"
+    guards:
+      prep_lemma_in: ["to", "for", "a", "para", "zu", "à", "per"]
+
+  # 4. Universal Copula (from our working version + ASI improvements)
+  - name: ASI_UNIVERSAL_COPULA
+    kind: relation
+    priority: 185
+    pattern:
+      anchor: {pos: "AUX", lemma: "be|is|are|was|were|seem|appear|look|feel|sound|become"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj}
+        - {from: anchor, rel: "^attr|^acomp", as: comp}
+    emit:
+      - subj: "{subj.text}"
+        pred: "be"
+        obj: "{comp.text}"
+        canon: "ASI_COPULA"
+
+  # 5. Universal Name copula (My name is X)
+  - name: ASI_MY_NAME_IS
+    kind: relation
+    priority: 220  # Highest priority
+    pattern:
+      anchor: {pos: "AUX", lemma: "be|is|are|was|were"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: name_noun}
+        - {from: name_noun, rel: "^poss", as: poss_pron}
+        - {from: anchor, rel: "^attr", as: actual_name}
+    emit:
+      - subj: "you"
+        pred: "has_name"
+        obj: "{actual_name.subtree}"
+        canon: "ASI_MY_NAME"
+    guards:
+      name_noun_lemma_in: ["name"]
+      poss_pron_lemma_in: ["my", "i"]

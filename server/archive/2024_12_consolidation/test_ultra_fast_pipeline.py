@@ -102,11 +102,31 @@ def fast_extraction(text: str):
     }
 
 def main():
+    # Test both our semantic approach and diverse UD patterns from test_27_patterns.py
     sentences = [
+        # Our current test set
         "Alice feeds the cat in the morning.",
         "The tall boy who lives in Rome often plays piano in the evenings.",
         "The CEO announced that the company would restructure after declining profits.",
-        "After the festival ended in July 2022, Maria, a renowned chef from Barcelona, moved to Paris where she began teaching at a culinary school while writing her memoirs."
+        "After the festival ended in July 2022, Maria, a renowned chef from Barcelona, moved to Paris where she began teaching at a culinary school while writing her memoirs.",
+
+        # Diverse UD patterns from archive/experimental/test_27_patterns.py
+        "My name is Alex Thompson",
+        "I live in Seattle",
+        "I work at Microsoft",
+        "My dog's name is Potola",
+        "Caroline went to the LGBTQ support group",
+        "Melanie painted a sunrise in 2022",
+        "Caroline moved from Sweden 4 years ago",
+        "Caroline has had her current group of friends for 4 years",
+        "Melanie has read Nothing is Impossible and Charlotte's Web",
+        "Caroline participated in a pride parade",
+        "The old red car belongs to me",
+        "Sarah and John are friends",
+        "I have three pets",
+        "My favorite color is blue",
+        "I was born in 1995",
+        "My son is named Jake"
     ]
 
     print("🚀 ULTRA FAST SEMANTIC EXTRACTION PIPELINE")
