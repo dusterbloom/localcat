@@ -1,0 +1,311 @@
+meta:
+  language: universal
+  version: 2.0
+  performance:
+    target_latency: "<500ms"
+    max_triples_per_sentence: 12
+  joiner:
+    pred_default: "{verb_lemma}{prep_suffix}{prt_suffix}"
+  engine:
+    propagate_conj: ["subj", "obj", "dep"]
+    read_mwadp: true
+    merge_name_deps: ["flat:name", "flat", "compound", "fixed"]
+
+# Enhanced rules incorporating ASI insights
+rules:
+
+  # 1. Active SVO (Enhanced)
+  - name: SVO_ACTIVE_ENHANCED
+    kind: relation
+    priority: 100
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj}
+        - {from: anchor, rel: "^obj|^dobj", as: obj}
+        - {from: anchor, rel: "^compound:prt$", as: prt}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}{prt_suffix}"
+        obj: "{obj.text}"
+        canon: "SVO_ENHANCED"
+
+  # 2. Coordination Propagation - Subjects
+  - name: COORD_SUBJECTS
+    kind: relation
+    priority: 95
+    pattern:
+      anchor: {pos: "NOUN|PROPN"}
+      edges:
+        - {from: anchor, rel: "^conj", as: conj_subj}
+        - {from: anchor, rel: "^cc", as: cc}
+    emit:
+      - subj: "{anchor.text}"
+        pred: "{verb_head.lemma}"
+        obj: "{verb_obj.text}"
+        canon: "COORD_SUBJ_1"
+      - subj: "{conj_subj.text}"
+        pred: "{verb_head.lemma}"
+        obj: "{verb_obj.text}"
+        canon: "COORD_SUBJ_2"
+
+  # 3. Modal + Verb chains
+  - name: MODAL_VERB_CHAIN
+    kind: relation
+    priority: 90
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^aux", as: aux}
+        - {from: anchor, rel: "^nsubj", as: subj}
+        - {from: anchor, rel: "^obj", as: obj}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{aux.lemma}_{verb_lemma}"
+        obj: "{obj.text}"
+        canon: "MODAL_VERB"
+
+  # 4. Complex Nominals (CEO of Microsoft)
+  - name: COMPLEX_NOMINALS
+    kind: relation
+    priority: 85
+    pattern:
+      anchor: {pos: "NOUN"}
+      edges:
+        - {from: anchor, rel: "^nmod", as: modifier}
+        - {from: modifier, rel: "^case", as: case}
+    emit:
+      - subj: "{modifier.text}"
+        pred: "role_{anchor.lemma}"
+        obj: ""
+        canon: "COMPLEX_NOMINAL"
+      - subj: ""
+        pred: "{anchor.lemma}_{case.lemma}"
+        obj: "{modifier.text}"
+        canon: "NOMINAL_RELATION"
+
+  # 5. Comparative constructions
+  - name: COMPARATIVE
+    kind: relation
+    priority: 80
+    pattern:
+      anchor: {pos: "ADJ|ADV"}
+      edges:
+        - {from: anchor, rel: "^nmod", as: comparator}
+        - {from: comparator, rel: "^case", as: case}
+    emit:
+      - subj: "{anchor.head.text}"
+        pred: "{anchor.lemma}_{case.lemma}"
+        obj: "{comparator.text}"
+        canon: "COMPARATIVE"
+
+  # 6. Temporal expressions
+  - name: TEMPORAL_ADVCL
+    kind: relation
+    priority: 75
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^advcl", as: temporal_clause}
+        - {from: temporal_clause, rel: "^mark", as: temporal_marker}
+    emit:
+      - subj: "{anchor.text}"
+        pred: "{temporal_marker.lemma}"
+        obj: "{temporal_clause.text}"
+        canon: "TEMPORAL"
+
+  # 7. Quantifier handling
+  - name: QUANTIFIERS
+    kind: relation
+    priority: 85
+    pattern:
+      anchor: {pos: "NOUN"}
+      edges:
+        - {from: anchor, rel: "^det", as: quantifier}
+    emit:
+      - subj: "{anchor.text}"
+        pred: "quantified_as"
+        obj: "{quantifier.text}"
+        canon: "QUANTIFIER"
+    guards:
+      quantifier_lemma_in: ["all", "every", "some", "many", "few"]
+
+  # 8. Negation handling
+  - name: NEGATION
+    kind: relation
+    priority: 95
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^advmod", as: negation}
+        - {from: anchor, rel: "^nsubj", as: subj}
+        - {from: anchor, rel: "^obj", as: obj}
+    emit:
+      - subj: "{subj.text}"
+        pred: "not_{verb_lemma}"
+        obj: "{obj.text}"
+        canon: "NEGATION"
+    guards:
+      negation_lemma_in: ["not", "never", "no"]
+
+  # 9. Clause embedding (I think that...)
+  - name: CLAUSE_EMBEDDING
+    kind: relation
+    priority: 70
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: matrix_subj}
+        - {from: anchor, rel: "^ccomp", as: embedded}
+    emit:
+      - subj: "{matrix_subj.text}"
+        pred: "{verb_lemma}"
+        obj: "{embedded.subtree}"
+        canon: "EMBEDDING"
+
+  # 10. Enhanced Copula (ASI-inspired)
+  - name: COPULA_COMPREHENSIVE
+    kind: relation
+    priority: 110
+    pattern:
+      anchor: {pos: "AUX", lemma: "be|is|are|was|were|seem|appear|look|feel|sound|become"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj}
+        - {from: anchor, rel: "^attr|^acomp", as: comp}
+    emit:
+      - subj: "{subj.text}"
+        pred: "be"
+        obj: "{comp.text}"
+        canon: "COPULA_ATTR"
+
+  # 10b. Name constructions (special copula case)
+  - name: NAME_COPULA
+    kind: relation
+    priority: 115
+    pattern:
+      anchor: {pos: "AUX", lemma: "be|is|are|was|were"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subj}
+        - {from: anchor, rel: "^attr", as: name}
+    emit:
+      - subj: "{subj.text}"
+        pred: "has_name"
+        obj: "{name.text}"
+        canon: "NAME_COP"
+    guards:
+      subj_lemma_in: ["name"]
+
+  # 10d. "My name is X" pattern with pronoun normalization
+  - name: MY_NAME_IS
+    kind: relation
+    priority: 120
+    pattern:
+      anchor: {pos: "AUX", lemma: "be|is|are|was|were"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: name_noun}
+        - {from: name_noun, rel: "^poss", as: poss_pron}
+        - {from: anchor, rel: "^attr", as: actual_name}
+    emit:
+      - subj: "you"
+        pred: "has_name"
+        obj: "{actual_name.subtree}"
+        canon: "MY_NAME_COP"
+    guards:
+      name_noun_lemma_in: ["name"]
+      poss_pron_lemma_in: ["my", "i"]
+
+  # 10c. Adjective copula with semantic predicates
+  - name: ADJECTIVE_COPULA
+    kind: relation
+    priority: 105
+    pattern:
+      anchor: {pos: "AUX", lemma: "be|is|are|was|were"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subj}
+        - {from: anchor, rel: "^acomp", as: adj}
+    emit:
+      - subj: "{subj.text}"
+        pred: "is_{adj.lemma}"
+        obj: "{adj.text}"
+        canon: "ADJ_COP"
+    guards:
+      adj_pos: "ADJ"
+
+  # 11. Passive with agent
+  - name: PASSIVE_ENHANCED
+    kind: relation
+    priority: 95
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj:pass", as: patient}
+        - {from: anchor, rel: "^obl:agent", as: agent}
+    emit:
+      - subj: "{agent.text}"
+        pred: "{verb_lemma}"
+        obj: "{patient.text}"
+        canon: "PASSIVE_ENHANCED"
+
+  # 12. Ditransitive
+  - name: DITRANSITIVE
+    kind: relation
+    priority: 90
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subj}
+        - {from: anchor, rel: "^obj", as: theme}
+        - {from: anchor, rel: "^iobj", as: recip}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}_to"
+        obj: "{recip.text}"
+        canon: "DITRANS_RECIP"
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}"
+        obj: "{theme.text}"
+        canon: "DITRANS_THEME"
+
+  # 13. Verb + preposition
+  - name: VERB_PREP_ENHANCED
+    kind: relation
+    priority: 85
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subj}
+        - {from: anchor, rel: "^obl", as: dep}
+        - {from: dep, rel: "^case", as: case}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}_{case.lemma}"
+        obj: "{dep.text}"
+        canon: "VERB_PREP"
+
+  # 14. Possessive relations
+  - name: POSSESSIVE
+    kind: relation
+    priority: 70
+    pattern:
+      anchor: {pos: "NOUN"}
+      edges:
+        - {from: anchor, rel: "^nmod:poss", as: possessor}
+    emit:
+      - subj: "{possessor.text}"
+        pred: "possess"
+        obj: "{anchor.text}"
+        canon: "POSSESSIVE"
+
+  # 15. Apposition
+  - name: APPOSITION
+    kind: relation
+    priority: 70
+    pattern:
+      anchor: {pos: "NOUN|PROPN"}
+      edges:
+        - {from: anchor, rel: "^appos", as: appositive}
+    emit:
+      - subj: "{anchor.text}"
+        pred: "aka"
+        obj: "{appositive.text}"
+        canon: "APPOSITION"

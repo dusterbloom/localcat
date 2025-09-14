@@ -1,0 +1,613 @@
+meta:
+  language: universal
+  version: unknown-model
+  performance:
+    target_latency: "<500ms"
+    max_triples_per_sentence: 15  # Prevent coordination explosion
+    recursion_depth: 5  # Prevent deep embedding stack overflow
+    cache: 
+      - lemma_normalization
+      - multiword_adp
+      - entity_canonicalization
+  joiner:
+    pred_default: "{verb_lemma}{modal_suffix}{aspect_suffix}{prep_suffix}{prt_suffix}{neg_suffix}"
+    entity_merging: ["flat:name", "flat", "compound", "fixed", "appos:name"]
+    coord_expansion: ["nsubj", "obj", "iobj", "obl", "nmod"]  # Propagate to these roles
+  templates:  # Sophisticated variable expansion system
+    coord_subjects: "expand_conjunctions({nsubj}, {cc}, {conj})"
+    modal_aspect_pred: "normalize_aux_chain({aux_modals}, {aux_aspects}, {main_verb})"
+    entity_canonical: "merge_name_components({flat}, {compound}, {appos})"
+    negation_marker: "append_negation({verb_lemma}, {neg_present})"
+    temporal_anchor: "extract_temporal_relation({advcl}, {main_clause})"
+    quant_scope: "add_quantification_marker({det_quant}, {nsubj})"
+    clause_scoping: "scope_embedded_clause({ccomp}, {matrix_verb})"
+  engine:
+    propagate_conj: ["subj", "obj", "iobj", "obl", "nmod", "obl:agent"]
+    read_mwadp: true
+    merge_name_deps: ["flat:name", "flat", "compound", "fixed", "appos:name"]
+    handle_ellipsis: true
+    cross_lingual_lemmas:  # Minimal but comprehensive for top 5 languages
+      copulas: ["be", "ser", "estar", "sein", "être", "essere", "esse"]
+      modals: ["will", "shall", "can", "may", "va", "ira", "werden", "können", "aller", "potere"]
+      negation: ["not", "no", "nicht", "ne", "non", "pas", "jamais"]
+      temporal: ["after", "before", "during", "después", "antes", "nach", "vor", "après", "prima"]
+      quantifiers: ["all", "every", "some", "no", "todos", "cada", "algunos", "alle", "jeder", "tous"]
+    performance_hints:
+      parallelize: ["coord_expansion", "quantifier_propagation"]
+      memoize: ["ud_relation_patterns", "lemma_normalization"]
+      cap_output: true
+
+# ---------- CORE VERB-PREDICATES (ENHANCED) ----------
+rules:
+
+  # 1. Active SVO (Enhanced with coordination, modals, negation)
+  - name: SVO_ACTIVE_ENHANCED
+    kind: relation
+    priority: 120
+    pattern:
+      anchor: {pos: "VERB", rel: "ROOT"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj, expand: coord_subjects}
+        - {from: anchor, rel: "^obj|^dobj", as: obj, expand: coord_objects}
+        - {from: anchor, rel: "^compound:prt$", as: prt?, pos: "PART"}
+        - {from: anchor, rel: "^aux:mod|^aux|advmod:neg", as: modifiers}
+    emit:
+      - subj: "{subj_expanded.text}"
+        pred: "{modal_aspect_pred}{verb_lemma}{prep_suffix}{prt_suffix}{neg_suffix}"
+        obj: "{obj_expanded.text}"
+        confidence: 0.95
+        canon: "SVO_ACTIVE[enhanced]"
+    helpers:
+      expand_coordination: true
+      normalize_modals: true
+      propagate_negation: true
+    languages: [all]
+
+  # 2. Passive → Active (with/without agent, enhanced scoping)
+  - name: PASSIVE_AGENT_ENHANCED
+    kind: relation
+    priority: 110
+    pattern:
+      anchor: {pos: "VERB", rel: "ROOT"}
+      edges:
+        - {from: anchor, rel: "^nsubj:pass|^nsubj", as: patient, expand: coord_subjects}
+        - {from: anchor, rel: "^obl:agent|^nmod:agent", as: agent?}
+        - {from: agent?, rel: "^case:by|^case", as: by?}
+        - {from: anchor, rel: "^aux:pass", as: aux_pass?}
+    emit:
+      - if: "{agent_present}"
+        subj: "{agent.text}"
+        pred: "{modal_aspect_pred}{verb_lemma}{neg_suffix}"
+        obj: "{patient_expanded.text}"
+        confidence: 0.92
+        canon: "PASSIVE→ACTIVE[agent]"
+      - else:
+        subj: "{patient_expanded.text}"
+        pred: "undergo_{modal_aspect_pred}{verb_lemma}{neg_suffix}"
+        obj: ""
+        confidence: 0.88
+        canon: "PASSIVE_NO_AGENT[enhanced]"
+    guards:
+      require_aux_for_perfect: true
+    languages: [all]
+
+  # 3. Verb + Oblique (Prep) - Enhanced for complex nominals
+  - name: VERB_OBL_CASE_ENHANCED
+    kind: relation
+    priority: 105
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj, expand: coord_subjects}
+        - {from: anchor, rel: "^obl|^nmod", as: dep, expand: entity_canonical}
+        - {from: dep, rel: "^case|^fixed", as: case}
+        - {from: dep, rel: "^nmod:poss|^nmod", as: complex_modifier?, recursive: true}
+        - {from: anchor, rel: "^compound:prt$", as: prt?, pos: "PART"}
+    emit:
+      - subj: "{subj_expanded.text}"
+        pred: "{modal_aspect_pred}{verb_lemma}_{case.lemma}_{complex_mod.text?}{prt_suffix}{neg_suffix}"
+        obj: "{dep_canonical.text}"
+        confidence: 0.90
+        canon: "VERB-OBL[complex]"
+      - if: "{complex_modifier_present}"
+        subj: ""
+        pred: "{dep.head.lemma}_of_{complex_modifier.text}"
+        obj: "{complex_modifier_canonical.text}"
+        confidence: 0.85
+        canon: "COMPLEX_NOMINAL_ROLE"
+    languages: [all]
+    example: "CEO of Microsoft works at Google" → ("CEO", "work_at", "Google"), ("", "CEO_of", "Microsoft")
+
+  # 4-6. Ditransitive Patterns (Full Coverage: iobj, obl:to, dative shift)
+  - name: DITRANS_FULL_COVERAGE
+    kind: relation
+    priority: 100
+    pattern:
+      anchor: {pos: "VERB", lemma_in: ["give", "send", "tell", "show", "dar", "enviar", "dire", "sagen"]}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subj, expand: coord_subjects}
+        - {from: anchor, rel: "^obj|^dobj", as: theme, expand: coord_objects}
+        - type: iobj_ditrans
+          edges:
+            - {from: anchor, rel: "^iobj", as: recip}
+          emit:
+            - subj: "{subj_expanded.text}"
+              pred: "{verb_lemma}_to"
+              obj: "{recip.text}"
+              confidence: 0.93
+            - subj: "{subj_expanded.text}"
+              pred: "{verb_lemma}"
+              obj: "{theme_expanded.text}"
+              confidence: 0.93
+        - type: obl_to_ditrans
+          edges:
+            - {from: anchor, rel: "^obl", as: recip}
+            - {from: recip, rel: "^case", lemma_in: ["to", "a", "para", "à", "an"], as: case}
+          emit:
+            - subj: "{subj_expanded.text}"
+              pred: "{verb_lemma}_to"
+              obj: "{recip_canonical.text}"
+              confidence: 0.91
+            - subj: "{subj_expanded.text}"
+              pred: "{verb_lemma}"
+              obj: "{theme_expanded.text}"
+              confidence: 0.91
+        - type: dative_shift
+          edges:
+            - {from: anchor, rel: "^obj", as: x, pos: "NOUN|PROPN"}
+            - {from: anchor, rel: "^obj|^iobj", as: y, pos: "NOUN|PROPN"}
+          emit:
+            - subj: "{subj_expanded.text}"
+              pred: "{verb_lemma}_to"
+              obj: "{y_canonical.text}"
+              confidence: 0.89
+            - subj: "{subj_expanded.text}"
+              pred: "{verb_lemma}"
+              obj: "{x_canonical.text}"
+              confidence: 0.89
+    languages: [en, es, fr, it, de]
+
+  # 7-9. Modal/Aspectual Chain Normalization (Full Coverage)
+  - name: MODAL_ASPECT_CHAIN
+    kind: relation
+    priority: 130  # Higher priority for normalization
+    pattern:
+      anchor: {pos: "VERB", rel: "ROOT"}
+      edges:
+        - {from: anchor, rel: "^aux:mod|^aux", as: aux_chain, recursive: true, max_depth: 3}
+        - {from: anchor, rel: "^nsubj", as: subj, expand: coord_subjects}
+        - {from: anchor, rel: "^obj|^obl", as: obj?}
+        - {from: anchor, rel: "^advmod:neg", as: neg?}
+    helpers:
+      normalize_aux_chain:
+        - modal: ["will", "shall", "can", "may", "might", "va", "ira", "werden", "können", "potere"] → "_future|_ability|_possibility"
+        - perfect: ["have", "has", "ha", "hat", "avoir"] → "_perfect"
+        - progressive: ["be", "being", "estar", "sein"] + "ing|ando|endo" → "_progressive"
+        - passive: ["be", "been", "être", "essere"] + "en|ed|ado|ato" → "_passive"
+    emit:
+      - subj: "{subj_expanded.text}"
+        pred: "{modal_aspect_pred}{verb_lemma}{neg_suffix}"
+        obj: "{obj_canonical.text?}"
+        temporal_anchor: "{extract_temporal_modifiers}"
+        confidence: 0.94
+        canon: "MODAL_ASPECT[normalized]"
+    languages: [all]
+    example: "She will have been working" → ("She", "work_future_perfect_progressive", "")
+
+  # 10-12. Coordination Propagation (Complete Coverage: subj/obj/verb/adj)
+  - name: COORDINATION_FULL_PROPAGATION
+    kind: relation
+    priority: 125
+    pattern:
+      type: subject_coord
+      anchor: {pos: "NOUN|PROPN"}
+      edges:
+        - {from: anchor, rel: "^cc:and|^cc:or", as: cc}
+        - {from: cc, rel: "^conj", as: conj_subj, pos: "NOUN|PROPN"}
+      context: verb_head = "{anchor.head}"
+      emit:
+        - subj: "{anchor_canonical.text}"
+          pred: "{verb_head.lemma}"
+          obj: "{verb_head_dobj?}"
+          confidence: 0.96
+        - subj: "{conj_subj_canonical.text}"
+          pred: "{verb_head.lemma}"
+          obj: "{verb_head_dobj?}"
+          confidence: 0.96
+      type: object_coord
+      anchor: {pos: "NOUN|PROPN", rel: "^obj|^iobj|^obl"}
+      edges:
+        - {from: anchor, rel: "^cc", as: cc}
+        - {from: cc, rel: "^conj", as: conj_obj}
+      emit:
+        - subj: "{verb_nsubj.text}"
+          pred: "{verb_lemma}_to"
+          obj: "{anchor_canonical.text}"
+        - subj: "{verb_nsubj.text}"
+          pred: "{verb_lemma}_to"
+          obj: "{conj_obj_canonical.text}"
+      type: verb_coord
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^cc", as: cc}
+        - {from: cc, rel: "^conj", as: conj_verb, pos: "VERB"}
+      emit:
+        - subj: "{shared_nsubj.text}"
+          pred: "{anchor.lemma}"
+          obj: "{anchor_dobj?}"
+        - subj: "{shared_nsubj.text}"
+          pred: "{conj_verb.lemma}"
+          obj: "{anchor_dobj?}"
+    guards:
+      max_expansions: 5  # Performance protection
+      require_parallel_structure: true
+    languages: [all]
+    example: "John and Mary gave books to us" → 4 coordinated triples
+
+  # 13-15. Complex Nominal Predicates (CEO of, professor de, etc.)
+  - name: COMPLEX_NOMINAL_ROLES
+    kind: relation
+    priority: 95
+    pattern:
+      anchor: {pos: "NOUN|PROPN"}
+      edges:
+        - {from: anchor, rel: "^nmod:poss|^nmod", as: modifier}
+        - {from: modifier, rel: "^case|^fixed", lemma_in: ["of", "de", "di", "von", "del", "des"], as: case}
+        - {from: anchor, rel: "^compound|^flat", as: name_components?, recursive: true}
+        - {from: anchor, rel: "^acl:relcl", as: relative_clause?}
+    emit:
+      - subj: ""
+        pred: "{anchor.lemma}_{case.lemma}"
+        obj: "{modifier_canonical.text}"
+        confidence: 0.87
+        canon: "COMPLEX_NOMINAL[role]"
+      - if: "{name_components_present}"
+        subj: "{entity_canonical.text}"
+        pred: "has_name_components"
+        obj: "{name_components.joined}"
+        confidence: 0.90
+        canon: "ENTITY_CANONICALIZATION"
+      - if: "{relative_clause_present}"
+        subj: "{anchor_canonical.text}"
+        pred: "{relcl_verb.lemma}"
+        obj: "{relcl_dobj?}"
+        confidence: 0.85
+        canon: "NOMINAL_RELATIVE"
+    languages: [en, es, fr, it, de]
+    example: "CEO of Microsoft" → ("", "CEO_of", "Microsoft"), ("CEO of Microsoft", "has_name_components", "Microsoft")
+
+  # 16-18. Clause Embedding (Full Scoping: ccomp, acl:relcl, xcomp)
+  - name: CLAUSE_EMBEDDING_SCOPING
+    kind: relation
+    priority: 90
+    pattern:
+      type: ccomp_scoping
+      anchor: {pos: "VERB", lemma_in: ["think", "know", "believe", "say", "decir", "sagen", "dire", "croire"]}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: matrix_subj}
+        - {from: anchor, rel: "^ccomp|^xcomp", as: embedded_clause}
+        - {from: embedded_clause, rel: "^nsubj|^csubj", as: embedded_subj?}
+        - {from: embedded_clause, rel: "^obj|^dobj", as: embedded_obj?}
+        - {from: embedded_clause, rel: "^mark:that", as: complementizer?}
+      emit:
+        - subj: "{matrix_subj.text}"
+          pred: "{anchor.lemma}_that"
+          obj: "{embedded_clause.subtree_summary}"
+          confidence: 0.88
+          scope: "matrix"
+          canon: "CCOMP_MATRIX"
+        - subj: "{embedded_subj?.text?}"
+          pred: "{embedded_verb.lemma}"
+          obj: "{embedded_obj?.text?}"
+          confidence: 0.86
+          scope: "embedded"
+          canon: "CCOMP_EMBEDDED"
+      type: relative_scoping
+      anchor: {pos: "NOUN|PROPN"}
+      edges:
+        - {from: anchor, rel: "^acl:relcl", as: relcl}
+        - {from: relcl, rel: "^nsubj|^ref", as: relcl_subj?}
+        - {from: relcl, rel: "^obj", as: relcl_obj?}
+      emit:
+        - subj: "{anchor_canonical.text}"
+          pred: "{relcl_verb.lemma}"
+          obj: "{relcl_obj?.text?}"
+          confidence: 0.89
+          scope: "relative"
+          canon: "RELCL_SCOPE"
+    languages: [all]
+    example: "I think that she knows the answer" → ("I", "think_that", "she knows"), ("she", "know", "answer")
+
+  # 19-21. Quantifier Handling (Universal/Existential/Negative)
+  - name: QUANTIFIER_SCOPE_PROPAGATION
+    kind: relation
+    priority: 115
+    pattern:
+      anchor: {pos: "NOUN|PROPN"}
+      edges:
+        - {from: anchor, rel: "^det", lemma_in: ["all", "every", "each", "some", "any", "no", "todos", "cada", "algunos", "ninguno", "alle", "jeder", "tous"], as: quantifier}
+        - context: verb = "{anchor.head}"
+        - {from: verb, rel: "^obj|^obl", as: verb_complements?}
+      helpers:
+        quant_type:
+          - universal: ["all", "every", "each", "todos", "cada", "alle", "jeder", "tous"] → "quant_universal"
+          - existential: ["some", "any", "algunos", "einige", "quelques"] → "quant_existential"
+          - negative: ["no", "ninguno", "kein", "aucun"] → "quant_negative"
+    emit:
+      - subj: "{anchor_canonical.text}"
+        pred: "{quant_type}"
+        obj: ""
+        confidence: 0.92
+        canon: "QUANTIFIER_MARKER"
+      - subj: "{anchor_canonical.text}"
+        pred: "{verb.lemma}"
+        obj: "{verb_complements?.text?}"
+        quantification: "{quant_type}"
+        confidence: 0.90
+        canon: "QUANTIFIED_PREDICATE"
+    languages: [all]
+    example: "All students study math" → ("students", "quant_universal", ""), ("students", "study", "math", quant="universal")
+
+  # 22-24. Temporal Chain Extraction (advcl, tmod, before/after)
+  - name: TEMPORAL_RELATION_EXTRACTION
+    kind: relation
+    priority: 85
+    pattern:
+      type: adverbial_clause
+      anchor: {pos: "VERB", rel: "^advcl"}
+      edges:
+        - {from: anchor, rel: "^mark", lemma_in: ["after", "before", "while", "when", "después", "antes", "während", "après", "prima"], as: temporal_marker}
+        - {from: anchor, rel: "^nsubj", as: advcl_subj?}
+        - context: main_clause = "{anchor.head}"
+      emit:
+        - subj: "{advcl_subj?.text?}"
+          pred: "{anchor.lemma}"
+          obj: ""
+          temporal_role: "event1"
+          confidence: 0.87
+        - subj: "{main_clause_nsubj.text}"
+          pred: "{main_clause.verb}"
+          obj: "{main_clause_dobj?}"
+          temporal_role: "event2"
+          confidence: 0.87
+        - subj: "{anchor.lemma}"
+          pred: "{temporal_relation}"
+          obj: "{main_clause.verb}"
+          confidence: 0.85
+          canon: "TEMPORAL_CHAIN"
+      helpers:
+        temporal_relation: "{mark.lemma}_relation"
+    type: temporal_modifier
+    anchor: {pos: "NOUN|ADP"}
+    edges:
+        - {from: anchor, rel: "^obl:tmod|^nmod:tmod", as: tmod}
+        - {from: tmod, rel: "^case", as: case?}
+      emit:
+        - subj: "{verb.text}"
+          pred: "occurs_{case.lemma}"
+          obj: "{tmod.text}"
+          confidence: 0.88
+          canon: "TEMPORAL_MODIFIER"
+    languages: [all]
+    example: "After John graduated, he worked at Google" → ("John", "graduate", "", temporal="event1"), ("John", "work_at", "Google", temporal="event2"), ("graduate", "after_relation", "work")
+
+  # 25-27. Comparative Constructions (Full Coverage: than, as...as, more/less)
+  - name: COMPARATIVE_CONSTRUCTIONS
+    kind: relation
+    priority: 80
+    pattern:
+      anchor: {pos: "ADJ|ADV"}
+      edges:
+        - {from: anchor, rel: "^nmod:cmp|^obl", as: comparator}
+        - {from: comparator, rel: "^case", lemma_in: ["than", "que", "als", "di", "che"], as: case?}
+        - {from: anchor, rel: "^advmod", lemma_in: ["more", "less", "más", "menos", "mehr", "weniger"], as: degree?}
+        - type: equative
+          edges:
+            - {from: anchor, rel: "^advmod", lemma: "as"}
+            - {from: anchor, rel: "^nmod", as: as_comparator}
+          emit:
+            - subj: "{anchor.head.text}"
+              pred: "{anchor.lemma}_as"
+              obj: "{as_comparator.text}"
+              confidence: 0.86
+              canon: "EQUATIVE_AS"
+    emit:
+      - subj: "{anchor.head_canonical.text}"
+        pred: "{degree?}{anchor.lemma}_{case.lemma?}"
+        obj: "{comparator_canonical.text}"
+        confidence: 0.89
+        canon: "COMPARATIVE_THAN"
+    languages: [all]
+    example: "This is better than that" → ("This", "better_than", "that")
+
+  # 28-30. Negation Propagation (Full Coverage: advmod:neg, aux:neg, morphological)
+  - name: NEGATION_PROPAGATION
+    kind: tag+relation
+    priority: 200
+    pattern:
+      anchor: {pos: "VERB|ADJ|NOUN"}
+      edges:
+        - {from: anchor, rel: "^advmod:neg|^neg", lemma_in: ["not", "n't", "no", "nicht", "ne", "non", "pas"], as: negation}
+        - {from: anchor, rel: "^aux", lemma: "do", child_rel: "neg", as: do_support_neg?}
+        - context: dependents = "{anchor.outgoing_relations}"
+    set:
+      negated: true
+      neg_scope: "{dependent_relations}"
+    emit:
+      - for_each: "{dependents}"
+        subj: "{dependent_subj?}"
+        pred: "{negation_marker(dependent_pred)}"
+        obj: "{dependent_obj?}"
+        negation: true
+        confidence: 0.95
+        canon: "NEGATION_PROPAGATED"
+    languages: [all]
+    example: "John does not like Mary" → ("John", "like_neg", "Mary")
+
+  # 31-33. Edge Cases (Imperatives, Questions, Ellipsis, Idioms)
+  - name: EDGE_CASES_FULL_COVERAGE
+    kind: relation
+    priority: 70
+    pattern:
+      type: imperative
+      anchor: {pos: "VERB", mood: "imperative", rel: "ROOT"}
+      edges:
+        - {from: anchor, rel: "^obj|^obl", as: imperative_obj?}
+      emit:
+        - subj: "you"  # Implicit subject
+          pred: "{verb_lemma}"
+          obj: "{imperative_obj?.text?}"
+          mood: "imperative"
+          confidence: 0.92
+          canon: "IMPERATIVE"
+      type: question
+      anchor: {pos: "VERB|AUX", rel: "ROOT"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subj?}  # May be wh-moved
+        - {from: doc, rel: "^nsubj", as: wh_subj?}  # Extract from root
+      emit:
+        - subj: "{wh_subj?.text?}"
+          pred: "{verb_lemma}_question"
+          obj: "{obj?}"
+          question_type: "{root.dep}"
+          confidence: 0.90
+          canon: "QUESTION"
+      type: ellipsis_gapping
+      anchor: {pos: "NOUN|PROPN", rel: "^conj"}
+      context: parallel_verb = "{previous_conj.head.lemma}"
+      emit:
+        - subj: "{anchor.text}"
+          pred: "{parallel_verb}_inferred"
+          obj: "{inferred_obj?}"
+          inference: "ellipsis"
+          confidence: 0.82
+          canon: "ELLIPSIS_GAPPING"
+      type: idiom_recognition
+      anchor: {lemma_in: ["kick", "bucket"], pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^obj", lemma: "bucket", as: idiom_obj?}
+      emit:
+        - subj: "{nsubj.text}"
+          pred: "die_idiom"
+          obj: ""
+          idiomatic: true
+          confidence: 0.88
+          canon: "IDIOM"
+    languages: [all]
+    example: "Go home!" → ("you", "go", "home", mood="imperative")
+
+  # 34-36. Cross-Linguistic Special Cases (Psych Verbs, Existentials, Partitives)
+  - name: CROSS_LINGUISTIC_SPECIALS
+    kind: relation
+    priority: 75
+    pattern:
+      type: psych_verb_inversion
+      anchor: {pos: "VERB", lemma_in: ["piacere", "gustar", "encantar", "interessare", "interesar", "fallen", " gefallen"]}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: theme}  # Patient-like
+        - {from: anchor, rel: "^iobj|^obl", as: experiencer}
+      emit:
+        - subj: "{experiencer.text}"
+          pred: "like_{verb_lemma}"
+          obj: "{theme.text}"
+          construction: "psych_inversion"
+          confidence: 0.91
+          canon: "PSYCH_INVERSION"
+      type: existential_enhanced
+      anchor: {pos: "VERB", lemma_in: ["be", "exist", "haber", "exister", "esistere"]}
+      edges:
+        - {from: anchor, rel: "^expl|^nsubj:expl", as: expletive?}
+        - {from: anchor, rel: "^nsubj", as: existential_subj?}
+        - {from: anchor, rel: "^obl:loc|^nmod", as: location?}
+      emit:
+        - subj: "{existential_subj?.text?}"
+          pred: "exist_at"
+          obj: "{location?.text?}"
+          existential: true
+          confidence: 0.89
+          canon: "EXISTENTIAL[enhanced]"
+      type: partitive_relation  # From recent research on NomBank partitives
+      anchor: {pos: "NOUN"}
+      edges:
+        - {from: anchor, rel: "^nmod:poss", as: partitive_modifier}
+        - {from: partitive_modifier, rel: "^case", lemma_in: ["of", "de"], as: case?}
+      emit:
+        - subj: "{partitive_modifier.text}"
+          pred: "part_of"
+          obj: "{anchor.text}"
+          confidence: 0.87
+          canon: "PARTITIVE_NOMBANK"
+    languages: [es, it, fr, de, en]
+    references: 
+      - "[arxiv.org](https://arxiv.org/abs/2412.14328)"  # Semantic Role Labeling of NomBank Partitives
+
+  # 37-40. Advanced Entity and Coreference Hints
+  - name: ADVANCED_ENTITY_HANDLING
+    kind: relation
+    priority: 60
+    pattern:
+      type: name_canonicalization
+      anchor: {pos: "PROPN"}
+      edges:
+        - {from: anchor, rel: ["flat:name", "compound:name", "appos:name"], as: name_parts, recursive: true}
+        - {from: anchor, rel: "^nmod:poss", as: possessive_owner?}
+      emit:
+        - subj: "{entity_canonical.text}"
+          pred: "canonical_name"
+          obj: "{name_parts.joined}"
+          coref_cluster: "{generate_cluster_id}"
+          confidence: 0.94
+          canon: "NAME_CANONICAL"
+      type: pronoun_coref_hint
+      anchor: {pos: "PRON", lemma_in: ["he", "she", "it", "they", "él", "ella", "sie", "il", "elle"]}
+      context: antecedents = "{doc.previous_propn(3)}"
+      emit:
+        - subj: "{anchor.text}"
+          pred: "coref_to"
+          obj: "{most_likely_antecedent}"
+          confidence: 0.75  # Lower due to ambiguity
+          canon: "PRONOUN_COREF"
+      type: apposition_merge
+      anchor: {pos: "NOUN|PROPN"}
+      edges:
+        - {from: anchor, rel: "^appos", as: appositive, pos: "NOUN|PROPN"}
+      emit:
+        - subj: "{anchor_canonical.text}"
+          pred: "aka"
+          obj: "{appositive_canonical.text}"
+          confidence: 0.93
+          canon: "APPOSITION_MERGE"
+    languages: [all]
+
+  # ---------- SAFETY AND PERFORMANCE LAYER ----------
+  - name: OUTPUT_CAP_AND_CLEANUP
+    kind: postprocess
+    priority: 10
+    conditions:
+      - total_triples > 15: cap_at_15_most_confident
+      - duplicate_predicates: merge_by_confidence
+      - low_confidence < 0.70: filter_out
+      - temporal_inconsistencies: validate_chronology
+    performance:
+      max_processing_time: "400ms"
+      parallel_threads: 4
+      cache_hits_target: ">80%"
+
+  # ---------- FALLBACK AND DEFAULT RULES ----------
+  - name: FALLBACK_EXTRACTION
+    kind: relation
+    priority: 20
+    pattern:
+      anchor: {pos: "VERB|NOUN|ADJ"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^obl", as: any_subj?}
+        - {from: anchor, rel: "^obj|^nmod", as: any_obj?}
+    emit:
+      - subj: "{any_subj?.text?}"
+        pred: "{anchor.lemma}_fallback"
+        obj: "{any_obj?.text?}"
+        confidence: 0.60
+        reason: "fallback_extraction"
+        canon: "FALLBACK"
+    guards:
+      only_if_no_higher_priority: true

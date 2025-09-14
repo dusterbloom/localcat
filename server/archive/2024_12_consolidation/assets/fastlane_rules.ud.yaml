@@ -1,0 +1,379 @@
+meta:
+  language: universal
+  version: 2
+  joiner:
+    pred_default: "{verb_lemma}{prep_suffix}{prt_suffix}"
+  # engine hints (your extractor can read these)
+  engine:
+    propagate_conj: ["subj","obj","dep"]   # expand conj for these roles
+    read_mwadp: true                       # case + fixed chain -> multiword ADP
+    merge_name_deps: ["flat:name","flat","compound","fixed"]
+
+# ---------- CORE VERB-PREDICATES ----------
+rules:
+
+  # Active SVO
+  - name: SVO_ACTIVE
+    kind: relation
+    priority: 100
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj}
+        - {from: anchor, rel: "^obj|^iobj",    as: obj}
+        - {from: anchor, rel: "^compound:prt$", as: prt?, pos: "PART"}  # phrasal verb particle
+    emit:
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}{prt_suffix}"
+        obj:  "{obj.text}"
+        canon: "VERB[nsubj]-OBJ"
+
+  # Passive → Active (with agent)
+  - name: PASSIVE_AGENT
+    kind: relation
+    priority: 100
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj:pass$", as: patient}
+        - {from: anchor, rel: "^obl:agent$",  as: agent}
+        - {from: agent,  rel: "^case$",       as: by}
+    emit:
+      - subj: "{agent.text}"
+        pred: "{verb_lemma}"
+        obj:  "{patient.text}"
+        canon: "PASSIVE→ACTIVE"
+
+  # Passive (no agent) — emit neutral predicate on patient
+  - name: PASSIVE_NO_AGENT
+    kind: relation
+    priority: 40
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj:pass$", as: patient}
+    emit:
+      - subj: "{patient.text}"
+        pred: "undergo_{verb_lemma}"
+        obj:  ""
+        canon: "PASSIVE_NO_AGENT"
+    guards:
+      drop_if_obj_missing: true
+
+  # Verb + oblique (prep)  e.g., live_in, work_at
+  - name: VERB_OBL_CASE
+    kind: relation
+    priority: 95
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj}
+        - {from: anchor, rel: "^obl|^nmod",    as: dep}
+        - {from: dep,    rel: "^case$",        as: case}           # ADP (preposition)
+        - {from: dep,    rel: "^fixed$",       as: fixed?, pos: "ADP"}  # multiword ADP (in front of)
+        - {from: anchor, rel: "^compound:prt$", as: prt?, pos: "PART"}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}{prep_suffix}{prt_suffix}"
+        obj:  "{dep.text}"
+        canon: "VERB[nsubj]-case({prep})-OBJ"
+
+  # Ditransitive: direct object + iobj (give someone something)
+  - name: DITRANS_IObj
+    kind: relation
+    priority: 92
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj}
+        - {from: anchor, rel: "^obj$",         as: theme}
+        - {from: anchor, rel: "^iobj$",        as: recip}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}_to"
+        obj:  "{recip.text}"
+        canon: "VERB[nsubj]-IOBJ"
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}"
+        obj:  "{theme.text}"
+        canon: "VERB[nsubj]-OBJ"
+
+  # Ditransitive: OBJ + OBL(case=to|a|para|à)
+  - name: DITRANS_OBL_TO
+    kind: relation
+    priority: 92
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj}
+        - {from: anchor, rel: "^obj$",         as: theme}
+        - {from: anchor, rel: "^obl$",         as: recip}
+        - {from: recip,  rel: "^case$",        as: case}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}_to"
+        obj:  "{recip.text}"
+        canon: "VERB[nsubj]-OBL(to)"
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}"
+        obj:  "{theme.text}"
+        canon: "VERB[nsubj]-OBJ"
+
+  # Dative shift: two objects (give Bob the file) — obj + obj|iobj
+  - name: DATIVE_SHIFT
+    kind: relation
+    priority: 90
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj}
+        - {from: anchor, rel: "^obj$",         as: x}
+        - {from: anchor, rel: "^obj|^iobj$",   as: y}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}_to"
+        obj:  "{y.text}"
+        canon: "VERB[nsubj]-OBJ2(to)"
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}"
+        obj:  "{x.text}"
+        canon: "VERB[nsubj]-OBJ"
+
+  # Verb particle normalization (look up, pick up) — used by other rules via {prt_suffix}
+  - name: PHRASAL_VERB_TAG
+    kind: tag
+    priority: 200
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^compound:prt$", as: prt, pos: "PART"}
+    set:
+      prt_suffix: "_{prt.lemma}"
+
+# ---------- COPULA / ATTRIBUTES / APPOSITION ----------
+  - name: COPULA_ATTR
+    kind: relation
+    priority: 100
+    pattern:
+      anchor: {pos: "NOUN|PROPN|ADJ"}
+      edges:
+        - {from: anchor, rel: "^cop$",  as: cop}
+        - {from: anchor, rel: "^nsubj", as: subj}
+    emit:
+      - subj: "{subj.text}"
+        pred: "be"
+        obj:  "{anchor.text}"
+        canon: "COP-attr"
+
+  - name: COPULA_ADJ_HAS_ATTR
+    kind: relation
+    priority: 85
+    pattern:
+      anchor: {pos: "NOUN|PROPN"}
+      edges:
+        - {from: anchor, rel: "^cop$",  as: cop}
+        - {from: anchor, rel: "^nsubj", as: subj}
+        - {from: anchor, rel: "^amod$", as: adj?, pos: "ADJ"}
+    emit:
+      - subj: "{subj.text}"
+        pred: "has_attr"
+        obj:  "{adj.text}"
+        canon: "COP-attr(amod)"
+
+  - name: APPOSITION_IS_A
+    kind: relation
+    priority: 80
+    pattern:
+      anchor: {pos: "PROPN|NOUN"}
+      edges:
+        - {from: anchor, rel: "^appos$", as: app, pos: "NOUN|PROPN"}
+    emit:
+      - subj: "{anchor.text}"
+        pred: "be"
+        obj:  "{app.text}"
+        canon: "APPOS"
+
+# ---------- POSSESSIVE / GENITIVE ----------
+  - name: POSSESSIVE_DET
+    kind: relation
+    priority: 70
+    pattern:
+      anchor: {pos: "NOUN"}
+      edges:
+        - {from: anchor, rel: "^det:poss$", as: poss}
+    emit:
+      - subj: "{poss.text}"
+        pred: "possess_of"
+        obj:  "{anchor.text}"
+        canon: "NOUN[poss]-head"
+
+  - name: GENITIVE_OF_DI_DE
+    kind: relation
+    priority: 70
+    pattern:
+      anchor: {pos: "NOUN"}
+      edges:
+        - {from: anchor, rel: "^nmod$", as: dep}
+        - {from: dep,    rel: "^case$", as: case}
+    emit:
+      - subj: "{dep.text}"
+        pred: "possess_of"
+        obj:  "{anchor.text}"
+        canon: "GENITIVE(of/di/de)"
+
+# ---------- NAMING / ALIASES ----------
+  - name: NAMED_VERB
+    kind: relation
+    priority: 95
+    pattern:
+      anchor: {lemma: "name", pos: "VERB|AUX"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: who}
+        - {from: anchor, rel: "obj|xcomp|attr|obl", as: name?, pos: "PROPN|NOUN|ADJ"}
+    emit:
+      - subj: "{who.text}"
+        pred: "has_name"
+        obj:  "{name.span}"
+        canon: "NAMED"
+
+  - name: NAME_COP
+    kind: relation
+    priority: 95
+    pattern:
+      anchor: {lemma: "name", pos: "NOUN"}
+      edges:
+        - {from: anchor, rel: "^cop$",  as: cop}
+        - {from: anchor, rel: "^nsubj|^det:poss|^nmod(:poss)?$", as: owner?}
+    emit:
+      - subj: "{owner.text}"
+        pred: "has_name"
+        obj:  "{next_propn_right.span}"
+        canon: "NAME_COP"
+
+  - name: AKA_KNOWN_AS
+    kind: relation
+    priority: 60
+    pattern:
+      anchor: {pos: "VERB|ADJ", lemma: "know"}  # “is known as”
+      edges:
+        - {from: anchor, rel: "^cop$|^aux$", as: aux?}
+        - {from: anchor, rel: "^nsubj$",     as: subj}
+        - {from: anchor, rel: "^obl$",       as: alias}
+        - {from: alias,  rel: "^case$",      as: case}
+    emit:
+      - subj: "{subj.text}"
+        pred: "aka"
+        obj:  "{alias.text}"
+        canon: "KNOWN_AS"
+
+# ---------- RELATIVE CLAUSE PROPAGATION ----------
+  - name: RELCL_HEAD_AS_SUBJ
+    kind: relation
+    priority: 80
+    pattern:
+      anchor: {pos: "VERB", rel: "^acl:relcl$"}
+      edges:
+        - {from: anchor, rel: "^obj$",        as: obj?}
+        - {from: anchor, rel: "^obl|^nmod$",  as: dep?}
+    context:
+      head_from: "anchor.head"   # the noun the relcl modifies
+    emit:
+      - subj: "{head.text}"
+        pred: "{verb_lemma}{prep_suffix}"
+        obj:  "{obj_or_dep}"
+        canon: "RELCL"
+    helpers:
+      choose_obj_or_dep: true
+
+# ---------- CLAUSAL COMPLEMENTS ----------
+  - name: CCOMP_PROPOSITION
+    kind: relation
+    priority: 50
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj?}
+        - {from: anchor, rel: "^ccomp|^xcomp$", as: cl}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{verb_lemma}"
+        obj:  "{cl.subtree_text}"
+        canon: "C-COMP"
+
+# ---------- EXISTENTIALS ----------
+  - name: EXISTENTIAL
+    kind: relation
+    priority: 65
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^expl$", as: expl}
+        - {from: anchor, rel: "^nsubj", as: ent}
+        - {from: anchor, rel: "^obl|^nmod$", as: loc?}
+    emit:
+      - subj: "{ent.text}"
+        pred: "{exist_pred}"
+        obj:  "{loc_or_empty}"
+        canon: "EXISTENTIAL"
+    helpers:
+      exist_predicate: true
+
+# ---------- TEMPORAL / LOCATIVE ADJUNCTS ----------
+  - name: TEMPORAL_OBL
+    kind: relation
+    priority: 55
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^obl(:tmod)?$|^nmod(:tmod)?$", as: tmp}
+        - {from: tmp,    rel: "^case$",                      as: case?}
+    emit:
+      - subj: "{verb_lemma}"        # reified-as-subject style, or switch to Event node in your engine
+        pred: "occurs_at"
+        obj:  "{tmp.text}"
+        canon: "TMP"
+
+# ---------- COMPARATIVES ----------
+  - name: COMPARATIVE_THAN
+    kind: relation
+    priority: 45
+    pattern:
+      anchor: {pos: "ADJ|ADV"}
+      edges:
+        - {from: anchor, rel: "^obl|^nmod$", as: comp}
+        - {from: comp,   rel: "^case$",      as: case}
+    emit:
+      - subj: "{anchor.head.text}"
+        pred: "greater_than_by"
+        obj:  "{comp.text}"
+        canon: "COMPARATIVE(than)"
+    guards:
+      require_case_lemma_in: ["than","que","che"]
+
+# ---------- PSYCH / EXPERIENCER (piacere/gustar) ----------
+  - name: EXP_THEME_INVERSION
+    kind: relation
+    priority: 75
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: theme}
+        - {from: anchor, rel: "^iobj|^obl$", as: exp}
+    emit:
+      - subj: "{exp.text}"
+        pred: "like"
+        obj:  "{theme.text}"
+        canon: "EXP-THEME→LIKE"
+    guards:
+      verb_lemma_in: ["piacere","gustar","encantar","interessare","interesar"]
+
+# ---------- SAFETY / CLEANUP ----------
+  - name: NEGATION_FLAG
+    kind: tag
+    priority: 255
+    pattern:
+      anchor: {pos: "VERB|AUX|ADJ|NOUN"}
+      edges:
+        - {from: anchor, rel: "^neg$", as: neg}
+    set:
+      negated: true

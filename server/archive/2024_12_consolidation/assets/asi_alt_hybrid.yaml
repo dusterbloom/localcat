@@ -1,0 +1,180 @@
+meta:
+  language: universal
+  version: 6.0-hybrid
+  performance:
+    target_latency: "<150ms"
+    max_triples_per_sentence: 20
+
+# Hybrid: ASI_ALT insights with our current syntax
+rules:
+
+  # 1. Advanced SVO (inspired by ASI_ALT's SVO_ACTIVE)
+  - name: ASI_ALT_SVO_ADVANCED
+    kind: relation
+    priority: 200
+    pattern:
+      anchor: {pos: "VERB"}  # No ROOT requirement (ASI_ALT insight)
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subj}
+        - {from: anchor, rel: "^obj|^dobj", as: obj}
+        - {from: anchor, rel: "^compound:prt", as: prt}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{anchor.lemma}_{prt.lemma}"
+        obj: "{obj.text}"
+        canon: "SVO_PRT"
+      - subj: "{subj.text}"
+        pred: "{anchor.lemma}"
+        obj: "{obj.text}"
+        canon: "SVO_BASIC"
+
+  # 2. Advanced oblique (works at, lives in) - ASI_ALT style
+  - name: ASI_ALT_SVO_OBLIQUE
+    kind: relation
+    priority: 195
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subj}
+        - {from: anchor, rel: "^prep|^obl", as: prep}
+        - {from: prep, rel: "^pobj|^case", as: obl}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{anchor.lemma}_{prep.lemma}"
+        obj: "{obl.text}"
+        canon: "SVO_OBL"
+
+  # 3. Passive transformation (ASI_ALT PASSIVE_AGENT)
+  - name: ASI_ALT_PASSIVE_AGENT
+    kind: relation
+    priority: 198
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj:pass", as: patient}
+        - {from: anchor, rel: "^obl:agent|^agent", as: agent}
+        - {from: agent, rel: "^case", as: by_prep}
+    emit:
+      - subj: "{agent.text}"
+        pred: "{anchor.lemma}"
+        obj: "{patient.text}"
+        canon: "PASSIVE_TO_ACTIVE"
+    guards:
+      by_prep_lemma_in: ["by", "par", "von", "door"]
+
+  # 4. Zero copula (ASI_ALT innovation)
+  - name: ASI_ALT_ZERO_COPULA
+    kind: relation
+    priority: 194
+    pattern:
+      anchor: {pos: "ADJ|NOUN"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subj}
+    emit:
+      - subj: "{subj.text}"
+        pred: "be"
+        obj: "{anchor.text}"
+        canon: "ZERO_COP"
+
+  # 5. Enhanced copula (better than our current)
+  - name: ASI_ALT_COPULA_ATTR
+    kind: relation
+    priority: 193
+    pattern:
+      anchor: {pos: "ADJ|NOUN"}
+      edges:
+        - {from: anchor, rel: "^cop", as: cop}
+        - {from: anchor, rel: "^nsubj", as: subj}
+    emit:
+      - subj: "{subj.text}"
+        pred: "be"
+        obj: "{anchor.text}"
+        canon: "COP_ATTR"
+
+  # 6. My name is (keeping our winning pattern)
+  - name: ASI_ALT_MY_NAME_IS
+    kind: relation
+    priority: 220
+    pattern:
+      anchor: {pos: "AUX", lemma: "be|is|are|was|were"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: name_noun}
+        - {from: name_noun, rel: "^poss", as: poss_pron}
+        - {from: anchor, rel: "^attr", as: actual_name}
+    emit:
+      - subj: "you"
+        pred: "has_name"
+        obj: "{actual_name.subtree}"
+        canon: "MY_NAME"
+    guards:
+      name_noun_lemma_in: ["name"]
+      poss_pron_lemma_in: ["my", "i"]
+
+  # 7. Ditransitive (ASI_ALT DITRANSITIVE)
+  - name: ASI_ALT_DITRANSITIVE
+    kind: relation
+    priority: 190
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subj}
+        - {from: anchor, rel: "^obj", as: theme}
+        - {from: anchor, rel: "^iobj|^obl", as: recip}
+        - {from: recip, rel: "^case", as: rcase}
+    emit:
+      - subj: "{subj.text}"
+        pred: "{anchor.lemma}_to"
+        obj: "{recip.text}"
+        canon: "DITRANS_RECIP"
+      - subj: "{subj.text}"
+        pred: "{anchor.lemma}"
+        obj: "{theme.text}"
+        canon: "DITRANS_THEME"
+    guards:
+      rcase_lemma_in: ["to", "for", "a", "para", "zu", "à"]
+
+  # 8. Possession (ASI_ALT HAVE_POSSESSION)
+  - name: ASI_ALT_POSSESSION
+    kind: relation
+    priority: 164
+    pattern:
+      anchor: {pos: "VERB", lemma: "have|has|had|own|owns|owned|possess|possesses|possessed"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: owner}
+        - {from: anchor, rel: "^obj", as: item}
+    emit:
+      - subj: "{owner.text}"
+        pred: "has"
+        obj: "{item.text}"
+        canon: "POSSESSION"
+
+  # 9. Existentials (ASI_ALT EXISTENTIAL)
+  - name: ASI_ALT_EXISTENTIAL
+    kind: relation
+    priority: 165
+    pattern:
+      anchor: {pos: "VERB", lemma: "be|is|are|was|were|exist|exists|existed"}
+      edges:
+        - {from: anchor, rel: "^expl", as: there}
+        - {from: anchor, rel: "^nsubj", as: ent}
+        - {from: anchor, rel: "^obl|^prep", as: loc}
+        - {from: loc, rel: "^pobj|^case", as: location}
+    emit:
+      - subj: "{ent.text}"
+        pred: "exist_in"
+        obj: "{location.text}"
+        canon: "EXISTENTIAL"
+
+  # 10. Apposition (ASI_ALT APPOSITION_IS_A)
+  - name: ASI_ALT_APPOSITION
+    kind: relation
+    priority: 150
+    pattern:
+      anchor: {pos: "PROPN|NOUN"}
+      edges:
+        - {from: anchor, rel: "^appos", as: app}
+    emit:
+      - subj: "{anchor.text}"
+        pred: "be"
+        obj: "{app.text}"
+        canon: "APPOS"
