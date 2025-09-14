@@ -38,28 +38,30 @@ class QualityRelation:
     semantic_roles: Dict[str, str]  # ARG0, ARG1, etc.
 
 class QualityExtractor:
-    """Enhanced extractor focused on quality over quantity"""
+    """Enhanced extractor focused on quality over quantity.
 
-    def __init__(self):
+    Thresholds and targets are configurable to allow tuning with different spaCy models
+    (e.g., en_core_web_sm vs en_core_web_trf).
+    """
+
+    def __init__(self,
+                 entity_threshold: float = 0.70,
+                 relation_threshold: float = 0.65,
+                 target_entities: int = 50,
+                 target_relations: int = 30):
         self.entity_counter = 0
         self.relation_counter = 0
 
-        # ASI1 Quality Thresholds
-        self.ENTITY_CONFIDENCE_THRESHOLD = 0.70
-        self.RELATION_CONFIDENCE_THRESHOLD = 0.65
-        self.TARGET_ENTITIES = 50
-        self.TARGET_RELATIONS = 30
+        # ASI1 Quality Thresholds (configurable)
+        self.ENTITY_CONFIDENCE_THRESHOLD = float(entity_threshold)
+        self.RELATION_CONFIDENCE_THRESHOLD = float(relation_threshold)
+        self.TARGET_ENTITIES = int(target_entities)
+        self.TARGET_RELATIONS = int(target_relations)
 
         # Clean predicate mappings
-        self.predicate_cleaners = {
-            'work_as': 'works_as',
-            'chase_across': 'chases',
-            'announce_during': 'announces',
-            'respond_to': 'responds_to',
-            'enable_In': 'enables',
-            'watch_from': 'watches',
-            'watch_under': 'observes'
-        }
+        # Keep composed verb+prep predicates as-is; only lowercase normalization is applied.
+        # Leave mapping empty to avoid collapsing spatial/temporal nuances (e.g., watch_from).
+        self.predicate_cleaners = {}
 
         # Semantic role patterns
         self.core_verbs = {
@@ -67,6 +69,16 @@ class QualityExtractor:
             'develop', 'decide', 'invest', 'enable', 'watch', 'play', 'respond',
             'save', 'injure', 'exemplify', 'challenge', 'deny', 'perform', 'counter'
         }
+        # Optional: extend via env to relax/expand coverage
+        try:
+            import os
+            extra = os.getenv('ENHANCED_LEVEL3_EXTRA_VERBS', '')
+            if extra:
+                added = {v.strip().lower() for v in extra.split(',') if v.strip()}
+                if added:
+                    self.core_verbs |= added
+        except Exception:
+            pass
 
     def extract_quality_kg(self, doc) -> Dict[str, Any]:
         """Extract quality knowledge graph with confidence filtering"""
@@ -172,45 +184,81 @@ class QualityExtractor:
                         # Prepositional relations (high-quality only)
                         prep_phrases = [child for child in token.children if child.dep_ == 'prep']
                         for prep in prep_phrases:
-                            if prep.text.lower() in ['at', 'in', 'on', 'to', 'from', 'with']:
+                            if prep.text.lower() in ['at', 'in', 'on', 'to', 'from', 'with', 'under', 'across', 'during']:
                                 pobj = [child for child in prep.children if child.dep_ == 'pobj']
                                 if pobj:
-                                    pobj_text = self._get_clean_noun_phrase(pobj[0])
+                                    pobj_head = pobj[0]
+                                    pobj_text = self._get_clean_noun_phrase(pobj_head)
 
+                                    # Primary verb+prep relation (e.g., watch_from benches)
                                     relation = QualityRelation(
                                         id=f"relation_{self.relation_counter}",
                                         subject=subj_text,
-                                        predicate=f"{token.lemma_}_{prep.text}",
+                                        predicate=f"{token.lemma_.lower()}_{prep.text.lower()}",
                                         object=pobj_text,
                                         relation_type="spatial_temporal",
-                                        confidence=0.85,
+                                        confidence=0.88 if prep.text.lower() in ['in','at','on','to','from','with'] else 0.85,
                                         source_sentence=0,
                                         semantic_roles={'ARG0': subj_text, 'ARGM': pobj_text}
                                     )
                                     relations.append(relation)
                                     self.relation_counter += 1
 
+                                    # Nested prepositions on the object noun (e.g., benches under tall oak trees)
+                                    nested_preps = [c for c in pobj_head.children if c.dep_ == 'prep']
+                                    for nprep in nested_preps:
+                                        if nprep.text.lower() in ['under', 'over', 'near', 'beside', 'behind', 'inside', 'outside']:
+                                            npobj = [c for c in nprep.children if c.dep_ == 'pobj']
+                                            if npobj:
+                                                npobj_text = self._get_clean_noun_phrase(npobj[0])
+                                                nested_rel = QualityRelation(
+                                                    id=f"relation_{self.relation_counter}",
+                                                    subject=subj_text,
+                                                    predicate=f"{token.lemma_.lower()}_{nprep.text.lower()}",
+                                                    object=npobj_text,
+                                                    relation_type="spatial_temporal",
+                                                    confidence=0.85,
+                                                    source_sentence=0,
+                                                    semantic_roles={'ARG0': subj_text, 'ARGM': npobj_text}
+                                                )
+                                                relations.append(nested_rel)
+                                                self.relation_counter += 1
+
         return relations
 
     def _get_clean_noun_phrase(self, token) -> str:
-        """Extract clean, concise noun phrases"""
-        # Get subtree but limit to essential modifiers
-        subtree_tokens = []
-        for child in token.subtree:
-            if child.pos_ in ['NOUN', 'PROPN', 'ADJ', 'DET'] and not child.is_punct:
-                subtree_tokens.append(child)
+        """Extract clean, concise noun phrases.
 
-        if not subtree_tokens:
+        - Include core determiners/adjectives/compounds around the head noun.
+        - Exclude content inside prepositional subtrees attached to this noun
+          (e.g., benches [under tall oak trees] → keep 'wooden benches').
+        """
+        # Collect indices to exclude: any tokens under child prepositions of this noun
+        exclude_idx = set()
+        for ch in token.children:
+            if ch.dep_ == 'prep':
+                for t in ch.subtree:
+                    exclude_idx.add(t.i)
+
+        # Gather allowed tokens from the noun's subtree, excluding prep subtrees
+        kept = []
+        for ch in token.subtree:
+            if ch.i in exclude_idx:
+                continue
+            if ch.pos_ in ['NOUN', 'PROPN', 'ADJ', 'DET'] and not ch.is_punct:
+                kept.append(ch)
+
+        if not kept:
             return token.text
 
-        subtree_tokens.sort(key=lambda x: x.i)
-        phrase = ' '.join([t.text for t in subtree_tokens])
+        kept.sort(key=lambda x: x.i)
+        phrase = ' '.join([t.text for t in kept])
 
-        # Clean up overly long phrases
+        # Trim excessive length while preserving the head on the right
         words = phrase.split()
-        if len(words) > 4:
-            # Take first 4 words
-            return ' '.join(words[:4])
+        if len(words) > 5:
+            # Keep up to the last 3 tokens with the head, plus up to 2 left modifiers
+            return ' '.join(words[:2] + words[-3:])
 
         return phrase.strip()
 
@@ -225,8 +273,13 @@ class QualityExtractor:
     def _clean_predicates(self, relations: List[QualityRelation]) -> List[QualityRelation]:
         """Clean up predicates for better semantics"""
         for relation in relations:
-            if relation.predicate in self.predicate_cleaners:
-                relation.predicate = self.predicate_cleaners[relation.predicate]
+            try:
+                # Normalize to lower-case; keep verb+prep composition intact
+                relation.predicate = str(relation.predicate or '').lower()
+                if relation.predicate in self.predicate_cleaners:
+                    relation.predicate = self.predicate_cleaners[relation.predicate]
+            except Exception:
+                pass
         return relations
 
     def _select_top_entities(self, entities: List[QualityEntity], target: int) -> List[QualityEntity]:

@@ -594,8 +594,43 @@ class EnhancedLevel3ExtractionStrategy(ExtractionStrategyBase):
             import spacy
             from enhanced_level3_extractor import QualityExtractor
 
-            self.nlp = spacy.load('en_core_web_sm')
-            self.extractor = QualityExtractor()
+            import os
+            # Allow model and thresholds via environment
+            spacy_model = os.getenv('ENHANCED_LEVEL3_SPACY_MODEL', 'en_core_web_sm')
+            # Accept common typo alias: en_core_web_rtf -> en_core_web_trf
+            if spacy_model.endswith('_rtf') or spacy_model == 'en_core_web_rtf':
+                logger.warning("Model alias detected: 'en_core_web_rtf' -> 'en_core_web_trf'")
+                spacy_model = spacy_model.replace('_rtf', '_trf')
+            try:
+                self.nlp = spacy.load(spacy_model)
+            except Exception as e:
+                # Graceful fallback to small model if transformer model unavailable
+                fallback_model = 'en_core_web_sm'
+                logger.warning(f"Failed to load spaCy model '{spacy_model}': {e}; falling back to '{fallback_model}'")
+                self.nlp = spacy.load(fallback_model)
+
+            # Thresholds/targets tuning
+            try:
+                ent_thr = float(os.getenv('ENHANCED_LEVEL3_ENTITY_CONF', '0.70'))
+            except Exception:
+                ent_thr = 0.70
+            try:
+                rel_thr = float(os.getenv('ENHANCED_LEVEL3_RELATION_CONF', '0.65'))
+            except Exception:
+                rel_thr = 0.65
+            try:
+                tgt_ent = int(os.getenv('ENHANCED_LEVEL3_TARGET_ENT', '50'))
+            except Exception:
+                tgt_ent = 50
+            try:
+                tgt_rel = int(os.getenv('ENHANCED_LEVEL3_TARGET_REL', '30'))
+            except Exception:
+                tgt_rel = 30
+
+            self.extractor = QualityExtractor(entity_threshold=ent_thr,
+                                              relation_threshold=rel_thr,
+                                              target_entities=tgt_ent,
+                                              target_relations=tgt_rel)
             logger.info("Enhanced Level3 Quality extractor initialized")
         except Exception as e:
             logger.warning(f"Failed to initialize Enhanced Level3 extractor: {e}")
@@ -618,14 +653,11 @@ class EnhancedLevel3ExtractionStrategy(ExtractionStrategyBase):
 
             # Convert to triples format
             triples = []
+            # Use extractor's configured relation threshold for output gating
+            rel_out_thr = getattr(self.extractor, 'RELATION_CONFIDENCE_THRESHOLD', 0.65)
             for relation in result.get('relations', []):
-                # Only include high-confidence relations
-                if relation.confidence >= 0.8:
-                    triples.append((
-                        relation.subject,
-                        relation.predicate,
-                        relation.object
-                    ))
+                if relation.confidence >= rel_out_thr:
+                    triples.append((relation.subject, relation.predicate, relation.object))
 
             # Filter and record
             filtered_triples = self.filter_triples(triples)
