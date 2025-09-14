@@ -59,14 +59,15 @@ try:
 except Exception:
     SemanticRelationshipFilter = None
 
+# Layer 3: Temporal context (alias actual class name)
 try:
-    from components.temporal.temporal_extractor import TemporalExtractor
+    from components.temporal.temporal_extractor import TemporalContextExtractor as TemporalExtractor
 except Exception:
     TemporalExtractor = None
 
-# Layer 4: Graph optimization
+# Layer 4: Graph optimization (alias actual class name)
 try:
-    from components.graph.graph_analyzer import GraphAnalyzer
+    from components.graph.graph_analyzer import KnowledgeGraphAnalyzer as GraphAnalyzer
 except Exception:
     GraphAnalyzer = None
 
@@ -111,7 +112,10 @@ class HotMemoryFacade:
         self.semantic_filter = SemanticRelationshipFilter(semantic_config) if SemanticRelationshipFilter else None
 
         temporal_config = {
-            'temporal_extraction_enabled': self.config.features.use_temporal_extraction
+            'temporal_extraction_enabled': self.config.features.use_temporal_extraction,
+            # Quick Win #1: default to optimized spaCy temporal pipeline (override via env)
+            'temporal_optimized_pipeline': os.getenv('TEMPORAL_OPTIMIZED_PIPELINE', 'true').lower() in ("1", "true", "yes"),
+            'temporal_model': os.getenv('TEMPORAL_MODEL', 'en_core_web_sm')
         }
         self.temporal_extractor = TemporalExtractor(temporal_config) if TemporalExtractor else None
 
@@ -254,7 +258,13 @@ class HotMemoryFacade:
         triples = extraction_result.triples
         neg_count = extraction_result.negation_count
         doc = extraction_result.doc
+        embeddings = extraction_result.embeddings or {}
         self.metrics['extraction_ms'].append((time.perf_counter() - extract_start) * 1000)
+        # Debug logging for extraction junk
+        logger.info(f"[DEBUG Extraction Raw] Triples: {[(s, r, d) for s, r, d in triples[:5]]}... (total {len(triples)})")
+        logger.info(f"[DEBUG Extraction Raw] Entities: {entities[:5]}... (total {len(entities)})")
+        if triples:
+            logger.info(f"[DEBUG Extraction Sources] Sample deps if doc: {[(t.text, t.dep_) for t in doc[:5]] if doc else 'No doc'}")
         
         # Stage 1b: Optional LLM-assisted micro-refiner
         if self.assisted_extractor.should_assist(text, triples, doc):
@@ -292,15 +302,14 @@ class HotMemoryFacade:
             semantic_ms = (time.perf_counter() - semantic_start) * 1000
             logger.debug(f"[HotMem] Semantic filtering: {len(semantic_result.filtered_triples)} triples (removed: {len(semantic_result.removed_triples)}, time: {semantic_ms:.1f}ms)")
 
-        # Layer 3: Apply temporal extraction if enabled
+        # Layer 3: Apply temporal context extraction if enabled
         if self.config.features.use_temporal_extraction and self.temporal_extractor:
             temporal_start = time.perf_counter()
-            temporal_result = self.temporal_extractor.extract_temporal_relationships(triples, text)
-            # Add temporal relationships to existing triples
-            if temporal_result.temporal_triples:
-                triples.extend(temporal_result.temporal_triples)
+            temporal_result = self.temporal_extractor.extract_temporal_context(triples, text)
+            # We keep triples unchanged; temporal context is tracked in result
             temporal_ms = (time.perf_counter() - temporal_start) * 1000
-            logger.debug(f"[HotMem] Temporal extraction: added {len(temporal_result.temporal_triples)} temporal triples (time: {temporal_ms:.1f}ms)")
+            ctx_count = temporal_result.extraction_stats.get('triples_with_context', 0)
+            logger.debug(f"[HotMem] Temporal extraction: context on {ctx_count} triples (time: {temporal_ms:.1f}ms)")
         
         # Rebuild entities from refined triples + text context
         ent_from_triples: Set[str] = set()
@@ -312,14 +321,13 @@ class HotMemoryFacade:
         # Layer 4: Apply graph analysis if enabled
         if self.config.features.use_graph_analysis and self.graph_analyzer:
             graph_start = time.perf_counter()
-            graph_result = self.graph_analyzer.analyze_graph(triples, entities)
-            # Enhance triples with community information if available
-            if graph_result.enhanced_triples:
-                triples = graph_result.enhanced_triples
+            graph_result = self.graph_analyzer.analyze_knowledge_graph(triples)
             graph_ms = (time.perf_counter() - graph_start) * 1000
-            logger.debug(f"[HotMem] Graph analysis: processed {len(triples)} triples, found {len(graph_result.communities)} communities (time: {graph_ms:.1f}ms)")
+            comms = len(graph_result.communities)
+            stats = graph_result.graph_stats or {}
+            logger.debug(f"[HotMem] Graph analysis: communities={comms}, stats={stats} (time: {graph_ms:.1f}ms)")
 
-        # Stage 3: Quality filtering and storage
+        # Stage 3: Quality filtering and storage (Top-K gating)
         update_start = time.perf_counter()
         now_ts = int(time.time() * 1000)
         
@@ -339,17 +347,37 @@ class HotMemoryFacade:
             # Fallback to unfiltered triples if quality module fails
             filtered = [(s, r, d, 0.5) for (s, r, d) in triples]
         
+        candidates = []
         for s, r, d, q_conf in filtered:
             # Intent-based allowlist
             should_store, legacy_conf = quality_filter.should_store_fact(s, r, d, intent)
-            confidence = float(max(q_conf, legacy_conf))
-            if should_store and confidence >= conf_thresh:
-                stored_triples.append((s, r, d))
-            
+            base_conf = float(max(q_conf, legacy_conf))
+            # Penalize generic UD-only predicates; prefer semantic relations
+            generic = (r in {'subject_of', 'determined_by', 'prepositional_object_of'}) or r.startswith('verb:')
+            factor = 0.4 if generic else 1.0
+            score = base_conf * factor
             # Always update hot indices for retrieval, regardless of storage
             self.entity_index[s].add((s, r, d))
             self.entity_index[d].add((s, r, d))
-            self.edge_meta[(s, r, d)] = {'ts': now_ts, 'weight': confidence}
+
+            # Store edge metadata with embeddings if available
+            edge_metadata = {'ts': now_ts, 'weight': score}
+            if embeddings and (s, r, d) in embeddings:
+                edge_metadata.update(embeddings[(s, r, d)])
+                logger.debug(f"[HotMem] Added embedding for triple: {s} {r} {d}")
+
+            self.edge_meta[(s, r, d)] = edge_metadata
+            if should_store and base_conf >= conf_thresh:
+                candidates.append((score, (s, r, d)))
+
+        # Top-K gating to prevent flooding the graph
+        try:
+            top_k = int(os.getenv('HOTMEM_STORE_TOPK', '8'))
+        except Exception:
+            top_k = 8
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        for _, triple in candidates[:top_k]:
+            stored_triples.append(triple)
         
         # Update recency with stored triples only
         for s, r, d in stored_triples:
@@ -364,9 +392,25 @@ class HotMemoryFacade:
         # Store final triples and link to session
         if stored_triples:
             self.store.update_session_triples(session_id, stored_triples)
-            
-            # Link extracted knowledge to session
+
+            # Store edge metadata with embeddings to database
             for s, r, d in stored_triples:
+                if (s, r, d) in self.edge_meta:
+                    edge_meta = self.edge_meta[(s, r, d)]
+                    # Extract embedding data for props
+                    props = {}
+                    if 'rel_embedding' in edge_meta:
+                        props['rel_embedding'] = edge_meta['rel_embedding']
+                    if 'original_predicate' in edge_meta:
+                        props['original_predicate'] = edge_meta['original_predicate']
+                    if 'normalized_relation' in edge_meta:
+                        props['normalized_relation'] = edge_meta['normalized_relation']
+
+                    if props:
+                        self.store.enqueue_edge_meta(s, r, d, prov='srl_semantic', lang='en', span=None, props=props, ts=now_ts)
+                        logger.debug(f"[HotMem] Persisted embedding metadata for: {s} {r} {d}")
+
+                # Link extracted knowledge to session
                 edge_id = self.store.edge_id(s, r, d)
                 self.session_store.link_knowledge_to_session(session_id, edge_id, "extracted", 0.8)
         

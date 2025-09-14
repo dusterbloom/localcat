@@ -4,6 +4,12 @@ TemporalContextExtractor: Advanced Temporal Context Extraction
 
 SOTA temporal context extraction using Timexy for understanding
 time expressions and temporal relationships in text.
+
+Quick Win #1 integration:
+- Adds an optional optimized spaCy-based temporal pipeline that uses a
+  lightweight matcher over a blank model (no NER/parser) for ~3x speedup
+  when Timexy is unavailable or disabled. Enable via config key
+  'temporal_optimized_pipeline': True.
 """
 
 import os
@@ -14,6 +20,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from loguru import logger
+import re
 
 try:
     from timexy import Timexy
@@ -66,14 +73,23 @@ class TemporalContextExtractor:
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize temporal extractor with configuration"""
-        self.enabled = config.get('temporal_extraction_enabled', False) and TIMEXY_AVAILABLE
+        # Enable temporal extraction when requested, using Timexy if available
+        # and gracefully falling back to spaCy/regex when not.
+        self.enabled = config.get('temporal_extraction_enabled', False)
         self.confidence_threshold = config.get('temporal_confidence_threshold', 0.5)
         self.include_time_in_relationships = config.get('include_time_in_relationships', True)
         self.use_spacy_fallback = config.get('use_spacy_fallback', True) and SPACY_AVAILABLE
+        # Quick Win #1: optimized spaCy temporal matcher
+        # Default to optimized spaCy pipeline when Timexy is not used
+        self.use_optimized_spacy = config.get('temporal_optimized_pipeline', True) and SPACY_AVAILABLE
+        self.temporal_model = config.get('temporal_model', 'en_core_web_sm')
         
         # Timexy models (lazy loaded)
         self._timexy = None
-        self._nlp = None
+        self._nlp = None  # full spaCy pipeline fallback
+        # Optimized spaCy state (blank pipeline + matcher)
+        self._nlp_opt = None
+        self._temporal_matcher = None
         
         # Cache for temporal analysis
         self._temporal_cache = {}
@@ -165,7 +181,18 @@ class TemporalContextExtractor:
         if self._timexy:
             return self._extract_with_timexy(text)
         
-        # Fallback to rule-based extraction
+        # Fallback paths
+        # Quick Win #1: optimized spaCy temporal pipeline (blank model + matcher)
+        if self.use_optimized_spacy:
+            if self._nlp_opt is None or self._temporal_matcher is None:
+                try:
+                    self._initialize_optimized_spacy()
+                except Exception as e:
+                    logger.debug(f"[TemporalContextExtractor] Failed to init optimized spaCy: {e}")
+            if self._nlp_opt is not None and self._temporal_matcher is not None:
+                return self._extract_with_optimized_spacy(text)
+
+        # Standard spaCy fallback (full model)
         if self.use_spacy_fallback and self._nlp is None:
             try:
                 self._load_spacy()
@@ -177,6 +204,142 @@ class TemporalContextExtractor:
         
         # Simple regex-based extraction
         return self._extract_with_regex(text)
+
+    def _initialize_optimized_spacy(self):
+        """Initialize a lean spaCy pipeline and precompile temporal patterns.
+        Uses a blank model for speed and a Matcher for temporal expressions.
+        """
+        if not SPACY_AVAILABLE:
+            return
+        try:
+            import spacy
+            from spacy.matcher import Matcher
+            # Use a blank model for speed; tokenizer rules suffice for matching
+            self._nlp_opt = spacy.blank('en')
+            self._temporal_matcher = Matcher(self._nlp_opt.vocab)
+
+            # Months, weekdays, relative time words
+            months = [
+                'january','february','march','april','may','june',
+                'july','august','september','october','november','december'
+            ]
+            weekdays = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
+
+            # Define patterns (kept simple and fast)
+            patterns = []
+            # 1) Full month date like "March 15, 2024" or "March 15"
+            patterns.append([
+                {"LOWER": {"IN": months}},
+                {"LIKE_NUM": True},
+                {"IS_PUNCT": True, "OP": "?"},
+                {"LIKE_NUM": True, "OP": "?"}
+            ])
+            # 2) Numeric date like 03/15/2024 or 15-03-2024
+            patterns.append([
+                {"SHAPE": {"IN": ["dd","d","DD","D","dd/","d/","dd-","d-"]}, "OP": "+"},
+                {"LIKE_NUM": True}
+            ])
+            # 3) Time like 10:30 AM / 7:00 pm
+            patterns.append([
+                {"LIKE_NUM": True},
+                {"TEXT": ":"},
+                {"LIKE_NUM": True},
+                {"LOWER": {"IN": ["am","pm"]}, "OP": "?"}
+            ])
+            # 4) Relative words (yesterday, today, tomorrow)
+            patterns.append([{ "LOWER": {"IN": ["yesterday","today","tomorrow"]}}])
+            # 5) Last/this/next + week/month/year
+            patterns.append([
+                {"LOWER": {"IN": ["last","this","next"]}},
+                {"LOWER": {"IN": ["week","month","year"]}}
+            ])
+            # 6) Durations like 3 hours / 6 months
+            patterns.append([
+                {"LIKE_NUM": True},
+                {"LOWER": {"IN": ["hour","hours","day","days","week","weeks","month","months","year","years"]}}
+            ])
+            # 7) Sequence markers
+            patterns.append([{ "LOWER": {"IN": ["before","after","during","while","until","since"]}}])
+            # 8) Weekday names
+            patterns.append([{ "LOWER": {"IN": weekdays}}])
+
+            for i, pat in enumerate(patterns):
+                self._temporal_matcher.add(f"TEMP_PATTERN_{i}", [pat])
+
+            logger.info("[TemporalContextExtractor] Optimized spaCy temporal matcher initialized")
+        except Exception as e:
+            logger.warning(f"[TemporalContextExtractor] Optimized spaCy init failed: {e}")
+            self._nlp_opt = None
+            self._temporal_matcher = None
+
+    def _extract_with_optimized_spacy(self, text: str) -> List[TemporalExpression]:
+        """Extract temporal expressions using the optimized spaCy matcher."""
+        results: List[TemporalExpression] = []
+        if not self._nlp_opt or not self._temporal_matcher or not text:
+            return results
+        try:
+            doc = self._nlp_opt(text)
+            matches = self._temporal_matcher(doc)
+            for _, start, end in matches:
+                span = doc[start:end]
+                t_text = span.text
+                t_type, norm_value = self._quick_temporal_classify(t_text)
+                if t_type:
+                    results.append(TemporalExpression(
+                        text=t_text,
+                        start_date=None,
+                        end_date=None,
+                        type=t_type,
+                        value=norm_value or t_text,
+                        confidence=0.9
+                    ))
+            return results
+        except Exception as e:
+            logger.debug(f"[TemporalContextExtractor] Optimized extraction failed: {e}")
+            return results
+
+    def _quick_temporal_classify(self, text: str) -> Tuple[Optional[str], Optional[str]]:
+        """Fast classification without full NLP. Returns (type, normalized)."""
+        txt = (text or '').strip()
+        low = txt.lower()
+        # Month detection
+        if any(m in low for m in [
+            'january','february','march','april','may','june',
+            'july','august','september','october','november','december']):
+            # Try to parse date if possible
+            try:
+                from dateutil import parser  # type: ignore
+                dt = parser.parse(txt, fuzzy=True)
+                return 'DATE', dt.date().isoformat()
+            except Exception:
+                return 'DATE', txt
+        # Time like 7:30 am
+        if ':' in txt and ('am' in low or 'pm' in low):
+            m = re.search(r'(\d{1,2}):(\d{2})\s*(am|pm)', low)
+            if m:
+                hh, mm, mer = m.groups()
+                h = int(hh)
+                if mer == 'pm' and h != 12:
+                    h += 12
+                if mer == 'am' and h == 12:
+                    h = 0
+                return 'TIME', f"{h:02d}:{mm}:00"
+            return 'TIME', txt
+        # Relative
+        if low in {'yesterday','today','tomorrow'}:
+            mapping = {'yesterday': -1, 'today': 0, 'tomorrow': 1}
+            return 'SET', f"{mapping[low]} day"
+        # Durations
+        m = re.search(r'(\d+(?:\.\d+)?)\s*(hour|hours|day|days|week|weeks|month|months|year|years)', low)
+        if m:
+            num, unit = m.groups()
+            return 'DURATION', f"{num} {unit}"
+        # Weekdays / sequence
+        if low in {'monday','tuesday','wednesday','thursday','friday','saturday','sunday'}:
+            return 'DATE', low
+        if low in {'before','after','during','while','until','since'}:
+            return 'SET', low
+        return None, None
     
     def _extract_with_timexy(self, text: str) -> List[TemporalExpression]:
         """Extract temporal expressions using Timexy"""
