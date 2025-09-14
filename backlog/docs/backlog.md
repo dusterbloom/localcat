@@ -120,6 +120,31 @@
 
 **Next Steps**: This system is ready for integration into production voice agents, knowledge management systems, and enterprise graph databases. The quality breakthrough opens doors to reliable semantic reasoning and intelligent agent memory systems.
 
+## 2025-09-14 — Extraction Freeze + Repo Consolidation (Clean Base for Graph/Context/Retrieval)
+
+We completed a focused cleanup to “freeze” extraction and shift energy to graph storage, context building, and retrieval.
+
+What’s locked in now
+- Default extractor: ASI1 via strategy registry; fallback: ASI2.
+- Temporal extraction: optimized spaCy matcher path enabled by default (fast, <5ms per case).
+- Storage quality gate: HOTMEM_MIN_EDGE_CONFIDENCE=0.8 to keep weak edges out of the KG.
+- Canonical ASI assets only in server/: asi1_processor.py, ASI1_8_2_3.yaml, ASI_ALT_REFINED.yaml, ULTRAGROK_V8.2.1_SPACY.yaml.
+
+Repo hygiene
+- Moved all server markdowns into backlog/docs/ (preserves research/design notes; declutters server/).
+- Archived heavy tests/diagnostics and backup YAMLs under server/archive/2024_12_consolidation/.
+- Ignored logs and test result artifacts (server/*.log, server/*_test_results.json).
+
+Short-term plan (extraction “done” for now)
+- Route any remaining extraction calls strictly through ExtractionProcessor + registry; log-deprecate legacy extractors.
+- Keep core tests runnable (level3, filtered_quality, temporal) as validation for further changes.
+- Optional: restore the missing ASI1 V8.1 pattern to return to strict 8+6 coverage (test currently tolerant).
+
+Next major focus
+- Graph storage lifecycle: provenance on edges, TTL/archival, dedup, alias whitelist for name/aka.
+- Context building: bullet quality, cross‑session profile, smarter summarizer facts.
+- Retrieval: fused KG+FTS+semantic with pre-retrieval gating and memoization.
+
 ---
 
 ## 2025-09-14 - BREAKTHROUGH: Professional Semantic Extraction Achieved

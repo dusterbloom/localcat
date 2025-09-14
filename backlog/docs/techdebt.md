@@ -9,6 +9,46 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 
 ## Current Technical Debt
 
+### ✅ Addressed on 2025-09-14 — Repo & Extraction Consolidation
+
+- Server folder clutter (markdowns, backup YAMLs, heavy tests) created noise and raised cognitive load.
+  - Action: moved all server markdowns to backlog/docs; archived heavy tests/diagnostics and backup YAMLs under server/archive/2024_12_consolidation/.
+- Inconsistent extraction surfaces (direct extractor usage vs registry) made orchestration brittle.
+  - Action: added ASI1/ASI2 as registered strategies; set ASI1 default and ASI2 fallback. Normalized ExtractionProcessor to accept sync strategies and return unified results.
+- Temporal overhead variability.
+  - Action: defaulted optimized spaCy matcher path; Timexy remains optional.
+- Weak edges entering KG.
+  - Action: enforced `HOTMEM_MIN_EDGE_CONFIDENCE` (recommended 0.8) to gate storage.
+
+### Remaining (Short-Term)
+
+- Route any remaining extraction calls through the registry and deprecate legacy direct instantiations.
+  - Risk: duplicated configuration paths; code drift.
+  - Plan: search usages and replace with ExtractionProcessor + registry; add deprecation warnings where needed.
+
+- ASI1 V8.2.1 YAML parity (currently 13 patterns accepted with warning).
+  - Risk: mismatch with strict tests/assumptions.
+  - Plan: restore missing V8.1 edge pattern to return to strict 8+6, then remove test tolerance.
+
+- Graph storage lifecycle hardening (provenance, TTL, dedup, alias whitelist for `name`/`also_known_as`).
+  - Risk: graph bloat and ambiguity in retrieval.
+  - Plan: require provenance on edges via enqueue_edge_meta, add TTL/archival, and small whitelist bypass for vetted predicates.
+
+- Documentation consistency post‑move.
+  - Risk: outdated paths and references.
+  - Plan: update architecture/migration docs in backlog/docs to reflect defaults (ASI1/ASI2, temporal optimized, storage gate) and new archive layout.
+
+### Medium-Term
+
+- UnifiedSemanticExtractor and LightweightExtractor as registry strategies (composition over monolith).
+  - Benefit: clearer responsibilities, testable modules, adaptive routing.
+
+- Retrieval fusion scoring + pre‑retrieval gating and memoization.
+  - Benefit: lower latency + higher relevancy.
+
+- Summary storage quality gate and rollup profile for cross‑session context.
+  - Benefit: stable long‑term memory and reduced noise in context.
+
 ### 🎯 HotMem Evolution Phase 2/3 Issues (Updated - 2025-09-06)
 
 **✅ RESOLVED: Entity Extraction Quality Issues (GLiNER Revolution)**  
