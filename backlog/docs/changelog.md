@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+2025-09-15 00:00 — 2025-09-15 23:59
+
+### Added
+- Centralized spaCy model cache (`services/nlp_cache.py`) with alias support (`en_core_web_rtf` → `en_core_web_trf`) and prewarm hook.
+- Lite coref mode (rule-based) alongside neural; `HOTMEM_COREF_MODE=lite|neural|none` with lazy neural import.
+- Confidence threading from Enhanced Level3 strategy into storage; per‑triple props (`confidence`, `verb`, `prep`, `normalized_relation`).
+- Scripts: `scripts/e2e/test_e2e_memory_pipeline.py`, `scripts/e2e/run_level1to3.py`, `scripts/e2e/ab_coref.py`, `scripts/tests/run_enhanced_level3_quality.py`.
+- Admin tools: `scripts/admin/edges.py` (list/promote/demote/forget), `scripts/admin/ttl_job.py` (demote/purge with `--dry`).
+
+### Changed
+- Default extraction strategy set to Enhanced Level3; `.env` now locks transformer alias and lite coref with fusion on.
+- Enhanced bullet formatting in Retrieval (fallback path conjugates verb_prep; artifact filtering; de‑duplication).
+- Retrieval fusion: user text indexed each turn into FTS to strengthen fusion without stored edges.
+
+### Fixed
+- Avoided duplicate spaCy loads across components; first‑turn latency reduced via prewarm.
+- Removed legacy extraction fallback to prevent noisy/generic triples entering the KG.
+
+— 2025-09-15 End —
 ### Added
 - ASI1/ASI2 strategies registered in the extraction registry; ASI1 set as default, ASI2 as fallback.
 - Optimized spaCy temporal matcher path (blank pipeline + precompiled patterns) enabled by default.

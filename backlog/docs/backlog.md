@@ -147,6 +147,32 @@ Next major focus
 
 ---
 
+## 2025-09-15 00:00 — 2025-09-15 23:59 — HOTMEM V7 FOUNDATIONS: ENHANCED LEVEL3 + LITE COREF + FUSION + CONFIDENCE THREADED PERSISTENCE
+
+### Summary
+- Locked in Enhanced Level3 as the default extractor with transformer preset (alias `en_core_web_rtf` → `en_core_web_trf`) and centralized spaCy cache.
+- Switched to lite coref (rule-based) for sub‑30ms extraction on short texts and ~100–150ms for questions (no heavy neural model). Kept neural as optional.
+- Threaded Enhanced Level3 per‑triple confidence into storage without “bumping”; persisted core facts for Level1–3 with natural verb_prep semantics (play_in, watch_from/under, live_in, work_at).
+- Enabled fusion (LEANN + FTS). Indexed user text each turn; optional summarizer stores episodic facts into FTS for robust retrieval.
+- Added admin tools (edges CLI, TTL job), e2e/regression scripts, and enhanced bullet formatting (natural grammar, de‑dup, artifact filtering).
+
+### Highlights
+- Quality locked: clean predicates (verb/verb_prep), preserved subject NPs (e.g., “a group of children”), no generic UD artifacts.
+- Speed maintained: centralized cache + prewarm; lite coref avoids heavy downloads.
+- Persistence: genuine extractor confidences now drive storage; promotion path remains strict and auditable (no faking).
+
+### Evidence
+- Compare script: Enhanced Level3 1700–2750× faster than Level3 with exact core relations (work_at, play_in, watch_from/under).
+- Quality regression: PASS — (work_at, park scene verb_preps, live_in) within 4–11ms on small model.
+- Level1–3 runner: persisted edges for short/medium structured texts using transformer alias.
+
+### Next (HOTMEM v7 trajectory)
+- Dual Graphs: introduce Agent Graph (AG) for ephemeral hypotheses; keep User Graph (UG) for durable facts; add policy‑based promotion (AG→UG).
+- Graph Intelligence: traversal (1–2 hop), entity importance, transitive templates; intent‑aware context layers.
+- Unified Optimizer: offline DSPy + GEPA + Tree Search; shadow mode validation; safe config promotion.
+
+— 2025-09-15 End of day checkpoint —
+
 ## 2025-09-14 - BREAKTHROUGH: Professional Semantic Extraction Achieved
 
 ### 🎯 **MAJOR MILESTONE: Semantic Quality Revolution**

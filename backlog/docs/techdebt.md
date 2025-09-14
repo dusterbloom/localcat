@@ -20,6 +20,17 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 - Weak edges entering KG.
   - Action: enforced `HOTMEM_MIN_EDGE_CONFIDENCE` (recommended 0.8) to gate storage.
 
+### 2025-09-15 — Addressed
+
+- Duplicate spaCy model loads across components causing first‑turn latency spikes.
+  - Action: centralized cache (`services/nlp_cache.py`) + prewarm; transformer alias supported.
+- Enhanced Level3 confidence not reaching storage.
+  - Action: threaded per‑triple confidence with props; storage gating uses genuine extractor conf.
+- Bullet quality inconsistencies (raw `work_at`, generic UD artifacts).
+  - Action: retrieval fallback formatter conjugates verb_prep; artifact filtering; de‑dup applied.
+- Legacy extraction fallback introducing noise.
+  - Action: removed; registry‑only extraction.
+
 ### Remaining (Short-Term)
 
 - Route any remaining extraction calls through the registry and deprecate legacy direct instantiations.
@@ -33,6 +44,10 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 - Graph storage lifecycle hardening (provenance, TTL, dedup, alias whitelist for `name`/`also_known_as`).
   - Risk: graph bloat and ambiguity in retrieval.
   - Plan: require provenance on edges via enqueue_edge_meta, add TTL/archival, and small whitelist bypass for vetted predicates.
+
+- Dual Graph introduction (UG/AG) and promotion policy path.
+  - Risk: speculative facts persisting; unclear scope.
+  - Plan: add `scope/status/policy` to edge_meta; in‑memory AG; candidate queue with eligibility/conflict/redundancy; shadow metrics.
 
 - Documentation consistency post‑move.
   - Risk: outdated paths and references.
@@ -48,6 +63,9 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 
 - Summary storage quality gate and rollup profile for cross‑session context.
   - Benefit: stable long‑term memory and reduced noise in context.
+
+- Unified Optimizer (DSPy + GEPA + Tree Search) offline pipeline.
+  - Benefit: automatic Pareto tuning for quality/latency; safe shadow promotion.
 
 ### 🎯 HotMem Evolution Phase 2/3 Issues (Updated - 2025-09-06)
 
