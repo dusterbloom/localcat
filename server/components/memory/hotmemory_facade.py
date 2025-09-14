@@ -26,6 +26,12 @@ from components.coreference.coreference_resolver import CoreferenceResolver, Cor
 from components.extraction.assisted_extractor import AssistedExtractor, AssistedExtractionResult
 from components.session.session_store import get_session_store, SessionMessage
 
+# Preferred extraction path: strategy registry
+try:
+    from components.extraction.extraction_registry import get_registry  # type: ignore
+except Exception:
+    get_registry = None  # type: ignore
+
 # Import components that still need to be extracted
 try:
     from components.processing.semantic_roles import SRLExtractor
@@ -103,6 +109,9 @@ class HotMemoryFacade:
         self.retriever = MemoryRetriever(store, defaultdict(set), self.config.get_retriever_config())
         self.coreference_resolver = CoreferenceResolver(self.config.get_coreference_config())
         self.assisted_extractor = AssistedExtractor(self.config.get_assisted_config())
+
+        # Initialize extraction registry (preferred orchestration)
+        self._extraction_registry = get_registry() if get_registry else None
 
         # Initialize Layer 3: Relationship refinement
         semantic_config = {
@@ -243,7 +252,7 @@ class HotMemoryFacade:
             self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
             
             # Extract triples even for pure questions (for testing and analysis)
-            extraction_result = self.extractor.extract(text, lang)
+            extraction_result = self._extract_with_registry(text, lang)
             _ = extraction_result.triples  # not persisted when pure question
             
             elapsed_ms = (time.perf_counter() - start) * 1000
@@ -253,7 +262,9 @@ class HotMemoryFacade:
         
         # Stage 1: Extract entities and relations using new extractor
         extract_start = time.perf_counter()
-        extraction_result = self.extractor.extract(text, lang)
+        extraction_result = self._extract_with_registry(text, lang)
+        if (not extraction_result.entities) and (not extraction_result.triples):
+            extraction_result = self.extractor.extract(text, lang)
         entities = extraction_result.entities
         triples = extraction_result.triples
         neg_count = extraction_result.negation_count
@@ -422,6 +433,48 @@ class HotMemoryFacade:
         logger.info(f"[HotMem] Summary: saved={len(stored_triples)}, pending_bullets={len(bullets)}, turn={turn_id}")
         
         return bullets, stored_triples
+
+    def _extract_with_registry(self, text: str, lang: str) -> ExtractionResult:
+        """Extract via strategy registry using default/fallback strategies.
+        Returns an ExtractionResult compatible with legacy consumers.
+        """
+        try:
+            if not self._extraction_registry:
+                return ExtractionResult([], [], 0, None, None)
+
+            default_name = os.getenv('DEFAULT_EXTRACTION_STRATEGY', 'asi1')
+            fallback_name = os.getenv('FALLBACK_EXTRACTION_STRATEGY', 'asi2')
+
+            def run(name: str):
+                try:
+                    strat = self._extraction_registry.get_strategy(name)
+                    if not strat:
+                        return []
+                    return strat.extract(text, lang) or []
+                except Exception:
+                    return []
+
+            triples = run(default_name)
+            if not triples and fallback_name and fallback_name != default_name:
+                triples = run(fallback_name)
+
+            # Derive lightweight entities from triples (subject/object set)
+            entities: List[str] = []
+            if triples:
+                try:
+                    ents = set()
+                    for s, r, d in triples:
+                        if s:
+                            ents.add(str(s))
+                        if d:
+                            ents.add(str(d))
+                    entities = list(ents)[:50]
+                except Exception:
+                    entities = []
+
+            return ExtractionResult(entities, triples, 0, None, None)
+        except Exception:
+            return ExtractionResult([], [], 0, None, None)
     
     def prewarm(self, lang: str = "en") -> None:
         """Load NLP resources up-front to avoid first-turn latency"""
