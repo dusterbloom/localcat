@@ -27,8 +27,8 @@ class ExtractionMode(Enum):
 class ExtractionProcessorConfig:
     """Configuration for extraction processor"""
     # Allow env override to keep in sync with core config
-    default_strategy: str = os.getenv("DEFAULT_EXTRACTION_STRATEGY", "enhanced_hotmem")
-    fallback_strategy: str = os.getenv("FALLBACK_EXTRACTION_STRATEGY", "lightweight")
+    default_strategy: str = os.getenv("DEFAULT_EXTRACTION_STRATEGY", "enhanced_level3")
+    fallback_strategy: str = os.getenv("FALLBACK_EXTRACTION_STRATEGY", "")
     enable_multi_strategy: bool = True
     quality_threshold: float = 0.7
     max_extraction_time: float = 2.0  # seconds

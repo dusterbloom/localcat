@@ -110,9 +110,10 @@ class ExtractionRegistry:
             EnhancedHotMemExtractionStrategy,
             PatternBasedExtractionStrategy,
             ASI1ExtractionStrategy,
-            ASI2ExtractionStrategy
+            ASI2ExtractionStrategy,
+            EnhancedLevel3ExtractionStrategy
         )
-        
+
         built_in_strategies = [
             ('hotmem', HotMemExtractionStrategy, 'HotMem-based extraction'),
             ('ud', UDExtractionStrategy, 'Universal Dependencies extraction'),
@@ -123,6 +124,7 @@ class ExtractionRegistry:
             ('pattern', PatternBasedExtractionStrategy, 'Pattern-based extraction'),
             ('asi1', ASI1ExtractionStrategy, 'ASI1 YAML-based extractor'),
             ('asi2', ASI2ExtractionStrategy, 'ASI2 YAML-based extractor'),
+            ('enhanced_level3', EnhancedLevel3ExtractionStrategy, 'Enhanced Level3 <1ms quality extraction'),
         ]
         
         for name, strategy_class, description in built_in_strategies:
@@ -313,6 +315,22 @@ class ExtractionRegistry:
                 strategies.append(strategy_info)
             
             return strategies
+
+    def get_available_strategies(self) -> List[str]:
+        """Return names of strategies that are currently available.
+
+        Matches the interface expected by processors.ExtractionProcessor.
+        """
+        with self._lock:
+            available = []
+            for name in self.strategies.keys():
+                try:
+                    if self.is_strategy_available(name):
+                        available.append(name)
+                except Exception:
+                    # Be resilient – skip problematic strategies
+                    continue
+            return available
     
     def is_strategy_available(self, name: str) -> bool:
         """Check if a strategy is available."""
@@ -526,6 +544,17 @@ class ExtractionRegistry:
             
             logger.info("Cleared all strategy caches")
     
+    async def cleanup(self) -> None:
+        """Async-friendly cleanup hook used by processors.
+
+        Clears caches but keeps registry structure for reuse during process lifetime.
+        """
+        try:
+            self.clear_cache()
+            logger.info("ExtractionRegistry cleanup completed")
+        except Exception as e:
+            logger.warning(f"ExtractionRegistry cleanup encountered an issue: {e}")
+
     def shutdown(self) -> None:
         """Shutdown the registry."""
         with self._lock:

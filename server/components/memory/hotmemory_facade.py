@@ -112,6 +112,8 @@ class HotMemoryFacade:
 
         # Initialize extraction registry (preferred orchestration)
         self._extraction_registry = get_registry() if get_registry else None
+        # Track last registry strategy for observability
+        self._last_registry_strategy_used: Optional[str] = None
 
         # Initialize Layer 3: Relationship refinement
         semantic_config = {
@@ -454,9 +456,21 @@ class HotMemoryFacade:
                 except Exception:
                     return []
 
+            used_strategy = None
             triples = run(default_name)
-            if not triples and fallback_name and fallback_name != default_name:
+            if triples:
+                used_strategy = default_name
+            elif fallback_name and fallback_name != default_name:
                 triples = run(fallback_name)
+                if triples:
+                    used_strategy = fallback_name
+
+            # Record and log strategy selection
+            self._last_registry_strategy_used = used_strategy
+            try:
+                logger.debug(f"[Registry] strategy={used_strategy or 'none'} triples={len(triples)}")
+            except Exception:
+                pass
 
             # Derive lightweight entities from triples (subject/object set)
             entities: List[str] = []

@@ -577,3 +577,66 @@ class ASI2ExtractionStrategy(ExtractionStrategyBase):
 
     def is_available(self) -> bool:
         return self.enabled and self.adapter.is_available()
+
+
+class EnhancedLevel3ExtractionStrategy(ExtractionStrategyBase):
+    """Enhanced Level3 strategy - <1ms quality extraction champion."""
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        super().__init__(config)
+        self.extractor = None
+        self.nlp = None
+        self._initialize_extractor()
+
+    def _initialize_extractor(self) -> None:
+        """Initialize the Enhanced Level3 Quality extractor."""
+        try:
+            import spacy
+            from enhanced_level3_extractor import QualityExtractor
+
+            self.nlp = spacy.load('en_core_web_sm')
+            self.extractor = QualityExtractor()
+            logger.info("Enhanced Level3 Quality extractor initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Enhanced Level3 extractor: {e}")
+            self.extractor = None
+            self.nlp = None
+
+    def extract(self, text: str, lang: str = 'en') -> List[Tuple[str, str, str]]:
+        """Extract high-quality triples using Enhanced Level3."""
+        if not self.is_available():
+            return []
+
+        start = time.time()
+
+        try:
+            # Process with spaCy
+            doc = self.nlp(text)
+
+            # Extract with quality filtering
+            result = self.extractor.extract_quality_kg(doc)
+
+            # Convert to triples format
+            triples = []
+            for relation in result.get('relations', []):
+                # Only include high-confidence relations
+                if relation.confidence >= 0.8:
+                    triples.append((
+                        relation.subject,
+                        relation.predicate,
+                        relation.object
+                    ))
+
+            # Filter and record
+            filtered_triples = self.filter_triples(triples)
+            self.record_extraction(int((time.time() - start) * 1000))
+
+            return filtered_triples
+
+        except Exception as e:
+            logger.error(f"Enhanced Level3 extraction failed: {e}")
+            return []
+
+    def is_available(self) -> bool:
+        """Check if Enhanced Level3 extractor is available."""
+        return self.enabled and self.extractor is not None and self.nlp is not None

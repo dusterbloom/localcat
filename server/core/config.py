@@ -100,10 +100,10 @@ class MemoryConfig:
 class ExtractionConfig:
     """Text extraction configuration"""
     # Strategy settings
-    default_strategy: str = field(default_factory=lambda: os.getenv("DEFAULT_EXTRACTION_STRATEGY", "enhanced_hotmem"))
-    fallback_strategy: str = field(default_factory=lambda: os.getenv("FALLBACK_EXTRACTION_STRATEGY", "lightweight"))
+    default_strategy: str = field(default_factory=lambda: os.getenv("DEFAULT_EXTRACTION_STRATEGY", "enhanced_level3"))
+    fallback_strategy: str = field(default_factory=lambda: os.getenv("FALLBACK_EXTRACTION_STRATEGY", ""))
     available_strategies: List[str] = field(default_factory=lambda: [
-        "asi1", "asi2", "enhanced_hotmem", "lightweight", "hybrid_spacy_llm", "multilingual_graph"
+        "enhanced_level3", "asi1", "asi2", "enhanced_hotmem", "lightweight", "hybrid", "multilingual", "pattern"
     ])
     
     # Quality settings

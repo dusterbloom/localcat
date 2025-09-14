@@ -201,6 +201,8 @@ class HotMemory:
         self._assisted_calls = 0
         self._assisted_success = 0
         self._pending_edge_props = {}
+        # Track last registry strategy used for provenance tagging
+        self._last_registry_strategy_used: Optional[str] = None
         if self.assisted_enabled:
             try:
                 logger.info(f"[HotMem Assisted] enabled model={self.assisted_model} base={self.assisted_base_url}")
@@ -430,6 +432,9 @@ class HotMemory:
             prov_tag = 'srl_ud'
         if getattr(self, 'use_onnx_srl', False):
             prov_tag = 'onnx_srl_ud'
+        # If we extracted via registry this turn, tag with strategy used
+        if self.route_to_registry and self._last_registry_strategy_used:
+            prov_tag = f"registry:{self._last_registry_strategy_used}"
         # Hedge/negation adjustments
         t_lower = (text or "").lower()
         hedge_terms = ("maybe", "i think", "probably", "kinda", "sort of", "not sure", "perhaps", "possibly")
@@ -589,9 +594,21 @@ class HotMemory:
                 except Exception:
                     return []
 
+            used_strategy = None
             triples = run(default_name)
-            if not triples and fallback_name and fallback_name != default_name:
+            if triples:
+                used_strategy = default_name
+            elif fallback_name and fallback_name != default_name:
                 triples = run(fallback_name)
+                if triples:
+                    used_strategy = fallback_name
+
+            # Record for provenance tagging later in the turn
+            self._last_registry_strategy_used = used_strategy
+            try:
+                logger.debug(f"[Registry] strategy={used_strategy or 'none'} triples={len(triples)}")
+            except Exception:
+                pass
 
             ents: List[str] = []
             if triples:
