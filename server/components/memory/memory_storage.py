@@ -79,8 +79,8 @@ class MemoryStorage:
             True if successful, False otherwise
         """
         try:
-            # Add edge to store
-            self.store.observe_edge(subject, relation, object_, confidence, timestamp, metadata or {})
+            # Add edge to store (metadata is handled separately via enqueue_edge_meta if needed)
+            self.store.observe_edge(subject, relation, object_, confidence, timestamp)
             self.operation_counts['edge_stores'] += 1
             
             # Check if we need to flush

@@ -376,6 +376,17 @@ class MemoryStore:
     
     def observe_edge(self, s: str, r: str, d: str, conf: float, now_ts: int) -> None:
         """Create/reinforce (s,r,d) with positive evidence."""
+        # Tiny quality gate: skip very low-confidence insertions
+        try:
+            min_conf = float(os.getenv("HOTMEM_MIN_EDGE_CONFIDENCE", os.getenv("HOTMEM_CONFIDENCE_THRESHOLD", "0.3")))
+        except Exception:
+            min_conf = 0.3
+        if conf < min_conf:
+            try:
+                logger.debug(f"[MemoryStore] Skipping low-confidence edge ({s}, {r}, {d}) conf={conf:.2f} < min={min_conf:.2f}")
+            except Exception:
+                pass
+            return
         # For immediate updates, we write directly to LMDB
         with self.lenv.begin(write=True) as txn:
             key = f"adj:{s}|{r}".encode()
