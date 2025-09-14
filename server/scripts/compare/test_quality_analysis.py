@@ -54,15 +54,8 @@ def analyze_quality():
     print(f"  - Avg Confidence: {kg_enhanced['quality_metrics']['relation_avg_confidence']:.2f}")
     print(f"  - All high-quality, no noise")
     
-    print("\n🏆 THE VERDICT:")
-    print("-" * 40)
-    print("For SPEED: Enhanced Level3 wins (0.1ms vs 150-250ms) - 1000-3000x faster!")
-    print("For QUALITY: Enhanced Level3 wins (clean, high-confidence relations)")
-    print("For QUANTITY: Level3 Original wins (18 vs 2-3 relations)")
-    print("\nBUT WAIT...")
-    print(f"Level3 has {len(level3_noise)/len(kg_original.relations)*100:.0f}% noise!")
-    print(f"Level3 clean relations: {level3_clean[:3]}")
-    print("\n✨ CHAMPION: Enhanced Level3 - achieves your <1ms goal with quality!")
+    print("\n✨ CHAMPION: Enhanced Level3 - achieves <1ms–50ms quality with clean predicates")
 
 if __name__ == "__main__":
     analyze_quality()
+

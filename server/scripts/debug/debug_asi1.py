@@ -27,10 +27,10 @@ triples = result.get('triples', [])
 for i, t in enumerate(triples):
     print(f"Triple {i}:")
     print(f"  Type: {type(t)}")
-    print(f"  Attrs: {dir(t) if hasattr(t, '__dict__') else 'N/A'}")
     if hasattr(t, 'subj'):
         print(f"  subj: '{t.subj}'")
         print(f"  pred: '{t.pred}'")
         print(f"  obj: '{t.obj}'")
         print(f"  confidence: {getattr(t, 'confidence', 'N/A')}")
         print(f"  pattern_name: {getattr(t, 'pattern_name', 'N/A')}")
+

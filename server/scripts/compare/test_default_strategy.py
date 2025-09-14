@@ -43,3 +43,4 @@ else:
     print("❌ Enhanced Level3 is NOT registered!")
 
 print("\n🎯 Enhanced Level3 is now the DEFAULT extraction strategy!")
+

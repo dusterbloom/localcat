@@ -48,3 +48,4 @@ print(f"Level3: {len(result3.relations)} relations")
 if len(result3.relations) > len(result1.get('triples', [])) * 5:
     print("Level3 extracts MANY MORE relations than ASI1!")
     print("They are NOT the same system!")
+

@@ -70,3 +70,4 @@ def compare_extractors():
 
 if __name__ == "__main__":
     compare_extractors()
+
