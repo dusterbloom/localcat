@@ -4,6 +4,8 @@ graph.lmdb/
 memory.db*
 server/.logs/
 **/.logs/
+server/*.log
+server/*_test_results.json
 
 # Node and Python artifacts
 node_modules/
