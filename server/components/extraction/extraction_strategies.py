@@ -461,3 +461,119 @@ def get_strategy_info() -> Dict[str, Dict[str, Any]]:
         except Exception as e:
             info[name] = {'name': name, 'error': str(e)}
     return info
+
+
+# -----------------------
+# ASI YAML-based strategies
+# -----------------------
+
+class _AsiYamlAdapter:
+    """Lightweight adapter around ULTRAGROKSpacyV821Processor to emit (s, r, o) triples."""
+
+    def __init__(self, yaml_path: Optional[str] = None, spacy_model: Optional[str] = None):
+        import os
+        from pathlib import Path
+        # Resolve server root for relative YAMLs
+        base_dir = Path(__file__).resolve().parents[2]
+
+        # Pick defaults if not provided
+        self.yaml_path = yaml_path or str(base_dir / 'ULTRAGROK_V8.2.1_SPACY.yaml')
+        self.spacy_model = spacy_model or os.getenv('ASI_SPACY_MODEL', 'en_core_web_sm')
+
+        # Ensure server directory is on sys.path for importing asi1_processor
+        try:
+            import sys
+            server_dir = str(base_dir)
+            if server_dir not in sys.path:
+                sys.path.insert(0, server_dir)
+        except Exception:
+            pass
+
+        # Import processor
+        try:
+            from asi1_processor import ULTRAGROKSpacyV821Processor  # type: ignore
+        except Exception as e:
+            ULTRAGROKSpacyV821Processor = None  # type: ignore
+            logger.warning(f"ASI YAML processor unavailable: {e}")
+
+        if ULTRAGROKSpacyV821Processor is None:
+            self.processor = None
+        else:
+            try:
+                self.processor = ULTRAGROKSpacyV821Processor(self.yaml_path, self.spacy_model)
+            except Exception as e:
+                logger.warning(f"Failed to initialize ASI YAML processor ({self.yaml_path}): {e}")
+                self.processor = None
+
+    def is_available(self) -> bool:
+        return self.processor is not None
+
+    def extract(self, text: str) -> List[Tuple[str, str, str]]:
+        if not self.processor or not text:
+            return []
+        try:
+            result = self.processor.process_spacy_semantics(text)
+            triples = result.get('triples') or []
+            out: List[Tuple[str, str, str]] = []
+            for t in triples:
+                # Accept both dataclass-like and dict-like
+                subj = getattr(t, 'subj', None) if hasattr(t, 'subj') else t.get('subj') if isinstance(t, dict) else None
+                pred = getattr(t, 'pred', None) if hasattr(t, 'pred') else t.get('pred') if isinstance(t, dict) else None
+                obj = getattr(t, 'obj', None) if hasattr(t, 'obj') else t.get('obj') if isinstance(t, dict) else None
+                if subj and pred is not None:
+                    out.append((str(subj), str(pred), str(obj or '')))
+            return out
+        except Exception as e:
+            logger.warning(f"ASI YAML extraction failed: {e}")
+            return []
+
+
+class ASI1ExtractionStrategy(ExtractionStrategyBase):
+    """ASI1 strategy using the ASI1 YAML rule set as the primary extractor."""
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        super().__init__(config)
+        from pathlib import Path
+        base_dir = Path(__file__).resolve().parents[2]
+        yaml_override = (self.config or {}).get('yaml_path')
+        default_yaml = base_dir / 'ASI1_8_2_3.yaml'
+        self.adapter = _AsiYamlAdapter(yaml_path=str(yaml_override or default_yaml))
+
+    def extract(self, text: str, lang: str = 'en') -> List[Tuple[str, str, str]]:
+        if not self.is_available():
+            return []
+        start = time.time()
+        triples = self.adapter.extract(text)
+        triples = self.filter_triples(triples)
+        self.record_extraction(int((time.time() - start) * 1000))
+        return triples
+
+    def is_available(self) -> bool:
+        return self.enabled and self.adapter.is_available()
+
+
+class ASI2ExtractionStrategy(ExtractionStrategyBase):
+    """ASI2 strategy using the ULTRAGROK V8.2.1 spaCy-compatible YAML or ALT_REFINED."""
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        super().__init__(config)
+        from pathlib import Path
+        base_dir = Path(__file__).resolve().parents[2]
+        yaml_override = (self.config or {}).get('yaml_path')
+        # Prefer ALT_REFINED if present, else fall back to ULTRAGROK V8.2.1
+        alt_refined = base_dir / 'ASI_ALT_REFINED.yaml'
+        default_yaml = base_dir / 'ULTRAGROK_V8.2.1_SPACY.yaml'
+        chosen = str(yaml_override or (alt_refined if alt_refined.exists() else default_yaml))
+        self.adapter = _AsiYamlAdapter(yaml_path=chosen)
+
+    def extract(self, text: str, lang: str = 'en') -> List[Tuple[str, str, str]]:
+        if not self.is_available():
+            return []
+        start = time.time()
+        triples = self.adapter.extract(text)
+        triples = self.filter_triples(triples)
+        self.record_extraction(int((time.time() - start) * 1000))
+        return triples
+
+    def is_available(self) -> bool:
+        return self.enabled and self.adapter.is_available()

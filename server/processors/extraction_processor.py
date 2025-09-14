@@ -7,11 +7,12 @@ from typing import List, Optional, Dict, Any, Union
 from loguru import logger
 from dataclasses import dataclass
 from enum import Enum
+import os
 
 from pipecat.frames.frames import Frame, TranscriptionFrame, TextFrame
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 
-from extraction_registry import ExtractionRegistry
+from components.extraction.extraction_registry import ExtractionRegistry
 from components.extraction.extraction_strategies import ExtractionStrategyBase
 
 
@@ -25,8 +26,9 @@ class ExtractionMode(Enum):
 @dataclass
 class ExtractionProcessorConfig:
     """Configuration for extraction processor"""
-    default_strategy: str = "enhanced_hotmem"
-    fallback_strategy: str = "lightweight"
+    # Allow env override to keep in sync with core config
+    default_strategy: str = os.getenv("DEFAULT_EXTRACTION_STRATEGY", "enhanced_hotmem")
+    fallback_strategy: str = os.getenv("FALLBACK_EXTRACTION_STRATEGY", "lightweight")
     enable_multi_strategy: bool = True
     quality_threshold: float = 0.7
     max_extraction_time: float = 2.0  # seconds
@@ -134,13 +136,28 @@ class ExtractionProcessor(FrameProcessor):
                 logger.warning(f"🔍 Strategy not found: {strategy_name}")
                 return None
             
-            # Perform extraction
-            result = await strategy.extract(text)
+            # Perform extraction (supports sync strategies)
+            import asyncio
+            extract_fn = getattr(strategy, 'extract', None)
+            if not callable(extract_fn):
+                return None
+            if asyncio.iscoroutinefunction(extract_fn):
+                triples = await extract_fn(text)
+            else:
+                triples = extract_fn(text)
             
-            if result:
+            # Normalize to a dict result with quality_score
+            if triples:
                 # Add metadata
-                result['strategy_used'] = strategy_name
-                result['extraction_time'] = time.time()
+                result = {
+                    'text': text,
+                    'entities': [],
+                    'facts': [],
+                    'relations': triples,
+                    'quality_score': min(1.0, 0.5 + 0.01 * len(triples)),
+                    'strategy_used': strategy_name,
+                    'extraction_time': time.time(),
+                }
                 
                 # Update metrics
                 self._update_strategy_metrics(strategy_name, result.get('quality_score', 0))

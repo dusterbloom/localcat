@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import threading
 from pathlib import Path
 from loguru import logger
+import time
 
 from components.memory.memory_interfaces import IExtractionStrategy
 from components.extraction.extraction_strategies import ExtractionStrategyBase
@@ -107,7 +108,9 @@ class ExtractionRegistry:
             LightweightExtractionStrategy,
             MultilingualExtractionStrategy,
             EnhancedHotMemExtractionStrategy,
-            PatternBasedExtractionStrategy
+            PatternBasedExtractionStrategy,
+            ASI1ExtractionStrategy,
+            ASI2ExtractionStrategy
         )
         
         built_in_strategies = [
@@ -118,6 +121,8 @@ class ExtractionRegistry:
             ('multilingual', MultilingualExtractionStrategy, 'Multilingual graph extraction'),
             ('enhanced_hotmem', EnhancedHotMemExtractionStrategy, 'Enhanced HotMem extraction'),
             ('pattern', PatternBasedExtractionStrategy, 'Pattern-based extraction'),
+            ('asi1', ASI1ExtractionStrategy, 'ASI1 YAML-based extractor'),
+            ('asi2', ASI2ExtractionStrategy, 'ASI2 YAML-based extractor'),
         ]
         
         for name, strategy_class, description in built_in_strategies:

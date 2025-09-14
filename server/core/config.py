@@ -103,7 +103,7 @@ class ExtractionConfig:
     default_strategy: str = field(default_factory=lambda: os.getenv("DEFAULT_EXTRACTION_STRATEGY", "enhanced_hotmem"))
     fallback_strategy: str = field(default_factory=lambda: os.getenv("FALLBACK_EXTRACTION_STRATEGY", "lightweight"))
     available_strategies: List[str] = field(default_factory=lambda: [
-        "enhanced_hotmem", "lightweight", "hybrid_spacy_llm", "multilingual_graph"
+        "asi1", "asi2", "enhanced_hotmem", "lightweight", "hybrid_spacy_llm", "multilingual_graph"
     ])
     
     # Quality settings
@@ -406,6 +406,7 @@ class Config:
             'LOG_LEVEL': ('monitoring', 'log_level'),
             'ENABLE_HOTMEM': ('memory', 'enable_hotmem'),
             'DEFAULT_EXTRACTION_STRATEGY': ('extraction', 'default_strategy'),
+            'FALLBACK_EXTRACTION_STRATEGY': ('extraction', 'fallback_strategy'),
             'TTS_MODEL': ('audio', 'tts_model'),
             'STT_MODEL': ('audio', 'stt_model'),
             'LLM_MODEL': ('model', 'llm_model'),
