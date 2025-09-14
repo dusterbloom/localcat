@@ -10,7 +10,7 @@ Based on ASI1's V8.3.0 specifications:
 """
 
 import spacy
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from collections import defaultdict
 import networkx as nx
@@ -161,7 +161,7 @@ class QualityExtractor:
                     objects = [child for child in token.children if child.dep_ in ['dobj', 'attr']]
 
                     for subj in subjects:
-                        subj_text = self._get_clean_noun_phrase(subj)
+                        subj_text = self._get_clean_noun_phrase(subj, role='subject')
 
                         if objects:
                             for obj in objects:
@@ -226,17 +226,20 @@ class QualityExtractor:
 
         return relations
 
-    def _get_clean_noun_phrase(self, token) -> str:
+    def _get_clean_noun_phrase(self, token, role: Optional[str] = None) -> str:
         """Extract clean, concise noun phrases.
 
         - Include core determiners/adjectives/compounds around the head noun.
         - Exclude content inside prepositional subtrees attached to this noun
           (e.g., benches [under tall oak trees] → keep 'wooden benches').
+        - Special-case subjects: retain a concise 'of' complement (e.g., 'a group of children').
         """
         # Collect indices to exclude: any tokens under child prepositions of this noun
         exclude_idx = set()
         for ch in token.children:
             if ch.dep_ == 'prep':
+                # Always exclude prepositional subtrees from the head NP;
+                # subject-specific 'of' will be re-attached concisely below.
                 for t in ch.subtree:
                     exclude_idx.add(t.i)
 
@@ -253,6 +256,34 @@ class QualityExtractor:
 
         kept.sort(key=lambda x: x.i)
         phrase = ' '.join([t.text for t in kept])
+
+        # Subject-specific: append concise 'of' complement if present
+        if role == 'subject':
+            of_children = [ch for ch in token.children if ch.dep_ == 'prep' and ch.text.lower() == 'of']
+            if of_children:
+                # Take first 'of' complement's pobj NP, trimmed
+                of_pobj = []
+                for ofp in of_children:
+                    of_pobj = [c for c in ofp.children if c.dep_ == 'pobj']
+                    if of_pobj:
+                        break
+                if of_pobj:
+                    pobj = of_pobj[0]
+                    # Build a concise NP for the pobj (exclude further prep subtrees)
+                    pobj_terms = []
+                    exclude_pobj = set()
+                    for c in pobj.children:
+                        if c.dep_ == 'prep':
+                            for tt in c.subtree:
+                                exclude_pobj.add(tt.i)
+                    for c in pobj.subtree:
+                        if c.i in exclude_pobj:
+                            continue
+                        if c.pos_ in ['NOUN', 'PROPN', 'ADJ', 'DET'] and not c.is_punct:
+                            pobj_terms.append(c)
+                    pobj_terms.sort(key=lambda x: x.i)
+                    of_np = ' '.join([t.text for t in pobj_terms]) or pobj.text
+                    phrase = (phrase + ' of ' + of_np).strip()
 
         # Trim excessive length while preserving the head on the right
         words = phrase.split()
