@@ -57,6 +57,11 @@ try:
 except Exception:
     ImprovedUDExtractor = None
 try:
+    # Preferred extraction orchestration
+    from components.extraction.extraction_registry import get_registry  # type: ignore
+except Exception:
+    get_registry = None  # type: ignore
+try:
     from fastcoref import FCoref  # type: ignore
 except Exception:
     FCoref = None
@@ -215,6 +220,10 @@ class HotMemory:
         self._relik = None
         # Neural coreference (optional)
         self.use_coref = os.getenv("HOTMEM_USE_COREF", "false").lower() in ("1", "true", "yes") and (FCoref is not None)
+        
+        # Registry routing (preferred). Default on; set HOTMEM_ROUTE_TO_REGISTRY=false to disable.
+        self.route_to_registry = os.getenv("HOTMEM_ROUTE_TO_REGISTRY", "true").lower() in ("1","true","yes")
+        self._extraction_registry = get_registry() if get_registry else None
         
         # Smart coreference configuration
         self.coref_max_entities = int(os.getenv("HOTMEM_COREF_MAX_ENTITIES", "24"))  # Performance guard
@@ -560,6 +569,46 @@ class HotMemory:
         
         return bullets, stored_triples
     
+    def _extract_with_registry(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]]]:
+        """Preferred registry-based extraction using DEFAULT/FALLBACK strategies.
+        Returns (entities, triples). Falls back to empty on failure.
+        """
+        try:
+            if not self._extraction_registry:
+                return [], []
+            default_name = os.getenv('DEFAULT_EXTRACTION_STRATEGY', 'asi1')
+            fallback_name = os.getenv('FALLBACK_EXTRACTION_STRATEGY', 'asi2')
+
+            def run(name: str) -> List[Tuple[str, str, str]]:
+                try:
+                    strat = self._extraction_registry.get_strategy(name)
+                    if not strat:
+                        return []
+                    triples = strat.extract(text, lang)
+                    return triples or []
+                except Exception:
+                    return []
+
+            triples = run(default_name)
+            if not triples and fallback_name and fallback_name != default_name:
+                triples = run(fallback_name)
+
+            ents: List[str] = []
+            if triples:
+                try:
+                    s = set()
+                    for a, _, b in triples:
+                        if a:
+                            s.add(str(a))
+                        if b:
+                            s.add(str(b))
+                    ents = list(s)[:50]
+                except Exception:
+                    ents = []
+            return ents, triples
+        except Exception:
+            return [], []
+
     def _extract(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any]:
         """
         Extract entities and relations.
@@ -567,6 +616,16 @@ class HotMemory:
         - Otherwise, run UD 27 patterns only.
         Returns: (entities, triples, negation_count, original_doc)
         """
+        # Preferred: route via strategy registry
+        if self.route_to_registry and self._extraction_registry is not None:
+            try:
+                ents, trips = self._extract_with_registry(text, lang)
+                if trips:
+                    # Deprecation notice for legacy path
+                    logger.debug("[HotMem] Routed extraction via registry strategies (legacy hotpath extraction deprecated)")
+                    return ents, trips, 0, None
+            except Exception as e:
+                logger.debug(f"[HotMem] Registry extraction failed, falling back to legacy: {e}")
         nlp = _load_nlp(lang)
         if not nlp:
             return [], [], 0, None
