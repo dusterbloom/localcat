@@ -1,0 +1,865 @@
+# ultragrok_v7_max.yaml — Universal UD→SRL (Comprehensive, High-Precision)
+# Loader-compat: lists of edges, basic guards (var_name_lemma_in / _pos), regex rels, multi-emit, priorities.
+# Target: ≥8/10 coverage & quality; 1–3 high-value triples/sentence (hard-capped via postprocess).
+
+meta:
+  language: universal
+  version: 7.1
+  performance:
+    target_latency: "<150ms"
+    max_triples_per_sentence: 3
+
+rules:
+
+  # =========================
+  # A) IDENTIFICATION & NAMING (HIGHEST)
+  # =========================
+
+  # "My name is Alex Thompson." → ('you','has_name','Alex Thompson')
+  - name: PERSONAL_NAME_DECLARATION
+    kind: relation
+    priority: 260
+    pattern:
+      anchor: {pos: "AUX|VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: name_noun}
+        - {from: name_noun, rel: "^poss", as: poss_pron}
+        - {from: anchor, rel: "^attr|^oprd|^dobj|^obj", as: actual_name}
+    emit:
+      - subj: "you"
+        pred: "has_name"
+        obj: "{actual_name.text}"
+        canon: "PERSONAL_NAME"
+    guards:
+      anchor_lemma_in: ["be","is","are","am","was","were","ser","estar"]
+      name_noun_lemma_in: ["name"]
+      poss_pron_lemma_in: ["my","i"]
+
+  # "I am Alex." → ('you','has_name','Alex') (guarded to PROPN)
+  - name: SELF_INTRO_COPULA
+    kind: relation
+    priority: 255
+    pattern:
+      anchor: {pos: "AUX|VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: self_pron}
+        - {from: anchor, rel: "^attr|^oprd", as: actual_name}
+    emit:
+      - subj: "you"
+        pred: "has_name"
+        obj: "{actual_name.text}"
+        canon: "SELF_INTRO"
+    guards:
+      anchor_lemma_in: ["be","is","are","am","was","were"]
+      self_pron_lemma_in: ["i"]
+      actual_name_pos: "PROPN"
+
+  # "My son is named Jake." → ('you','has_son_named','Jake')
+  - name: MY_KIN_NAMED_PASSIVE
+    kind: relation
+    priority: 252
+    pattern:
+      anchor: {pos: "VERB|AUX"}
+      edges:
+        - {from: anchor, rel: "^nsubjpass|^nsubj", as: kin}
+        - {from: kin,    rel: "^poss",            as: poss_pron}
+        - {from: anchor, rel: "^attr|^oprd|^dobj|^obj|^pobj", as: given_name}
+    emit:
+      - subj: "you"
+        pred: "has_{kin.lemma}_named"
+        obj: "{given_name.text}"
+        canon: "KIN_NAMED"
+    guards:
+      anchor_lemma_in: ["name","named","call","called"]
+      poss_pron_lemma_in: ["my"]
+      kin_lemma_in: ["son","daughter","child","kid","wife","husband","mother","father","mom","dad","brother","sister"]
+
+  # "John's son is named Jake." → ('John','has_son_named','Jake')
+  - name: GENITIVE_KIN_NAMED_PASSIVE
+    kind: relation
+    priority: 250
+    pattern:
+      anchor: {pos: "VERB|AUX"}
+      edges:
+        - {from: anchor, rel: "^nsubjpass|^nsubj", as: kin}
+        - {from: kin,    rel: "^poss",            as: possessor}
+        - {from: anchor, rel: "^attr|^oprd|^dobj|^obj|^pobj", as: given_name}
+    emit:
+      - subj: "{possessor.text}"
+        pred: "has_{kin.lemma}_named"
+        obj: "{given_name.text}"
+        canon: "KIN_NAMED_GEN"
+    guards:
+      anchor_lemma_in: ["name","named","call","called"]
+      possessor_pos: "PROPN|NOUN"
+      kin_lemma_in: ["son","daughter","child","kid","wife","husband","mother","father","brother","sister"]
+
+  # =========================
+  # B) WORK / LIVE / ORIGIN / EDUCATION (DISAMBIGUATED)
+  # =========================
+
+  - name: WORK_AT
+    kind: relation
+    priority: 240
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subject}
+        - {from: anchor, rel: "^prep",         as: prep}
+        - {from: prep,   rel: "^pobj",         as: org}
+    emit:
+      - subj: "{subject.text}"
+        pred: "work_at"
+        obj: "{org.subtree}"
+        canon: "WORK_AT"
+    guards:
+      anchor_lemma_in: ["work","labor","trabajar","arbeiten","lavorare","habiter?"]
+      prep_lemma_in: ["at","bei","chez","presso","en"]
+
+  - name: LIVE_IN
+    kind: relation
+    priority: 240
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subject}
+        - {from: anchor, rel: "^prep",         as: prep}
+        - {from: prep,   rel: "^pobj",         as: place}
+    emit:
+      - subj: "{subject.text}"
+        pred: "live_in"
+        obj: "{place.subtree}"
+        canon: "LIVE_IN"
+    guards:
+      anchor_lemma_in: ["live","reside","residir","wohnen","habiter","vivir","reside"]
+      prep_lemma_in: ["in","en","à","in"]
+
+  - name: BE_FROM_ORIGIN
+    kind: relation
+    priority: 235
+    pattern:
+      anchor: {pos: "AUX|VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subj}
+        - {from: anchor, rel: "^prep",  as: prep}
+        - {from: prep,   rel: "^pobj",  as: origin}
+    emit:
+      - subj: "{subj.text}"
+        pred: "be_from"
+        obj: "{origin.subtree}"
+        canon: "ORIGIN"
+    guards:
+      anchor_lemma_in: ["be","is","are","am","was","were","ser","estar"]
+      prep_lemma_in: ["from","de","von","da"]
+
+  - name: STUDY_AT
+    kind: relation
+    priority: 232
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subj}
+        - {from: anchor, rel: "^prep", as: prep}
+        - {from: prep,   rel: "^pobj", as: school}
+    emit:
+      - subj: "{subj.text}"
+        pred: "study_at"
+        obj: "{school.subtree}"
+        canon: "STUDY_AT"
+    guards:
+      anchor_lemma_in: ["study","learn","research","estudiar","lernen","étudier"]
+      prep_lemma_in: ["at","in","en","à","bei"]
+
+  # =========================
+  # C) NEGATION & MODALITY (PRIOR TO SVO)
+  # =========================
+
+  - name: NEGATED_SVO
+    kind: relation
+    priority: 228
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^neg",          as: neg}
+        - {from: anchor, rel: "^nsubj|^csubj", as: subject}
+        - {from: anchor, rel: "^dobj|^obj",    as: object}
+    emit:
+      - subj: "{subject.text}"
+        pred: "{anchor.lemma}_neg"
+        obj: "{object.subtree}"
+        canon: "SVO_NEG"
+    guards:
+      neg_lemma_in: ["not","n't","no","never","jamais","nie","nunca"]
+
+  - name: MODAL_SVO
+    kind: relation
+    priority: 226
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^aux|^auxpass", as: aux}
+        - {from: anchor, rel: "^nsubj|^csubj", as: subject}
+        - {from: anchor, rel: "^dobj|^obj",    as: object}
+    emit:
+      - subj: "{subject.text}"
+        pred: "{anchor.lemma}_{aux.lemma}"
+        obj: "{object.subtree}"
+        canon: "SVO_MODAL"
+    guards:
+      aux_lemma_in: ["can","could","may","might","must","should","shall","will","would",
+                     "poder","deber","müssen","können","sollen","werden","aller","devoir"]
+
+  # =========================
+  # D) SVO / PASSIVE / COPULA (TIGHT, HIGH VALUE)
+  # =========================
+
+  - name: SVO_ACTIVE
+    kind: relation
+    priority: 220
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subject}
+        - {from: anchor, rel: "^dobj|^obj",    as: object}
+    emit:
+      - subj: "{subject.text}"
+        pred: "{anchor.lemma}"
+        obj: "{object.subtree}"
+        canon: "SVO"
+    guards:
+      anchor_pos: "VERB"
+
+  - name: PASSIVE_WITH_AGENT
+    kind: relation
+    priority: 218
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubjpass", as: patient}
+        - {from: anchor, rel: "^agent",     as: agent_pp}
+        - {from: agent_pp, rel: "^pobj",    as: agent}
+    emit:
+      - subj: "{agent.text}"
+        pred: "{anchor.lemma}"
+        obj: "{patient.subtree}"
+        canon: "PASSIVE→ACTIVE"
+    guards:
+      agent_pp_lemma_in: ["by","par","von","da","de"]
+
+  - name: PASSIVE_NO_AGENT
+    kind: relation
+    priority: 216
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubjpass", as: patient}
+    emit:
+      - subj: "{patient.subtree}"
+        pred: "undergo_{anchor.lemma}"
+        obj: ""
+        canon: "UNDERGO"
+    guards:
+      anchor_pos: "VERB"
+
+  - name: COPULA_ADJECTIVAL
+    kind: relation
+    priority: 214
+    pattern:
+      anchor: {pos: "AUX|VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj",         as: subject}
+        - {from: anchor, rel: "^acomp|^attr",   as: adj}
+    emit:
+      - subj: "{subject.text}"
+        pred: "has_property"
+        obj: "{adj.text}"
+        canon: "COP_ADJ"
+    guards:
+      anchor_lemma_in: ["be","is","are","was","were","seem","parecer","scheinen","être","estar","ser"]
+      adj_pos: "ADJ"
+
+  - name: COPULA_NOMINAL_ROLE
+    kind: relation
+    priority: 212
+    pattern:
+      anchor: {pos: "AUX|VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj",       as: subject}
+        - {from: anchor, rel: "^attr|^oprd",  as: role_noun}
+    emit:
+      - subj: "{subject.text}"
+        pred: "be"
+        obj: "{role_noun.text}"
+        canon: "COP_NOM"
+    guards:
+      anchor_lemma_in: ["be","is","are","was","were","ser","estar","sein","être","essere"]
+      role_noun_pos: "NOUN|PROPN"
+
+  # =========================
+  # E) TRANSFER / COMMUNICATION / LIKING
+  # =========================
+
+  - name: DITRANS_GIVE_TO
+    kind: relation
+    priority: 210
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj",      as: giver}
+        - {from: anchor, rel: "^dobj|^obj",  as: theme}
+        - {from: anchor, rel: "^prep",       as: prep}
+        - {from: prep,   rel: "^pobj",       as: recip}
+    emit:
+      - subj: "{giver.text}"
+        pred: "give"
+        obj: "{theme.subtree}"
+        canon: "GIVE_THEME"
+      - subj: "{giver.text}"
+        pred: "give_to"
+        obj: "{recip.subtree}"
+        canon: "GIVE_RECIP"
+    guards:
+      anchor_lemma_in: ["give","offer","send","show","dar","donner","geben","offrire"]
+      prep_lemma_in: ["to","a","à","zu","para","per"]
+
+  - name: COMMUNICATE_TO
+    kind: relation
+    priority: 208
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj",               as: speaker}
+        - {from: anchor, rel: "^dobj|^obj|^ccomp",    as: message}
+        - {from: anchor, rel: "^prep",                as: prep}
+        - {from: prep,   rel: "^pobj",                as: addressee}
+    emit:
+      - subj: "{speaker.text}"
+        pred: "tell"
+        obj: "{addressee.subtree}"
+        canon: "TELL_TO"
+      - subj: "{speaker.text}"
+        pred: "communicate"
+        obj: "{message.subtree}"
+        canon: "COMM_MSG"
+    guards:
+      anchor_lemma_in: ["tell","say","inform","notify","ask","explain","decir","dire","sagen","informar","explicar"]
+      prep_lemma_in: ["to","a","à","zu"]
+
+  - name: LIKE_SIMPLE
+    kind: relation
+    priority: 206
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj",      as: liker}
+        - {from: anchor, rel: "^dobj|^obj",  as: liked}
+    emit:
+      - subj: "{liker.text}"
+        pred: "like"
+        obj: "{liked.subtree}"
+        canon: "LIKE"
+    guards:
+      anchor_lemma_in: ["like","love","prefer","enjoy"]
+
+  - name: ES_GUSTAR_INVERSION
+    kind: relation
+    priority: 206
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^iobj|^dative|^obl", as: experiencer_pp}
+        - {from: experiencer_pp, rel: "^case|^mark|^det", as: a_prep}
+        - {from: anchor, rel: "^nsubj",             as: theme}
+    emit:
+      - subj: "{experiencer_pp.subtree}"
+        pred: "like"
+        obj: "{theme.subtree}"
+        canon: "GUSTAR"
+    guards:
+      anchor_lemma_in: ["gustar","encantar","interesar","importar","doler"]
+      a_prep_lemma_in: ["a","al"]
+
+  # =========================
+  # F) PREPOSITIONAL VERB RELATIONS (GENERIC BUT GUARDED)
+  # =========================
+
+  - name: VERB_PREP_POBJ_CORE
+    kind: relation
+    priority: 200
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subject}
+        - {from: anchor, rel: "^prep",         as: prep}
+        - {from: prep,   rel: "^pobj",         as: pobj}
+    emit:
+      - subj: "{subject.text}"
+        pred: "{anchor.lemma}_{prep.lemma}"
+        obj: "{pobj.subtree}"
+        canon: "V+P"
+    guards:
+      anchor_lemma_in: ["go","come","travel","move","work","talk","speak","write","read","meet","collaborate",
+                        "depend","rely","wait","look","look"]
+      prep_lemma_in: ["to","from","into","onto","on","in","at","with","about","for","over","under","against"]
+
+  # =========================
+  # G) BIRTH / MARRIAGE / AGE
+  # =========================
+
+  - name: BE_BORN_IN
+    kind: relation
+    priority: 198
+    pattern:
+      anchor: {pos: "ADJ|VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^nsubjpass", as: baby}
+        - {from: anchor, rel: "^prep",             as: prep}
+        - {from: prep,   rel: "^pobj",             as: place_or_time}
+    emit:
+      - subj: "{baby.text}"
+        pred: "be_born_{prep.lemma}"
+        obj: "{place_or_time.subtree}"
+        canon: "BORN_IN"
+    guards:
+      anchor_lemma_in: ["born","nacido","geborn?","né","nato"]
+      prep_lemma_in: ["in","on","at","en","à"]
+
+  - name: MARRIED_TO
+    kind: relation
+    priority: 196
+    pattern:
+      anchor: {pos: "ADJ|VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: spouse1}
+        - {from: anchor, rel: "^prep",  as: prep}
+        - {from: prep,   rel: "^pobj",  as: spouse2}
+    emit:
+      - subj: "{spouse1.text}"
+        pred: "married_to"
+        obj: "{spouse2.subtree}"
+        canon: "MARRIED_TO"
+    guards:
+      anchor_lemma_in: ["married","casado","casada","verheiratet","marié","mariée"]
+      prep_lemma_in: ["to","con","mit","avec"]
+
+  # =========================
+  # H) POSSESSIVE & PART-OF (CAREFULLY GUARDED)
+  # =========================
+
+  # "John's car" → ('John','has','car') but suppressed when it's "my name"
+  - name: POSSESSIVE_NOUN_HAS
+    kind: relation
+    priority: 194
+    pattern:
+      anchor: {pos: "NOUN|PROPN"}
+      edges:
+        - {from: anchor, rel: "^poss", as: possessor}
+    emit:
+      - subj: "{possessor.text}"
+        pred: "has"
+        obj: "{anchor.subtree}"
+        canon: "HAS_NOMINAL"
+    guards:
+      anchor_pos: "NOUN|PROPN"
+
+  # "roof of the house" / "CEO of Microsoft" → part_of
+  - name: NOUN_OF_PART_OF
+    kind: relation
+    priority: 192
+    pattern:
+      anchor: {pos: "NOUN"}
+      edges:
+        - {from: anchor, rel: "^prep", as: prep}
+        - {from: prep,   rel: "^pobj", as: of_target}
+    emit:
+      - subj: "{anchor.subtree}"
+        pred: "part_of"
+        obj: "{of_target.subtree}"
+        canon: "PART_OF"
+    guards:
+      prep_lemma_in: ["of","de","di","von"]
+
+  # Role attachment: "Alice is the CEO of Microsoft" → role_at + part_of
+  - name: ROLE_AT_ORG
+    kind: relation
+    priority: 190
+    pattern:
+      anchor: {pos: "NOUN"}
+      edges:
+        - {from: anchor, rel: "^prep",          as: prep}
+        - {from: prep,   rel: "^pobj",          as: org}
+        - {from: anchor, rel: "^appos|^attr",   as: person}
+    emit:
+      - subj: "{person.subtree}"
+        pred: "role_at"
+        obj: "{anchor.subtree}"
+        canon: "ROLE_AT"
+      - subj: "{anchor.subtree}"
+        pred: "part_of"
+        obj: "{org.subtree}"
+        canon: "ROLE_OF_PART"
+    guards:
+      prep_lemma_in: ["of","de","di","von"]
+      person_pos: "PROPN|NOUN"
+
+  # =========================
+  # I) RELATIVE CLAUSES & CONTROL
+  # =========================
+
+  # "the man who left" → ('man','leave','')
+  - name: RELCL_HEAD_AS_SUBJ
+    kind: relation
+    priority: 188
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^relcl|^acl",   as: head}
+        - {from: anchor, rel: "^dobj|^obj",    as: obj}
+    emit:
+      - subj: "{head.subtree}"
+        pred: "{anchor.lemma}"
+        obj: "{obj.subtree}"
+        canon: "RELCL"
+    guards:
+      head_pos: "NOUN|PROPN"
+
+  # "I want to visit Paris" → ('I','want_to_visit','Paris')
+  - name: CONTROL_XCOMP
+    kind: relation
+    priority: 186
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: controller}
+        - {from: anchor, rel: "^xcomp", as: x}
+        - {from: x,      rel: "^dobj|^obj", as: xobj}
+    emit:
+      - subj: "{controller.text}"
+        pred: "{anchor.lemma}_to_{x.lemma}"
+        obj: "{xobj.subtree}"
+        canon: "CONTROL"
+    guards:
+      anchor_lemma_in: ["want","try","plan","hope","decide","intend","need","prefer"]
+
+  # =========================
+  # J) COORDINATION DUPLICATION (SUBJ/OBJ)
+  # =========================
+
+  - name: COORD_OBJECTS_DUP
+    kind: relation
+    priority: 184
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj",     as: subject}
+        - {from: anchor, rel: "^dobj|^obj", as: obj1}
+        - {from: obj1,   rel: "^cc",        as: cc}
+        - {from: obj1,   rel: "^conj",      as: obj2}
+    emit:
+      - subj: "{subject.text}"
+        pred: "{anchor.lemma}"
+        obj: "{obj1.subtree}"
+        canon: "SVO1"
+      - subj: "{subject.text}"
+        pred: "{anchor.lemma}"
+        obj: "{obj2.subtree}"
+        canon: "SVO2"
+
+  - name: COORD_SUBJECTS_DUP
+    kind: relation
+    priority: 182
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: s1}
+        - {from: s1,     rel: "^cc",    as: cc}
+        - {from: s1,     rel: "^conj",  as: s2}
+        - {from: anchor, rel: "^dobj|^obj", as: obj}
+    emit:
+      - subj: "{s1.subtree}"
+        pred: "{anchor.lemma}"
+        obj: "{obj.subtree}"
+        canon: "SV1O"
+      - subj: "{s2.subtree}"
+        pred: "{anchor.lemma}"
+        obj: "{obj.subtree}"
+        canon: "SV2O"
+
+  # =========================
+  # K) TEMPORAL ADVERBIALS & EXISTENTIALS (STRICT)
+  # =========================
+
+  - name: EVENT_WITH_TEMPORAL_WORD
+    kind: relation
+    priority: 150
+    pattern:
+      anchor: {pos: "VERB|NOUN"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subject}
+        - {from: anchor, rel: "^advmod|^npadvmod", as: tmod}
+    emit:
+      - subj: "{subject.text}"
+        pred: "{anchor.lemma}_at_{tmod.text}"
+        obj: ""
+        canon: "EVENT_TIME"
+    guards:
+      tmod_lemma_in: ["yesterday","today","tomorrow","now","then","soon","later",
+                      "ayer","hoy","mañana","ahora",
+                      "gestern","heute","morgen","jetzt",
+                      "hier","aujourd'hui","demain","maintenant"]
+
+  - name: EXISTENTIAL_THERE_IS
+    kind: relation
+    priority: 120
+    pattern:
+      anchor: {pos: "AUX|VERB"}
+      edges:
+        - {from: anchor, rel: "^expl",  as: expl}
+        - {from: anchor, rel: "^nsubj", as: entity}
+    emit:
+      - subj: "{entity.subtree}"
+        pred: "exist"
+        obj: ""
+        canon: "EXIST"
+    guards:
+      anchor_lemma_in: ["be","exist","haber","estar"]
+      expl_lemma_in: ["there"]
+
+  # =========================
+  # L) SAFE FALLBACKS (LOWEST)
+  # =========================
+
+  - name: INTRANSITIVE_SV
+    kind: relation
+    priority: 60
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subject}
+    emit:
+      - subj: "{subject.text}"
+        pred: "{anchor.lemma}"
+        obj: ""
+        canon: "SV_ONLY"
+    guards:
+      anchor_pos: "VERB"
+
+  - name: NOMINAL_FRAGMENT_EXISTS  # very low value, kept minimal
+    kind: relation
+    priority: 40
+    pattern:
+      anchor: {pos: "NOUN|PROPN"}
+      edges:
+        - {from: anchor, rel: "^det|^amod|^compound|^nummod", as: mod}
+    emit:
+      - subj: "{anchor.subtree}"
+        pred: "exist"
+        obj: ""
+        canon: "FRAG_EXIST"
+
+# =========================
+# POSTPROCESS (HARD CAP + SMART SUPPRESSION)
+# =========================
+postprocess:
+  - name: CAP_AND_DEDUP
+    max_triples_per_sentence: 3
+    dedupe_on: ["pred","obj","canon"]
+    prefer_higher_priority: true
+
+  - name: DROP_GENERIC_IF_SPECIFIC
+    suppress:
+      - if_fired: ["PERSONAL_NAME_DECLARATION","SELF_INTRO_COPULA","MY_KIN_NAMED_PASSIVE","GENITIVE_KIN_NAMED_PASSIVE"]
+        drop: ["POSSESSIVE_NOUN_HAS","NOMINAL_FRAGMENT_EXISTS"]
+      - if_fired: ["WORK_AT"]
+        drop: ["VERB_PREP_POBJ_CORE","INTRANSITIVE_SV"]
+      - if_fired: ["LIVE_IN","BE_FROM_ORIGIN"]
+        drop: ["VERB_PREP_POBJ_CORE","INTRANSITIVE_SV","EXISTENTIAL_THERE_IS"]
+      - if_fired: ["ROLE_AT_ORG"]
+        drop: ["NOUN_OF_PART_OF"]
+      - if_fired: ["NEGATED_SVO","MODAL_SVO"]
+        drop: ["SVO_ACTIVE"]
+        
+  - name: SUPPRESS_GENERIC_EXISTENTIALS
+    drop_if_any_pred_in_sentence: ["has_name","work_at","live_in","be_from","role_at","give","tell","has_property","be","like","be_born_in","married_to"]
+    targets: ["exist","undergo_","SV_ONLY","FRAG_EXIST","V+P"]
+
+  - name: DROP_COPULA_NAME_IF_PERSONAL_NAME
+    suppress:
+      - if_fired: ["PERSONAL_NAME_DECLARATION","SELF_INTRO_COPULA"]
+        drop: ["COPULA_NOMINAL_ROLE","POSSESSIVE_NOUN_HAS","NOMINAL_FRAGMENT_EXISTS"]
+
+  - name: PREFER_SPECIFIC_PREP_VERBS
+    suppress:
+      - if_fired: ["WORK_AT","LIVE_IN","BE_FROM_ORIGIN","LOCATED_IN"]
+        drop: ["VERB_PREP_POBJ_CORE","INTRANSITIVE_SV"]
+
+  - name: FINAL_TOP3_CAP
+    max_triples_per_sentence: 3
+    prefer_by_priority: true
+    tie_breaker: ["canon","pred","obj"]
+
+# =========================
+# M) PRECISION BOOSTERS (ADD-ONS)
+# =========================
+
+  # Dative / iobj pattern: "John gave Mary a book." (no preposition)
+  - name: DITRANS_GIVE_DATIVE
+    kind: relation
+    priority: 206
+    pattern:
+      anchor: {pos: "VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj",          as: giver}
+        - {from: anchor, rel: "^dobj|^obj",      as: theme}
+        - {from: anchor, rel: "^iobj|^dative",   as: recip}
+    emit:
+      - subj: "{giver.text}"
+        pred: "give"
+        obj: "{theme.subtree}"
+        canon: "GIVE_THEME_DATIVE"
+      - subj: "{giver.text}"
+        pred: "give_to"
+        obj: "{recip.subtree}"
+        canon: "GIVE_RECIP_DATIVE"
+    guards:
+      anchor_lemma_in: ["give","offer","send","show","dar","donner","geben","offrire"]
+
+  # Zero-copula adjectival: "Sky blue." / headlines / some languages
+  - name: ZERO_COPULA_ADJ
+    kind: relation
+    priority: 170
+    pattern:
+      anchor: {pos: "ADJ"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subject}
+    emit:
+      - subj: "{subject.text}"
+        pred: "has_property"
+        obj: "{anchor.text}"
+        canon: "ZERO_COP_ADJ"
+    guards:
+      subject_pos: "NOUN|PROPN|PRON"
+
+  # Zero-copula nominal: "John CEO." (telegraphic / headlines)
+  - name: ZERO_COPULA_NOMINAL
+    kind: relation
+    priority: 168
+    pattern:
+      anchor: {pos: "NOUN|PROPN"}
+      edges:
+        - {from: anchor, rel: "^nsubj|^csubj", as: subject}
+    emit:
+      - subj: "{subject.text}"
+        pred: "be"
+        obj: "{anchor.text}"
+        canon: "ZERO_COP_NOM"
+    guards:
+      anchor_pos: "NOUN|PROPN"
+      subject_pos: "NOUN|PROPN|PRON"
+
+  # Location with copula: "John is in Paris." / "Alice is at Google."
+  - name: LOCATED_IN
+    kind: relation
+    priority: 205
+    pattern:
+      anchor: {pos: "AUX|VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj", as: subject}
+        - {from: anchor, rel: "^prep",  as: prep}
+        - {from: prep,   rel: "^pobj",  as: place}
+    emit:
+      - subj: "{subject.text}"
+        pred: "located_{prep.lemma}"
+        obj: "{place.subtree}"
+        canon: "LOCATED_IN"
+    guards:
+      anchor_lemma_in: ["be","is","are","am","was","were","ser","estar","sein","être"]
+      prep_lemma_in: ["in","at","en","à","bei","chez"]
+
+  # Age statements: "John is 30." / "He's thirty years old."
+  - name: AGE_STATEMENT_NUM
+    kind: relation
+    priority: 204
+    pattern:
+      anchor: {pos: "AUX|VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj",         as: subject}
+        - {from: anchor, rel: "^attr|^oprd",    as: age_num}
+    emit:
+      - subj: "{subject.text}"
+        pred: "has_age"
+        obj: "{age_num.text}"
+        canon: "AGE_NUM"
+    guards:
+      anchor_lemma_in: ["be","is","are","am","was","were","ser","estar"]
+      age_num_pos: "NUM"
+
+  # Age adjectival: "John is thirty years old."
+  - name: AGE_STATEMENT_OLD
+    kind: relation
+    priority: 203
+    pattern:
+      anchor: {pos: "AUX|VERB"}
+      edges:
+        - {from: anchor, rel: "^nsubj",       as: subject}
+        - {from: anchor, rel: "^acomp|^attr", as: old_adj}
+        - {from: old_adj, rel: "^advmod|^nmod", as: years_phrase}
+    emit:
+      - subj: "{subject.text}"
+        pred: "has_age"
+        obj: "{years_phrase.subtree}"
+        canon: "AGE_OLD"
+    guards:
+      anchor_lemma_in: ["be","is","are","am","was","were","ser","estar"]
+      old_adj_lemma_in: ["old"]
+      years_phrase_lemma_in: ["year","years"]
+
+# =========================
+# N) QUALITY & SAFETY (GLOBAL GUARDS)
+# =========================
+
+global_safety:
+  # Hard guard to avoid over-generation from generic possessives when NAME rules fire
+  - if_sentence_contains_preds: ["has_name"]
+    block_rules: ["POSSESSIVE_NOUN_HAS","NOMINAL_FRAGMENT_EXISTS","COPULA_NOMINAL_ROLE"]
+
+  # Prefer domain anchors for VERB_PREP_POBJ_CORE to avoid spurious outputs
+  - restrict_generic_prep_verbs:
+      verb_lemmas_whitelist: ["go","come","travel","move","work","talk","speak","write","read","meet","collaborate","depend","rely","wait","look"]
+      preps_whitelist: ["to","from","into","onto","on","in","at","with","about","for","over","under","against"]
+
+  # Existential only when 'there' expl is present
+  - existential_rule_ids: ["EXISTENTIAL_THERE_IS"]
+  - block_existential_without_expl: true
+
+# =========================
+# O) COMPATIBILITY NOTES
+# =========================
+compatibility:
+  spacy_mappings:
+    objects: "^dobj|^obj"
+    iobjects: "^iobj|^dative"
+    passive: "^nsubjpass" # + ^agent → ^pobj
+    prepositions: "^prep → ^pobj"
+    copula_complements: "^attr|^acomp"
+  loader_contract:
+    - edges: "simple lists"
+    - guards: "var_name_lemma_in / var_name_pos only"
+    - regex_ok: true
+    - multi_emit: true
+    - priority_higher_first: true
+
+# =========================
+# P) EVAL HINTS (non-executable, for reference)
+# =========================
+eval_targets:
+  must_score_high:
+    - "has_name"
+    - "work_at"
+    - "live_in"
+  suppress_low_value_when_high_value_present:
+    - "exist"
+    - "SV_ONLY"
+    - "FRAG_EXIST"
+
+# ========== END: ultragrok_v7_max.yaml ==========

@@ -1,0 +1,1294 @@
+# ULTRAGROK_V8.2.1.yaml - SpaCy-Compatible Semantic Extraction
+# Exact YAML Loader Syntax + V8 Semantic Quality + V8.1 Edge Cases
+# Uses spaCy deps: prep/pobj/dobj/nsubjpass/attr/oprd/poss
+# 100% Compatible with existing loader architecture
+
+meta:
+  version: "V8.2.1-spacy_compatible"
+  yaml_loader_compatible: true
+  spacy_dependencies:
+    - "^nsubj"
+    - "^csubj" 
+    - "^prep"
+    - "^pobj"
+    - "^dobj"
+    - "^nsubjpass"
+    - "^attr"
+    - "^oprd"
+    - "^poss"
+  semantic_quality: "v8_preserved"
+  edge_cases: "v8.1_inherited"
+  total_patterns: 12
+  validation: "loader_compatible"
+
+patterns:
+
+# ========== V8.0 CORE PATTERNS - SpaCy Syntax (8 PATTERNS) ==========
+
+# 1. V8.0 CORE SVO - spaCy dobj/iobj/nsubjpass
+- name: "v8_core_svo"
+  kind: relation
+  priority: 400
+  description: "V8.0 Core SVO with agent/patient/recipient - spaCy syntax"
+  pattern:
+    anchor:
+      pos: "VERB"
+    edges:
+      - from: anchor
+        rel: "^nsubj|^csubj"
+        as: agent
+        required: true
+      - from: anchor  
+        rel: "^dobj"
+        as: patient
+        required: false
+      - from: anchor
+        rel: "^dative"
+        as: recipient
+        required: false
+      - from: anchor
+        rel: "^nsubjpass"
+        as: passive_patient
+        required: false
+      - from: anchor
+        rel: "^prep_by"
+        as: passive_agent
+        required: false
+  guards:
+    anchor_pos: "VERB"
+    agent_pos: "NOUN|PROPN|PRON"
+    patient_pos: "NOUN|PROPN"
+    recipient_pos: "NOUN|PROPN"
+    exclude_garbage_verbs: 
+      - "be"
+      - "have" 
+      - "do"
+      - "get"
+      - "make"
+      - "take"
+      - "go"
+      - "come"
+      - "see"
+      - "know"
+    verb_meaningful: true
+  emit:
+    # Active voice core SVO
+    - if: "agent and patient"
+      subj: "{agent.text}"
+      pred: "{anchor.lemma}"
+      obj: "{patient.text}"
+      canon: "CORE_EVENT"
+      confidence: 0.98
+    # Ditransitive transfer (give/tell/send)
+    - if: "agent and patient and recipient"
+      subj: "{agent.text}"
+      pred: "{anchor.lemma}_to"
+      obj: "{patient.text} to {recipient.text}"
+      canon: "TRANSFER_EVENT"
+      confidence: 0.97
+    # Passive reconstruction (agent recovered)
+    - if: "passive_patient and passive_agent"
+      subj: "{passive_agent.text}"
+      pred: "{anchor.lemma}"
+      obj: "{passive_patient.text}"
+      canon: "PASSIVE_EVENT"
+      confidence: 0.96
+    # Patient focus (no agent recovered)
+    - if: "passive_patient and not passive_agent"
+      subj: "{passive_patient.text}"
+      pred: "undergo_{anchor.lemma}"
+      obj: ""
+      canon: "PATIENT_FOCUS"
+      confidence: 0.90
+  examples:
+    - input: "John gave Mary book"
+      matches:
+        - agent: "John"
+          patient: "book" 
+          recipient: "Mary"
+      output: 
+        - subj: "John"
+          pred: "give"
+          obj: "book"
+        - subj: "John"
+          pred: "give_to"
+          obj: "book to Mary"
+    - input: "Book was read by John"
+      matches:
+        - passive_patient: "Book"
+          passive_agent: "John"
+      output:
+        - subj: "John"
+          pred: "read"
+          obj: "Book"
+  validation: "v8_0_spacy_syntax"
+
+# 2. V8.0 SPATIAL RELATIONS - spaCy prep/pobj
+- name: "v8_spatial_relations"
+  kind: relation
+  priority: 350
+  description: "V8.0 Complete spatial extraction using prep/pobj"
+  pattern:
+    anchor:
+      pos: "VERB|NOUN"
+    edges:
+      - from: anchor
+        rel: "^nsubj"
+        as: trajector
+        required: true
+      - from: anchor
+        rel: "^prep"
+        as: spatial_prep
+        required: true
+      - from: spatial_prep
+        rel: "^pobj"
+        as: landmark
+        required: true
+      # Path relations (through/into/onto)
+      - from: anchor
+        rel: "^prep_through"
+        as: path_prep
+      - from: path_prep
+        rel: "^pobj"
+        as: path_landmark
+  guards:
+    trajector_pos: "NOUN|PROPN|PRON"
+    landmark_pos: "NOUN|PROPN"
+    spatial_prep_lemma_in:
+      - "in"
+      - "at"
+      - "on"
+      - "to"
+      - "from"
+      - "through"
+      - "into"
+      - "onto"
+      - "towards"
+      - "under"
+      - "over"
+      - "beside"
+      - "behind"
+      - "above"
+      - "below"
+      - "en"
+      - "a"
+      - "de"
+      - "zu"
+      - "à"
+      - "dans"
+      - "vers"
+      - "sur"
+    path_prep_lemma_in:
+      - "through"
+      - "via"
+      - "by"
+      - "across"
+      - "along"
+    landmark_meaningful: true
+  emit:
+    # Static location (in/at/on)
+    - if: "spatial_prep.lemma in ['in', 'at', 'on']"
+      subj: "{trajector.text}"
+      pred: "{anchor.lemma}_loc_{spatial_prep.lemma}"
+      obj: "{landmark.text}"
+      canon: "STATIC_LOCATION"
+      confidence: 0.96
+    # Goal motion (to)
+    - if: "spatial_prep.lemma == 'to'"
+      subj: "{trajector.text}"
+      pred: "{anchor.lemma}_goal_to"
+      obj: "{landmark.text}"
+      canon: "GOAL_MOTION"
+      confidence: 0.97
+    # Source motion (from)
+    - if: "spatial_prep.lemma == 'from'"
+      subj: "{trajector.text}"
+      pred: "{anchor.lemma}_source_from"
+      obj: "{landmark.text}"
+      canon: "SOURCE_MOTION"
+      confidence: 0.96
+    # Path motion (through/into)
+    - if: "path_prep"
+      subj: "{trajector.text}"
+      pred: "{anchor.lemma}_path_{path_prep.lemma}"
+      obj: "{path_landmark.text}"
+      canon: "PATH_MOTION"
+      confidence: 0.95
+    # Spatial configuration (under/over/beside)
+    - if: "spatial_prep.lemma in ['under', 'over', 'beside', 'behind']"
+      subj: "{trajector.text}"
+      pred: "{spatial_prep.lemma}_config"
+      obj: "{landmark.text}"
+      canon: "SPATIAL_CONFIGURATION"
+      confidence: 0.94
+  examples:
+    - input: "John walked to store through park"
+      matches:
+        - trajector: "John"
+          spatial_prep: "prep_to"
+          landmark: "store"
+        - trajector: "John"
+          path_prep: "prep_through" 
+          path_landmark: "park"
+      output:
+        - subj: "John"
+          pred: "walk_goal_to"
+          obj: "store"
+        - subj: "John"
+          pred: "walk_path_through"
+          obj: "park"
+    - input: "Book is on table beside lamp"
+      matches:
+        - trajector: "Book"
+          spatial_prep: "prep_on"
+          landmark: "table"
+        - trajector: "Book"
+          spatial_prep: "prep_beside"
+          landmark: "lamp"
+      output:
+        - subj: "Book"
+          pred: "is_loc_on"
+          obj: "table"
+        - subj: "Book"
+          pred: "beside_config"
+          obj: "lamp"
+  validation: "v8_0_spacy_syntax"
+
+# 3. V8.0 TEMPORAL RELATIONS - spaCy advmod/tmod
+- name: "v8_temporal_relations"
+  kind: relation
+  priority: 340
+  description: "V8.0 Complete temporal extraction - advmod:tmod"
+  pattern:
+    anchor:
+      pos: "VERB|NOUN"
+    edges:
+      - from: anchor
+        rel: "^nsubj"
+        as: temporal_subject
+        required: true
+      # Point-in-time (advmod:tmod or prep_at)
+      - from: anchor
+        rel: "^advmod:tmod"
+        as: time_adverb
+      - from: anchor
+        rel: "^prep_at"
+        as: time_prep
+      - from: time_prep
+        rel: "^pobj"
+        as: time_point
+      # Duration (prep_during/for/over)
+      - from: anchor
+        rel: "^prep_during"
+        as: duration_prep
+      - from: duration_prep
+        rel: "^pobj"
+        as: duration_target
+      # Sequence (advmod before/after/then)
+      - from: anchor
+        rel: "^advmod"
+        lemma: "before|after|then|next|previously"
+        as: sequence_marker
+      # Frequency (advmod always/never/often)
+      - from: anchor
+        rel: "^advmod"
+        lemma: "always|never|often|sometimes|usually"
+        as: frequency_adv
+  guards:
+    temporal_subject_pos: "NOUN|PROPN|PRON"
+    time_point_pos: "NOUN|PROPN|NUM"
+    duration_target_pos: "NOUN"
+    sequence_marker_lemma_in:
+      - "before"
+      - "after"
+      - "then"
+      - "next"
+      - "previously"
+      - "finally"
+    frequency_adv_lemma_in:
+      - "always"
+      - "never"
+      - "often"
+      - "sometimes"
+      - "usually"
+      - "siempre"
+      - "nunca"
+      - "a menudo"
+    valid_time_words:
+      - "yesterday"
+      - "today"
+      - "tomorrow"
+      - "now"
+      - "then"
+      - "Monday"
+      - "2023"
+      - "ayer"
+      - "hoy"
+      - "mañana"
+  emit:
+    # Point-in-time (adverb or prep_at)
+    - if: "time_adverb"
+      subj: "{temporal_subject.text}"
+      pred: "{anchor.lemma}_when"
+      obj: "{time_adverb.text}"
+      canon: "TEMPORAL_POINT"
+      confidence: 0.95
+    - if: "time_point"
+      subj: "{temporal_subject.text}"
+      pred: "{anchor.lemma}_at"
+      obj: "{time_point.text}"
+      canon: "TEMPORAL_POINT"
+      confidence: 0.95
+    # Duration (prep_during/for)
+    - if: "duration_target"
+      subj: "{temporal_subject.text}"
+      pred: "{anchor.lemma}_during"
+      obj: "{duration_target.text}"
+      canon: "TEMPORAL_DURATION"
+      confidence: 0.95
+    # Sequence relations
+    - if: "sequence_marker.lemma == 'before'"
+      subj: "{temporal_subject.text}"
+      pred: "{anchor.lemma}_before"
+      obj: "{sequence_marker.text}"
+      canon: "TEMPORAL_SEQUENCE_BEFORE"
+      confidence: 0.93
+    - if: "sequence_marker.lemma == 'after'"
+      subj: "{temporal_subject.text}"
+      pred: "{anchor.lemma}_after"
+      obj: "{sequence_marker.text}"
+      canon: "TEMPORAL_SEQUENCE_AFTER"
+      confidence: 0.93
+    # Frequency relations
+    - if: "frequency_adv"
+      subj: "{temporal_subject.text}"
+      pred: "{anchor.lemma}_frequency"
+      obj: "{frequency_adv.text}"
+      canon: "TEMPORAL_FREQUENCY"
+      confidence: 0.94
+  examples:
+    - input: "John worked yesterday during meeting after lunch"
+      matches:
+        - temporal_subject: "John"
+          time_adverb: "yesterday"
+        - temporal_subject: "John"
+          duration_prep: "prep_during"
+          duration_target: "meeting"
+        - temporal_subject: "John"
+          sequence_marker: "after"
+          sequence_value: "lunch"
+      output:
+        - subj: "John"
+          pred: "work_when"
+          obj: "yesterday"
+        - subj: "John"
+          pred: "work_during"
+          obj: "meeting"
+        - subj: "John"
+          pred: "work_after"
+          obj: "lunch"
+    - input: "She always visits on weekends"
+      matches:
+        - temporal_subject: "She"
+          frequency_adv: "always"
+        - temporal_subject: "She"
+          time_prep: "prep_on"
+          time_point: "weekends"
+      output:
+        - subj: "She"
+          pred: "visit_frequency"
+          obj: "always"
+        - subj: "She"
+          pred: "visit_at"
+          obj: "weekends"
+  validation: "v8_0_spacy_syntax"
+
+# 4. V8.0 COPULA ATTRIBUTION - spaCy attr/oprd
+- name: "v8_copula_attribution"
+  kind: relation
+  priority: 330
+  description: "V8.0 Copula predicates using attr/oprd"
+  pattern:
+    anchor:
+      lemma: "be|is|are|was|were|seem|appear|become"
+      pos: "VERB|AUX"
+      dep: "ROOT|cop"
+    edges:
+      - from: anchor
+        rel: "^nsubj"
+        as: subject
+        required: true
+      # Nominal predicates (attr/oprd + NOUN)
+      - from: anchor
+        rel: "^attr|^oprd"
+        pos: "NOUN|PROPN"
+        as: nominal_pred
+      - from: nominal_pred
+        rel: "^det"
+        as: determiner
+      - from: nominal_pred
+        rel: "^amod"
+        as: descriptive_mod
+      # Adjectival predicates (attr/oprd + ADJ)
+      - from: anchor
+        rel: "^attr|^oprd|^acomp"
+        pos: "ADJ"
+        as: adj_pred
+      - from: adj_pred
+        rel: "^advmod"
+        as: intensifier
+      # Locative predicates (prep_in/at/on)
+      - from: anchor
+        rel: "^prep_in"
+        as: loc_prep_in
+      - from: loc_prep_in
+        rel: "^pobj"
+        as: location_in
+      - from: anchor
+        rel: "^prep_at"
+        as: loc_prep_at
+      - from: loc_prep_at
+        rel: "^pobj"
+        as: location_at
+  guards:
+    subject_pos: "NOUN|PROPN|PRON"
+    nominal_pred_pos: "NOUN|PROPN"
+    adj_pred_pos: "ADJ"
+    determiner_lemma_in: ["the", "a", "an", "this", "that"]
+    intensifier_lemma_in: ["very", "quite", "rather", "extremely", "most"]
+    copula_valid: true
+  emit:
+    # Nominal attribution (is_a)
+    - if: "nominal_pred"
+      subj: "{subject.text}"
+      pred: "is_a"
+      obj: "{determiner.text or ''} {nominal_pred.text}"
+      canon: "NOMINAL_ATTRIBUTION"
+      confidence: 0.99
+    # Descriptive attribution
+    - if: "descriptive_mod and nominal_pred"
+      subj: "{subject.text}"
+      pred: "described_as"
+      obj: "{descriptive_mod.text} {nominal_pred.text}"
+      canon: "DESCRIPTIVE_ATTRIBUTION"
+      confidence: 0.98
+    # Adjectival attribution (has_property)
+    - if: "adj_pred"
+      subj: "{subject.text}"
+      pred: "has_property"
+      obj: "{intensifier.text or ''} {adj_pred.text}"
+      canon: "ADJECTIVAL_ATTRIBUTION"
+      confidence: 0.98
+    # Intensified property
+    - if: "intensifier and adj_pred"
+      subj: "{subject.text}"
+      pred: "{intensifier.text}_property"
+      obj: "{adj_pred.text}"
+      canon: "INTENSIFIED_ATTRIBUTION"
+      confidence: 0.97
+    # Locative attribution (in/at/on)
+    - if: "location_in"
+      subj: "{subject.text}"
+      pred: "located_in"
+      obj: "{location_in.text}"
+      canon: "LOCATIVE_ATTRIBUTION"
+      confidence: 0.97
+    - if: "location_at"
+      subj: "{subject.text}"
+      pred: "located_at"
+      obj: "{location_at.text}"
+      canon: "LOCATIVE_ATTRIBUTION"
+      confidence: 0.97
+  examples:
+    - input: "John is the president of USA"
+      matches:
+        - subject: "John"
+          copula: "is"
+          nominal_pred: "president"
+          determiner: "the"
+      output:
+        - subj: "John"
+          pred: "is_a"
+          obj: "the president of USA"
+        - subj: "John"
+          pred: "described_as"
+          obj: "president of USA"
+    - input: "Solution seems very effective"
+      matches:
+        - subject: "Solution"
+          copula: "seems"
+          adj_pred: "effective"
+          intensifier: "very"
+      output:
+        - subj: "Solution"
+          pred: "has_property"
+          obj: "very effective"
+        - subj: "Solution"
+          pred: "very_property"
+          obj: "effective"
+    - input: "Meeting is in conference room"
+      matches:
+        - subject: "Meeting"
+          copula: "is"
+          loc_prep_in: "prep_in"
+          location_in: "conference room"
+      output:
+        - subj: "Meeting"
+          pred: "located_in"
+          obj: "conference room"
+  validation: "v8_0_spacy_syntax"
+
+# 5. V8.0 COORDINATION - spaCy cc/conj
+- name: "v8_coordination_relations"
+  kind: relation
+  priority: 320
+  description: "V8.0 Complete coordination using cc/conj"
+  pattern:
+    # Subject coordination (NP + cc + NP)
+    primary_subj:
+      pos: "NOUN|PROPN"
+      dep: "nsubj"
+    edges:
+      - from: primary_subj
+        rel: "^cc"
+        lemma: "and|or|but"
+        as: coord_marker
+        required: true
+      - from: coord_marker
+        rel: "^conj"
+        pos: "NOUN|PROPN"
+        as: secondary_subj
+        required: true
+      # Shared verb
+      - from: anchor
+        rel: "^head"
+        pos: "VERB"
+        as: shared_verb
+        required: true
+      # Shared object
+      - from: shared_verb
+        rel: "^dobj"
+        as: shared_object
+      # Individual modifiers
+      - from: primary_subj
+        rel: "^amod"
+        as: primary_modifier
+      - from: secondary_subj
+        rel: "^amod"
+        as: secondary_modifier
+    # Object coordination (dobj + cc + dobj) 
+    primary_obj:
+      pos: "NOUN|PROPN"
+      dep: "dobj"
+    edges:
+      - from: primary_obj
+        rel: "^cc"
+        lemma: "and|or"
+        as: obj_coord_marker
+        required: true
+      - from: obj_coord_marker
+        rel: "^conj"
+        pos: "NOUN|PROPN"
+        as: secondary_obj
+        required: true
+      # Governing verb
+      - from: primary_obj
+        rel: "^dobj"
+        pos: "VERB"
+        as: governing_verb
+        required: true
+      - from: governing_verb
+        rel: "^nsubj"
+        as: shared_subject
+        required: true
+  guards:
+    coord_marker_lemma_in: ["and", "or", "but"]
+    max_conjuncts: 3
+    parallel_structure: true
+    primary_pos: "NOUN|PROPN"
+    secondary_pos: "NOUN|PROPN"
+    shared_verb_pos: "VERB"
+    governing_verb_pos: "VERB"
+  emit:
+    # Subject coordination - distribute verb to both
+    - if: "shared_verb"
+      subj: "{primary_subj.text}"
+      pred: "{shared_verb.lemma}"
+      obj: "{shared_object.text or ''}"
+      canon: "COORD_SUBJECT_PRIMARY"
+      confidence: 0.94
+    - if: "shared_verb and secondary_subj"
+      subj: "{secondary_subj.text}"
+      pred: "{shared_verb.lemma}"
+      obj: "{shared_object.text or ''}"
+      canon: "COORD_SUBJECT_SECONDARY"
+      confidence: 0.94
+    # Shared object applies to both subjects
+    - if: "shared_object and shared_verb"
+      subj: "{primary_subj.text}"
+      pred: "{shared_verb.lemma}_obj"
+      obj: "{shared_object.text}"
+      canon: "COORD_SHARED_OBJECT"
+      confidence: 0.93
+    - if: "shared_object and secondary_subj"
+      subj: "{secondary_subj.text}"
+      pred: "{shared_verb.lemma}_obj"
+      obj: "{shared_object.text}"
+      canon: "COORD_SHARED_OBJECT"
+      confidence: 0.93
+    # Individual modifiers
+    - if: "primary_modifier and shared_verb"
+      subj: "{primary_modifier.text} {primary_subj.text}"
+      pred: "{shared_verb.lemma}"
+      obj: "{shared_object.text or ''}"
+      canon: "COORD_INDIVIDUAL_MODIFIER"
+      confidence: 0.92
+    - if: "secondary_modifier and shared_verb"
+      subj: "{secondary_modifier.text} {secondary_subj.text}"
+      pred: "{shared_verb.lemma}"
+      obj: "{shared_object.text or ''}"
+      canon: "COORD_INDIVIDUAL_MODIFIER"
+      confidence: 0.92
+    # Object coordination
+    - if: "governing_verb and shared_subject"
+      subj: "{shared_subject.text}"
+      pred: "{governing_verb.lemma}"
+      obj: "{primary_obj.text}"
+      canon: "COORD_OBJECT_PRIMARY"
+      confidence: 0.94
+    - if: "governing_verb and secondary_obj"
+      subj: "{shared_subject.text}"
+      pred: "{governing_verb.lemma}"
+      obj: "{secondary_obj.text}"
+      canon: "COORD_OBJECT_SECONDARY"
+      confidence: 0.94
+  examples:
+    - input: "John and Mary ate apples"
+      matches:
+        - primary_subj: "John"
+          coord_marker: "and"
+          secondary_subj: "Mary"
+          shared_verb: "ate"
+          shared_object: "apples"
+      output:
+        - subj: "John"
+          pred: "eat"
+          obj: ""
+        - subj: "Mary"
+          pred: "eat"
+          obj: ""
+        - subj: "John"
+          pred: "eat_obj"
+          obj: "apples"
+        - subj: "Mary"
+          pred: "eat_obj"
+          obj: "apples"
+    - input: "She bought red apples and green oranges"
+      matches:
+        - primary_obj: "apples"
+          obj_coord_marker: "and"
+          secondary_obj: "oranges"
+          governing_verb: "bought"
+          shared_subject: "She"
+        - primary_obj_modifier: "red"
+          secondary_obj_modifier: "green"
+      output:
+        - subj: "She"
+          pred: "bought"
+          obj: "red apples"
+        - subj: "She"
+          pred: "bought"
+          obj: "green oranges"
+  validation: "v8_0_spacy_syntax"
+
+# 6. V8.0 CLAUSE EMBEDDING - spaCy ccomp/xcomp/relcl
+- name: "v8_clause_embedding"
+  kind: relation
+  priority: 310
+  description: "V8.0 Embedded clauses using ccomp/xcomp/relcl"
+  pattern:
+    matrix_verb:
+      pos: "VERB"
+      lemma_in: ["think", "know", "believe", "say", "tell", "want", "hope", "plan"]
+    edges:
+      - from: matrix_verb
+        rel: "^nsubj"
+        as: matrix_subject
+        required: true
+      # Embedded clauses (ccomp/xcomp/relcl)
+      - from: matrix_verb
+        rel: "^ccomp"
+        as: ccomp_clause
+      - from: matrix_verb
+        rel: "^xcomp"
+        as: xcomp_clause
+      - from: matrix_verb
+        rel: "^relcl"
+        as: relative_clause
+      # Embedded clause internals
+      - from: ccomp_clause
+        rel: "^nsubj"
+        as: embedded_subj_ccomp
+      - from: ccomp_clause
+        rel: "^head"
+        pos: "VERB"
+        as: embedded_verb_ccomp
+      - from: xcomp_clause
+        rel: "^nsubj"
+        as: embedded_subj_xcomp
+      - from: xcomp_clause
+        rel: "^head"
+        pos: "VERB"
+        as: embedded_verb_xcomp
+      - from: relative_clause
+        rel: "^nsubj"
+        as: relative_subj
+      - from: relative_clause
+        rel: "^head"
+        pos: "VERB"
+        as: relative_verb
+  guards:
+    matrix_subject_pos: "NOUN|PROPN|PRON"
+    embedded_verb_pos: "VERB"
+    matrix_lemma_valid: true
+    no_cross_clause_bleeding: true
+  emit:
+    # Matrix belief relation (ccomp)
+    - if: "embedded_subj_ccomp and embedded_verb_ccomp"
+      subj: "{matrix_subject.text}"
+      pred: "{matrix_verb.lemma}_that"
+      obj: "{embedded_subj_ccomp.text} {embedded_verb_ccomp.lemma}"
+      canon: "MATRIX_BELIEF"
+      confidence: 0.94
+    # Embedded core (ccomp)
+    - if: "embedded_subj_ccomp and embedded_verb_ccomp"
+      subj: "{embedded_subj_ccomp.text}"
+      pred: "{embedded_verb_ccomp.lemma}"
+      obj: ""
+      canon: "EMBEDDED_CORE"
+      confidence: 0.93
+    # Control relation (xcomp)
+    - if: "matrix_verb.lemma in ['want', 'try', 'plan'] and embedded_verb_xcomp"
+      subj: "{matrix_subject.text}"
+      pred: "{matrix_verb.lemma}_{embedded_verb_xcomp.lemma}"
+      obj: ""
+      canon: "CONTROL_RELATION"
+      confidence: 0.93
+    # Relative clause attribution
+    - if: "relative_subj and relative_verb"
+      subj: "{relative_subj.text}"
+      pred: "{relative_verb.lemma}_relative"
+      obj: ""
+      canon: "RELATIVE_ATTRIBUTION"
+      confidence: 0.95
+  examples:
+    - input: "John thinks Mary runs fast"
+      matches:
+        - matrix_verb: "thinks"
+          matrix_subject: "John"
+          ccomp_clause: "Mary runs fast"
+          embedded_subj_ccomp: "Mary"
+          embedded_verb_ccomp: "runs"
+      output:
+        - subj: "John"
+          pred: "thinks_that"
+          obj: "Mary runs"
+        - subj: "Mary"
+          pred: "runs"
+          obj: ""
+    - input: "Man who left early arrived late"
+      matches:
+        - relative_clause: "who left early"
+          relative_subj: "who"
+          relative_verb: "left"
+      output:
+        - subj: "Man"
+          pred: "left_relative"
+          obj: ""
+  validation: "v8_0_spacy_syntax"
+
+# 7. V8.0 MODAL ASPECT - spaCy aux/auxpass
+- name: "v8_modal_aspect"
+  kind: relation
+  priority: 300
+  description: "V8.0 Modal/aspect using aux/auxpass"
+  pattern:
+    modal_aux:
+      pos: "AUX"
+      lemma_in: ["will", "can", "may", "must", "shall", "should", "could", "would", "might"]
+      dep: "aux"
+    aspect_aux:
+      pos: "AUX"
+      lemma_in: ["have", "has", "had", "be", "is", "are", "was", "were"]
+      dep: "aux|auxpass"
+    edges:
+      - from: modal_aux
+        rel: "^nsubj"
+        as: modal_subject
+        required: true
+      - from: modal_aux
+        rel: "^head"
+        pos: "VERB"
+        as: main_verb
+        required: true
+      - from: main_verb
+        rel: "^dobj"
+        as: direct_object
+      # Context modifiers
+      - from: main_verb
+        rel: "^prep"
+        as: context_prep
+      - from: context_prep
+        rel: "^pobj"
+        as: context_object
+      - from: main_verb
+        rel: "^prep_at"
+        as: temporal_prep
+      - from: temporal_prep
+        rel: "^pobj"
+        as: temporal_object
+  guards:
+    modal_subject_pos: "NOUN|PRON"
+    main_verb_pos: "VERB"
+    direct_object_pos: "NOUN|PROPN"
+    modal_lemma_valid: true
+    aspect_lemma_valid: true
+    exclude_copula_only: true
+  emit:
+    # Modal + main verb
+    - if: "modal_aux and main_verb"
+      subj: "{modal_subject.text}"
+      pred: "{main_verb.lemma}_{modal_aux.lemma}"
+      obj: "{direct_object.text or ''}"
+      canon: "MODAL_CORE"
+      confidence: 0.97
+    # Aspect + main verb
+    - if: "aspect_aux and main_verb"
+      subj: "{modal_subject.text}"
+      pred: "{main_verb.lemma}_{aspect_aux.lemma}"
+      obj: "{direct_object.text or ''}"
+      canon: "ASPECT_CORE"
+      confidence: 0.96
+    # Modal + aspect combination
+    - if: "modal_aux and aspect_aux and main_verb"
+      subj: "{modal_subject.text}"
+      pred: "{main_verb.lemma}_{aspect_aux.lemma}_{modal_aux.lemma}"
+      obj: "{direct_object.text or ''}"
+      canon: "MODAL_ASPECT_CORE"
+      confidence: 0.97
+    # Context with modal
+    - if: "context_object"
+      subj: "{modal_subject.text}"
+      pred: "{main_verb.lemma}_{modal_aux.lemma or ''}_with"
+      obj: "{context_object.text}"
+      canon: "MODAL_CONTEXT"
+      confidence: 0.95
+    # Temporal specification
+    - if: "temporal_object"
+      subj: "{modal_subject.text}"
+      pred: "{main_verb.lemma}_{modal_aux.lemma or ''}_when"
+      obj: "{temporal_object.text}"
+      canon: "MODAL_TEMPORAL"
+      confidence: 0.96
+  examples:
+    - input: "She will visit Paris tomorrow"
+      matches:
+        - modal_aux: "will"
+          modal_subject: "She"
+          main_verb: "visit"
+          direct_object: "Paris"
+          temporal_prep: "prep_tomorrow"
+          temporal_object: "tomorrow"
+      output:
+        - subj: "She"
+          pred: "visit_will"
+          obj: "Paris"
+        - subj: "She"
+          pred: "visit_will_when"
+          obj: "tomorrow"
+    - input: "John has been working on project"
+      matches:
+        - aspect_aux: "has"
+          modal_subject: "John"
+          main_verb: "working"
+          context_prep: "prep_on"
+          context_object: "project"
+      output:
+        - subj: "John"
+          pred: "working_has_been"
+          obj: ""
+        - subj: "John"
+          pred: "working_has_been_with"
+          obj: "project"
+  validation: "v8_0_spacy_syntax"
+
+# 8. V8.0 QUALITY FALLBACK - spaCy ROOT with quality guards
+- name: "v8_quality_fallback"
+  kind: relation
+  priority: 50
+  description: "V8.0 Minimal quality fallback - strict guards"
+  pattern:
+    fallback_root:
+      pos: "VERB"
+    edges:
+      - from: fallback_root
+        rel: "^nsubj"
+        as: fallback_subject
+        required: true
+  guards:
+    fallback_subject_pos: "NOUN|PROPN"
+    fallback_root_lemma_in:
+      - "arrive"
+      - "leave"
+      - "begin"
+      - "end"
+      - "start"
+      - "stop"
+      - "continue"
+      - "occur"
+      - "happen"
+      - "llegar"
+      - "salir"
+      - "comenzar"
+    exclude_generic_verbs:
+      - "be"
+      - "have"
+      - "do"
+      - "get"
+      - "make"
+      - "take"
+    quality_threshold: 0.75
+    last_resort_only: true
+  emit:
+    - subj: "{fallback_subject.text}"
+      pred: "{fallback_root.lemma}"
+      obj: ""
+      canon: "FALLBACK_CORE"
+      confidence: 0.75
+  examples:
+    - input: "John arrived yesterday"
+      matches:
+        - fallback_subject: "John"
+          fallback_root: "arrived"
+      output:
+        - subj: "John"
+          pred: "arrive"
+          obj: ""
+      notes: "Quality fallback - high-quality verb"
+    - input: "Meeting occurred"
+      matches: []
+      output: []
+      notes: "Excluded - generic verb 'occurred'"
+  validation: "v8_0_spacy_syntax"
+
+# ========== V8.1 EDGE CASE PATTERNS - SpaCy Syntax (4 PATTERNS) ==========
+
+# 9. V8.1 ELLIPSIS/GAPPING - spaCy cc/conj with missing parallel
+- name: "v8_1_gapping_recovery"
+  kind: relation
+  priority: 450
+  description: "V8.1 Gapping recovery using cc/conj - missing parallel structure"
+  pattern:
+    anchor:
+      pos: "VERB"
+    edges:
+      - from: anchor
+        rel: "^nsubj"
+        as: agent
+        required: true
+      - from: anchor
+        rel: "^cc"
+        lemma: "and|or|but"
+        as: coord_marker
+        required: true
+      - from: coord_marker
+        rel: "^conj"
+        pos: "NOUN|PROPN"
+        as: secondary_subject
+        required: true
+      - from: anchor
+        rel: "^dobj"
+        as: patient
+      # Gapping: secondary_subject lacks parallel verb
+      - from: secondary_subject
+        rel: "^nsubj"
+        pos: "VERB"
+        not_present: true
+        as: elided_verb
+      - from: secondary_subject
+        rel: "^dobj"
+        as: secondary_object
+  guards:
+    gapping_detected: true
+    agent_pos: "NOUN|PROPN"
+    secondary_subject_pos: "NOUN|PROPN"
+    coord_marker_lemma_in: ["and", "or", "but"]
+    recovery_confidence: ">0.90"
+  emit:
+    # Primary relation (reference)
+    - subj: "{agent.text}"
+      pred: "{anchor.lemma}"
+      obj: "{patient.text or ''}"
+      canon: "PRIMARY_RELATION"
+      confidence: 0.98
+    # Gapping recovery (reconstruct elided verb)
+    - if: "elided_verb and secondary_object"
+      subj: "{secondary_subject.text}"
+      pred: "{anchor.lemma}"
+      obj: "{secondary_object.text}"
+      canon: "GAPPING_RECOVERY"
+      confidence: 0.92
+      recovered: "verb+object"
+    - if: "elided_verb and not secondary_object"
+      subj: "{secondary_subject.text}"
+      pred: "{anchor.lemma}"
+      obj: "{patient.text}"
+      canon: "GAPPING_RECOVERY"
+      confidence: 0.91
+      recovered: "verb"
+  examples:
+    - input: "John ate apples and Mary oranges"
+      matches:
+        - primary_verb: "ate"
+          primary_subject: "John"
+          primary_object: "apples"
+          coord_marker: "and"
+          secondary_subject: "Mary"
+          secondary_object: "oranges"
+          elided_verb: true  # Missing parallel verb
+      output:
+        - subj: "John"
+          pred: "eat"
+          obj: "apples"
+        - subj: "Mary"
+          pred: "eat"
+          obj: "oranges"
+      notes: "Gapping recovery: reconstructed 'Mary eat oranges'"
+    - input: "John can swim and Mary can too"
+      matches:
+        - primary_verb: "can"
+          elided_verb: true  # "too" indicates VP ellipsis
+      output:
+        - subj: "John"
+          pred: "can"
+          obj: "swim"
+        - subj: "Mary"
+          pred: "can"
+          obj: "swim"
+  validation: "v8_1_spacy_syntax"
+
+# 10. V8.1 IDIOMATIC EXPRESSIONS - spaCy lemma matching
+- name: "v8_1_idiomatic_expressions"
+  kind: relation
+  priority: 410
+  description: "V8.1 Multi-word idioms using lemma patterns"
+  pattern:
+    anchor:
+      pos: "VERB"
+    edges:
+      - from: anchor
+        rel: "^nsubj"
+        as: agent
+        required: true
+      # Fixed object idioms (kick + bucket)
+      - from: anchor
+        rel: "^dobj"
+        lemma: "bucket"
+        as: bucket_object
+      # Particle verbs (give + up)
+      - from: anchor
+        rel: "^prep_up"
+        as: up_particle
+      - from: anchor
+        rel: "^prep_out"
+        as: out_particle
+      # Compound object idioms (arm + leg)
+      - from: anchor
+        rel: "^dobj"
+        lemma: "arm"
+        as: arm_object
+      - from: arm_object
+        rel: "^prep_and"
+        lemma: "leg"
+        as: leg_modifier
+  guards:
+    agent_pos: "NOUN|PROPN|PRON"
+    idiom_lemma_patterns:
+      - "kick + bucket"
+      - "break + leg"
+      - "give + up"
+      - "cost + arm + leg"
+      - "hit + book"
+      - "spill + bean"
+    context_idiomatic: true
+    literal_conflict: false
+  emit:
+    # Kick the bucket = die
+    - if: "anchor.lemma == 'kick' and bucket_object"
+      subj: "{agent.text}"
+      pred: "die_idiomatic"
+      obj: ""
+      canon: "IDIOM_DEATH"
+      confidence: 0.95
+    # Break a leg = good luck
+    - if: "anchor.lemma == 'break' and agent.lemma == 'leg'"
+      subj: "{agent.text}"
+      pred: "good_luck_idiomatic"
+      obj: ""
+      canon: "IDIOM_GOOD_LUCK"
+      confidence: 0.94
+    # Give up = abandon
+    - if: "anchor.lemma == 'give' and up_particle"
+      subj: "{agent.text}"
+      pred: "give_up_idiomatic"
+      obj: "{up_particle.pobj.text or ''}"
+      canon: "IDIOM_ABANDON"
+      confidence: 0.93
+    # Cost an arm and a leg = expensive
+    - if: "anchor.lemma == 'cost' and arm_object and leg_modifier"
+      subj: "{agent.text}"
+      pred: "expensive_idiomatic"
+      obj: "arm and leg"
+      canon: "IDIOM_EXPENSIVE"
+      confidence: 0.92
+    # Hit the books = study
+    - if: "anchor.lemma == 'hit' and dobj.lemma == 'book'"
+      subj: "{agent.text}"
+      pred: "study_idiomatic"
+      obj: ""
+      canon: "IDIOM_STUDY"
+      confidence: 0.91
+  examples:
+    - input: "John kicked the bucket yesterday"
+      matches:
+        - idiom_verb: "kick"
+          idiom_subject: "John"
+          bucket_object: "bucket"
+      output:
+        - subj: "John"
+          pred: "die_idiomatic"
+          obj: ""
+      notes: "Idiom recognized: 'kick the bucket' = die"
+    - input: "Break a leg on your performance!"
+      matches:
+        - idiom_verb: "break"
+          dobj: "leg"
+      output:
+        - subj: "you"
+          pred: "good_luck_idiomatic"
+          obj: ""
+      notes: "Idiom: 'break a leg' = good luck"
+    - input: "She finally gave up smoking"
+      matches:
+        - idiom_verb: "give"
+          up_particle: "up"
+          pobj: "smoking"
+      output:
+        - subj: "She"
+          pred: "give_up_idiomatic"
+          obj: "smoking"
+  validation: "v8_1_spacy_syntax"
+
+# 11. V8.1 ERROR RECOVERY - spaCy X tags + malformed
+- name: "v8_1_error_recovery"
+  kind: relation
+  priority: 5
+  description: "V8.1 Production error recovery for malformed input"
+  pattern:
+    # Parse failure - multiple roots or X tags
+    failed_root:
+      pos: "VERB|NOUN|X"
+    edges:
+      - from: failed_root
+        rel: "^nsubj"
+        as: recovery_subject
+      - from: failed_root
+        rel: "^dobj"
+        as: recovery_object
+    # Malformed tokens (X tags, OCR errors)
+    malformed_token:
+      tag: "X"
+      alpha_numeric: true
+    edges:
+      - from: malformed_token
+        rel: "^nsubj"
+        as: malformed_subject
+      - from: malformed_token
+        rel: "^dobj"
+        as: malformed_object
+    # Domain terms (unknown nouns)
+    domain_noun:
+      pos: "NOUN"
+      lemma_not_in: "common_english"
+      dep: "ROOT|dobj"
+    edges:
+      - from: domain_noun
+        rel: "^nsubj"
+        as: domain_subject
+  guards:
+    recovery_confidence: ">0.70"
+    error_indicators:
+      - multiple_roots: ">1"
+      - x_tags: true
+      - ocr_patterns: ["\\$", "%", "#"]
+    domain_indicators:
+      - technical: ["neural", "algorithm", "backprop"]
+      - medical: ["patient", "diagnosis", "treatment"]
+    avoid_hallucination: true
+  emit:
+    # Parse recovery - minimal content extraction
+    - if: "recovery_subject and failed_root"
+      subj: "{recovery_subject.text or 'entity'}"
+      pred: "{failed_root.lemma}_recovered"
+      obj: "{recovery_object.text or ''}"
+      canon: "PARSE_RECOVERY"
+      confidence: 0.75
+      is_recovered: true
+    # Malformed token recovery
+    - if: "malformed_subject and malformed_token"
+      subj: "{malformed_subject.text or 'entity'}"
+      pred: "involves_{malformed_token.lemma}"
+      obj: "{malformed_object.text or ''}"
+      canon: "MALFORMED_RECOVERY"
+      confidence: 0.70
+      is_recovered: true
+    # Domain term recognition
+    - if: "domain_noun"
+      subj: "{domain_subject.text or 'domain'}"
+      pred: "domain_concept_{domain_noun.lemma}"
+      obj: "{domain_noun.text}"
+      canon: "DOMAIN_TERM"
+      confidence: 0.88
+      domain: "technical"
+  examples:
+    - input: "John work$ at Google"
+      matches:
+        - failed_root: "work$"
+          recovery_subject: "John"
+      output:
+        - subj: "John"
+          pred: "work_recovered"
+          obj: "at Google"
+      notes: "OCR recovery: work$ → works"
+    - input: "CEO announc$ Q3 profit$"
+      matches:
+        - malformed_token: "announc$"
+          malformed_subject: "CEO"
+        - malformed_token: "profit$"
+      output:
+        - subj: "CEO"
+          pred: "involves_announc"
+          obj: ""
+        - subj: "entity"
+          pred: "involves_profit"
+          obj: ""
+    - input: "Neural network backpropagation"
+      matches:
+        - domain_noun: "backpropagation"
+          domain_subject: "Neural network"
+      output:
+        - subj: "domain"
+          pred: "domain_concept_backpropagation"
+          obj: "backpropagation"
+      notes: "Domain term recognition"
+  validation: "v8_1_spacy_syntax"
