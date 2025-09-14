@@ -551,8 +551,9 @@ class TemporalContextExtractor:
     def _load_spacy(self):
         """Load spacy model"""
         try:
-            self._nlp = spacy.load("en_core_web_sm")
-            logger.debug("[TemporalContextExtractor] spacy model loaded")
+            from services.nlp_cache import get_spacy
+            self._nlp = get_spacy("en_core_web_sm")
+            logger.debug("[TemporalContextExtractor] spacy model loaded (cached)")
         except Exception:
             try:
                 self._nlp = spacy.blank("en")

@@ -54,10 +54,8 @@ try:
     from components.extraction.hybrid_spacy_llm_extractor import HybridRelationExtractor
 except Exception:
     HybridRelationExtractor = None
-try:
-    from fastcoref import FCoref
-except Exception:
-    FCoref = None
+# Lazy import fastcoref only when coref is enabled to avoid startup downloads
+FCoref = None
 
 # Layer 3: Relationship refinement
 try:
@@ -98,7 +96,15 @@ class HotMemoryFacade:
     def __init__(self, store: MemoryStore, max_recency: int = 50):
         """Initialize with same interface as original"""
         self.store = store
+        # Canonical user entity id; link to USER_ID if provided for easy aliasing
         self.user_eid = "you"
+        try:
+            user_id_env = os.getenv("USER_ID", "").strip()
+            if user_id_env and user_id_env.lower() != self.user_eid:
+                # Map USER_ID alias to canonical 'you'
+                store.enqueue_alias(user_id_env, self.user_eid)
+        except Exception:
+            pass
         
         # Load configuration
         self.config = create_config()
@@ -265,13 +271,11 @@ class HotMemoryFacade:
         # Stage 1: Extract entities and relations using new extractor
         extract_start = time.perf_counter()
         extraction_result = self._extract_with_registry(text, lang)
-        if (not extraction_result.entities) and (not extraction_result.triples):
-            extraction_result = self.extractor.extract(text, lang)
         entities = extraction_result.entities
         triples = extraction_result.triples
         neg_count = extraction_result.negation_count
         doc = extraction_result.doc
-        embeddings = extraction_result.embeddings or {}
+        embeddings = getattr(extraction_result, 'embeddings', {}) or {}
         self.metrics['extraction_ms'].append((time.perf_counter() - extract_start) * 1000)
         # Debug logging for extraction junk
         logger.info(f"[DEBUG Extraction Raw] Triples: {[(s, r, d) for s, r, d in triples[:5]]}... (total {len(triples)})")
@@ -303,6 +307,13 @@ class HotMemoryFacade:
         
         # Apply coreference if enabled
         if self.config.features.use_coref:
+            # Lazy import of fastcoref at first use
+            global FCoref
+            if FCoref is None:
+                try:
+                    from fastcoref import FCoref  # type: ignore
+                except Exception:
+                    FCoref = None
             coreference_result = self.coreference_resolver.resolve_coreferences(triples, doc, text)
             triples = coreference_result.resolved_triples
             logger.debug(f"[HotMem] Coreference resolved: {len(coreference_result.resolved_triples)} triples")
@@ -442,7 +453,7 @@ class HotMemoryFacade:
         """
         try:
             if not self._extraction_registry:
-                return ExtractionResult([], [], 0, None, None)
+                return ExtractionResult([], [], 0, None)
 
             default_name = os.getenv('DEFAULT_EXTRACTION_STRATEGY', 'asi1')
             fallback_name = os.getenv('FALLBACK_EXTRACTION_STRATEGY', 'asi2')
@@ -486,9 +497,9 @@ class HotMemoryFacade:
                 except Exception:
                     entities = []
 
-            return ExtractionResult(entities, triples, 0, None, None)
+            return ExtractionResult(entities, triples, 0, None)
         except Exception:
-            return ExtractionResult([], [], 0, None, None)
+            return ExtractionResult([], [], 0, None)
     
     def prewarm(self, lang: str = "en") -> None:
         """Load NLP resources up-front to avoid first-turn latency"""

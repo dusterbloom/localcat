@@ -65,9 +65,16 @@ class QualityExtractor:
 
         # Semantic role patterns
         self.core_verbs = {
+            # Core commonsense/action
             'chase', 'work', 'announce', 'show', 'face', 'join', 'emphasize',
             'develop', 'decide', 'invest', 'enable', 'watch', 'play', 'respond',
-            'save', 'injure', 'exemplify', 'challenge', 'deny', 'perform', 'counter'
+            'save', 'injure', 'exemplify', 'challenge', 'deny', 'perform', 'counter',
+            # Location / personal facts
+            'live', 'move', 'reside', 'travel', 'visit', 'teach', 'marry',
+            # Business / organization
+            'found', 'founder', 'acquire', 'compete', 'headquarter', 'lead', 'manage',
+            # Education / lifecycle
+            'retire', 'study', 'create', 'build', 'launch', 'publish', 'write'
         }
         # Optional: extend via env to relax/expand coverage
         try:

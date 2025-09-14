@@ -82,6 +82,11 @@ def main() -> int:
     )
     store = MemoryStore(paths=paths)
     facade = HotMemoryFacade(store)
+    # Prewarm to avoid first-turn latency (spaCy, optional coref)
+    try:
+        facade.prewarm('en')
+    except Exception:
+        pass
 
     # Test texts (declarative + question)
     texts = [
@@ -119,4 +124,3 @@ def main() -> int:
 
 if __name__ == '__main__':
     raise SystemExit(main())
-

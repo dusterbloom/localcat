@@ -591,23 +591,11 @@ class EnhancedLevel3ExtractionStrategy(ExtractionStrategyBase):
     def _initialize_extractor(self) -> None:
         """Initialize the Enhanced Level3 Quality extractor."""
         try:
-            import spacy
             from enhanced_level3_extractor import QualityExtractor
+            from services.nlp_cache import get_en_model_from_env
 
-            import os
-            # Allow model and thresholds via environment
-            spacy_model = os.getenv('ENHANCED_LEVEL3_SPACY_MODEL', 'en_core_web_sm')
-            # Accept common typo alias: en_core_web_rtf -> en_core_web_trf
-            if spacy_model.endswith('_rtf') or spacy_model == 'en_core_web_rtf':
-                logger.warning("Model alias detected: 'en_core_web_rtf' -> 'en_core_web_trf'")
-                spacy_model = spacy_model.replace('_rtf', '_trf')
-            try:
-                self.nlp = spacy.load(spacy_model)
-            except Exception as e:
-                # Graceful fallback to small model if transformer model unavailable
-                fallback_model = 'en_core_web_sm'
-                logger.warning(f"Failed to load spaCy model '{spacy_model}': {e}; falling back to '{fallback_model}'")
-                self.nlp = spacy.load(fallback_model)
+            # Use centralized cached spaCy model
+            self.nlp = get_en_model_from_env()
 
             # Thresholds/targets tuning
             try:
