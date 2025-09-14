@@ -41,7 +41,11 @@ class CoreferenceResolver:
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize coreference resolver with configuration"""
-        self.use_coref = config.get('use_coref', False) and FASTCOREF_AVAILABLE and FCoref is not None
+        # Coref mode: 'none' | 'lite' | 'neural'
+        coref_mode = os.getenv('HOTMEM_COREF_MODE', 'lite').strip().lower()
+        use_coref_flag = config.get('use_coref', False)
+        self.use_coref_neural = (coref_mode == 'neural') and use_coref_flag and FASTCOREF_AVAILABLE and FCoref is not None
+        self.coref_mode = coref_mode
         self.coref_max_entities = config.get('coref_max_entities', 24)
         self.device = config.get('coref_device', 'cpu')
         
@@ -56,7 +60,7 @@ class CoreferenceResolver:
         self.max_triples_for_coref = 24
         self.max_entities_for_coref = 24
         
-        logger.info(f"[CoreferenceResolver] Initialized with neural={'✓' if self.use_coref else '✗'}, max_entities={self.coref_max_entities}")
+        logger.info(f"[CoreferenceResolver] Initialized with mode={self.coref_mode} neural={'✓' if self.use_coref_neural else '✗'}, max_entities={self.coref_max_entities}")
     
     def resolve_coreferences(self, triples: List[Tuple[str, str, str]], doc, text: str = "") -> CoreferenceResult:
         """
@@ -74,7 +78,7 @@ class CoreferenceResolver:
                 return CoreferenceResult(triples, {'method': 'skipped', 'reason': 'too_many_triples'}, 0.0)
             
             # Try neural coreference first if enabled
-            if self.use_coref and self._should_use_neural(doc, len(triples)):
+            if self.use_coref_neural and self._should_use_neural(doc, len(triples)):
                 try:
                     result = self._apply_neural_coreference(triples, doc)
                     if result.resolved_triples != triples:
@@ -102,7 +106,7 @@ class CoreferenceResolver:
     
     def _should_use_neural(self, doc, triple_count: int) -> bool:
         """Determine if neural coreference should be used"""
-        if not self.use_coref or not doc:
+        if not self.use_coref_neural or not doc:
             return False
         
         # Performance checks

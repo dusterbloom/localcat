@@ -435,17 +435,38 @@ class MemoryRetriever:
                 # Type safety check for bullet formatting
                 if isinstance(p, (tuple, list)) and len(p) >= 3:
                     s, r, d = p[:3]  # Take first 3 elements to be safe
-                    bullets.append(self._format_memory_bullet(s, r, d))
+                    # Filter out generic syntactic relations
+                    generic_bad = {"subject_of", "prepositional_object_of"}
+                    if (r in generic_bad) or ("preposition:" in r) or ("complemented_by" in r):
+                        continue
+                    b = self._format_memory_bullet(s, r, d)
+                    bullets.append(b)
                 else:
                     logger.warning(f"[MemoryRetriever] Malformed entry for bullet formatting: {p}")
             else:
-                # Handle non-KG entries (summaries, etc.)
+                # Handle non-KG entries (summaries, etc.) with simple filtering
                 if isinstance(p, str):
-                    bullets.append(f"• {p}")
+                    txt = p.strip()
+                    low = txt.lower()
+                    if any(bad in low for bad in ("subject_of", "prepositional_object_of", "preposition:", "complemented_by", "coordinated_with and")):
+                        continue
+                    bullets.append(f"• {txt}")
                 else:
                     logger.warning(f"[MemoryRetriever] Non-KG entry with unexpected type: {type(p)}")
-        
-        return bullets[:5]  # Final limit
+        # Deduplicate bullets preserving order, limit to 5
+        seen = set()
+        deduped: List[str] = []
+        for b in bullets:
+            key = b.lower().strip()
+            # Filter odd artifacts
+            if "coordinated_with and" in key:
+                continue
+            if key not in seen:
+                seen.add(key)
+                deduped.append(b)
+            if len(deduped) >= 5:
+                break
+        return deduped
     
     def _calculate_similarity(self, item1: Tuple[str, Any], item2: Tuple[str, Any]) -> float:
         """Calculate similarity between two retrieval items"""
@@ -583,13 +604,34 @@ class MemoryRetriever:
             except Exception:
                 # Fallback to simple formatting
                 def simple_formatter(s, r, d):
-                    return f"• {s} {r} {d}"
+                    # Smarter fallback: handle verb_prep and simple verbs
+                    rel = (r or '').lower().strip()
+                    subj = str(s or '')
+                    obj = str(d or '')
+                    if '_' in rel:
+                        try:
+                            verb, prep = rel.split('_', 1)
+                            # Conjugate verb for third person simple heuristic
+                            if subj.lower() not in {"you", "i", "we", "they"}:
+                                if not verb.endswith('s'):
+                                    if verb.endswith('y') and len(verb) > 2 and verb[-2] not in 'aeiou':
+                                        verb = verb[:-1] + 'ies'
+                                    elif verb.endswith(('ch','sh','x','z','o')):
+                                        verb = verb + 'es'
+                                    else:
+                                        verb = verb + 's'
+                            return f"• {subj} {verb} {prep} {obj}"
+                        except Exception:
+                            pass
+                    # Default fallback
+                    return f"• {subj} {rel.replace('_',' ')} {obj}"
                 self.bullet_formatter = type('SimpleFormatter', (), {'format_bullet': simple_formatter})()
         
         try:
             return self.bullet_formatter.format_bullet(s, r, d)
         except Exception:
-            return f"• {s} {r} {d}"
+            # Fallback path if formatter fails
+            return f"• {s} {r.replace('_',' ')} {d}"
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get retrieval performance metrics"""

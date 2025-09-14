@@ -66,6 +66,13 @@ from pipecat_whisker import WhiskerObserver
 # Load env from server/.env explicitly to ensure consistent paths
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"), override=True)
 
+# Prewarm NLP models to avoid first-turn latency
+try:
+    from services.nlp_cache import prewarm_from_env
+    prewarm_from_env()
+except Exception:
+    pass
+
 
 
 async def get_initial_greeting() -> str:

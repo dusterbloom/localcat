@@ -239,6 +239,13 @@ class HotMemoryFacade:
         
         # Store user message verbatim
         self.session_store.add_message(session_id, "user", text, turn_id)
+        # Index user text into FTS for retrieval fusion (session-scoped)
+        try:
+            now_ts = int(time.time() * 1000)
+            self.store.enqueue_mention(f"session:{session_id}", text[:500], now_ts, session_id, turn_id)
+            self.store.flush_if_needed()
+        except Exception:
+            pass
         
         # Language detection first (needed for intent analysis)
         lang = self._detect_language(text) if PYCLD3_AVAILABLE else "en"
@@ -366,7 +373,22 @@ class HotMemoryFacade:
         # Apply rich quality filtering first, then intent gating
         conf_thresh = max(0.3, self.config.confidence_threshold)
         try:
-            filtered = self.quality.filter_triples(triples, context={'conversation_text': text})
+            # If using Enhanced Level3 via registry, prefer extractor confidences directly
+            if self._last_registry_strategy_used == 'enhanced_level3':
+                tmp = []
+                for (s, r, d) in triples:
+                    props = self._pending_edge_props.get((s, r, d)) or {}
+                    try:
+                        c = float(props.get('confidence', 0.0) or 0.0)
+                    except Exception:
+                        c = 0.0
+                    # Use a safe default if extractor didn't provide
+                    if c <= 0.0:
+                        c = 0.7
+                    tmp.append((s, r, d, c))
+                filtered = tmp
+            else:
+                filtered = self.quality.filter_triples(triples, context={'conversation_text': text})
         except Exception:
             # Fallback to unfiltered triples if quality module fails
             filtered = [(s, r, d, 0.5) for (s, r, d) in triples]
@@ -376,6 +398,13 @@ class HotMemoryFacade:
             # Intent-based allowlist
             should_store, legacy_conf = quality_filter.should_store_fact(s, r, d, intent)
             base_conf = float(max(q_conf, legacy_conf))
+            # Incorporate extractor-provided confidence when available
+            props_from_extractor = self._pending_edge_props.get((s, r, d)) or {}
+            try:
+                ext_conf = float(props_from_extractor.get('confidence', 0.0) or 0.0)
+                base_conf = max(base_conf, ext_conf)
+            except Exception:
+                pass
             # Penalize generic UD-only predicates; prefer semantic relations
             generic = (r in {'subject_of', 'determined_by', 'prepositional_object_of'}) or r.startswith('verb:')
             factor = 0.4 if generic else 1.0
@@ -389,9 +418,29 @@ class HotMemoryFacade:
             if embeddings and (s, r, d) in embeddings:
                 edge_metadata.update(embeddings[(s, r, d)])
                 logger.debug(f"[HotMem] Added embedding for triple: {s} {r} {d}")
+            # Add extractor props if present (verb, prep, normalized_relation, confidence)
+            if props_from_extractor:
+                try:
+                    if 'props' in edge_metadata and isinstance(edge_metadata['props'], dict):
+                        edge_metadata['props'].update(props_from_extractor)
+                    else:
+                        edge_metadata['props'] = dict(props_from_extractor)
+                except Exception:
+                    edge_metadata['props'] = props_from_extractor
 
             self.edge_meta[(s, r, d)] = edge_metadata
-            if should_store and base_conf >= conf_thresh:
+            # Enhanced Level3 override: store high-confidence semantic relations
+            if self._last_registry_strategy_used == 'enhanced_level3' and not generic and base_conf >= conf_thresh:
+                should_store = True
+
+            # Enhanced Level3: force-candidate when extractor confidence meets min-edge gate
+            try:
+                min_edge_conf = float(os.getenv('HOTMEM_MIN_EDGE_CONFIDENCE', '0.8'))
+            except Exception:
+                min_edge_conf = 0.8
+            if self._last_registry_strategy_used == 'enhanced_level3' and not generic and base_conf >= min_edge_conf:
+                candidates.append((score, (s, r, d)))
+            elif should_store and base_conf >= conf_thresh:
                 candidates.append((score, (s, r, d)))
 
         # Top-K gating to prevent flooding the graph
@@ -413,30 +462,28 @@ class HotMemoryFacade:
         bullets = retrieval_result.bullets
         self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
         
-        # Store final triples and link to session
+        # Store final triples and link to session (with per-triple confidence)
         if stored_triples:
-            self.store.update_session_triples(session_id, stored_triples)
-
-            # Store edge metadata with embeddings to database
-            for s, r, d in stored_triples:
-                if (s, r, d) in self.edge_meta:
-                    edge_meta = self.edge_meta[(s, r, d)]
-                    # Extract embedding data for props
-                    props = {}
-                    if 'rel_embedding' in edge_meta:
-                        props['rel_embedding'] = edge_meta['rel_embedding']
-                    if 'original_predicate' in edge_meta:
-                        props['original_predicate'] = edge_meta['original_predicate']
-                    if 'normalized_relation' in edge_meta:
-                        props['normalized_relation'] = edge_meta['normalized_relation']
-
-                    if props:
-                        self.store.enqueue_edge_meta(s, r, d, prov='srl_semantic', lang='en', span=None, props=props, ts=now_ts)
-                        logger.debug(f"[HotMem] Persisted embedding metadata for: {s} {r} {d}")
-
+            for i, (s, r, d) in enumerate(stored_triples):
+                # Confidence from extractor props (fallback to 0.8)
+                props = self._pending_edge_props.get((s, r, d)) or {}
+                try:
+                    conf = float(props.get('confidence', 0.8) or 0.8)
+                except Exception:
+                    conf = 0.8
+                # Persist edge with observed confidence
+                self.store.observe_edge(s, r, d, conf, now_ts + i)
+                # Mentions for FTS
+                self.store.enqueue_mention(s, f"{s} {r} {d}", now_ts + i, session_id, i)
+                self.store.enqueue_mention(d, f"{s} {r} {d}", now_ts + i, session_id, i)
+                # Persist edge metadata with extractor props
+                if props:
+                    self.store.enqueue_edge_meta(s, r, d, prov=prov_tag, lang=lang, span=None, props=props, ts=now_ts + i)
                 # Link extracted knowledge to session
                 edge_id = self.store.edge_id(s, r, d)
-                self.session_store.link_knowledge_to_session(session_id, edge_id, "extracted", 0.8)
+                self.session_store.link_knowledge_to_session(session_id, edge_id, "extracted", conf)
+            # Ensure persistence
+            self.store.flush()
         
         # Track performance
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -462,24 +509,39 @@ class HotMemoryFacade:
                 try:
                     strat = self._extraction_registry.get_strategy(name)
                     if not strat:
-                        return []
-                    return strat.extract(text, lang) or []
+                        return [], None
+                    triples = strat.extract(text, lang) or []
+                    return triples, strat
                 except Exception:
-                    return []
+                    return [], None
 
             used_strategy = None
-            triples = run(default_name)
+            used_strat_obj = None
+            triples, strat_obj = run(default_name)
             if triples:
                 used_strategy = default_name
+                used_strat_obj = strat_obj
             elif fallback_name and fallback_name != default_name:
-                triples = run(fallback_name)
+                triples, strat_obj = run(fallback_name)
                 if triples:
                     used_strategy = fallback_name
+                    used_strat_obj = strat_obj
 
             # Record and log strategy selection
             self._last_registry_strategy_used = used_strategy
             try:
                 logger.debug(f"[Registry] strategy={used_strategy or 'none'} triples={len(triples)}")
+            except Exception:
+                pass
+
+            # Capture per-triple props (confidence, verb, prep) if provided by strategy
+            try:
+                if used_strategy == 'enhanced_level3' and used_strat_obj is not None:
+                    last_map = getattr(used_strat_obj, 'last_props_map', None)
+                    if isinstance(last_map, dict):
+                        for (s, r, d), props in last_map.items():
+                            if s and r and d and isinstance(props, dict):
+                                self._pending_edge_props[(s, r, d)] = dict(props)
             except Exception:
                 pass
 

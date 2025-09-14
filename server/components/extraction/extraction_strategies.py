@@ -643,9 +643,25 @@ class EnhancedLevel3ExtractionStrategy(ExtractionStrategyBase):
             triples = []
             # Use extractor's configured relation threshold for output gating
             rel_out_thr = getattr(self.extractor, 'RELATION_CONFIDENCE_THRESHOLD', 0.65)
+            # Store last props map for downstream consumers (confidence, verb, prep)
+            self.last_props_map: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
             for relation in result.get('relations', []):
                 if relation.confidence >= rel_out_thr:
-                    triples.append((relation.subject, relation.predicate, relation.object))
+                    s = relation.subject
+                    p = relation.predicate
+                    o = relation.object
+                    triples.append((s, p, o))
+                    verb = p.split('_', 1)[0] if '_' in p else p
+                    prep = p.split('_', 1)[1] if '_' in p else ''
+                    try:
+                        self.last_props_map[(s, p, o)] = {
+                            'confidence': float(getattr(relation, 'confidence', 0.0) or 0.0),
+                            'verb': verb,
+                            'prep': prep,
+                            'normalized_relation': p,
+                        }
+                    except Exception:
+                        pass
 
             # Filter and record
             filtered_triples = self.filter_triples(triples)

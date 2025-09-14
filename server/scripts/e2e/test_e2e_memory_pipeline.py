@@ -43,10 +43,13 @@ def preset_env(preset: str) -> None:
         os.environ.setdefault('ENHANCED_LEVEL3_RELATION_CONF', '0.55')
         os.environ.setdefault('ENHANCED_LEVEL3_TARGET_REL', '40')
         os.environ.setdefault('ENHANCED_LEVEL3_EXTRA_VERBS', 'argue,weigh,consider,foster,prove,seek,reveal,mitigate,preserve')
+        # Slightly more permissive storage during validation
+        os.environ.setdefault('HOTMEM_MIN_EDGE_CONFIDENCE', '0.7')
     else:
         os.environ.setdefault('ENHANCED_LEVEL3_SPACY_MODEL', 'en_core_web_sm')
         os.environ.setdefault('ENHANCED_LEVEL3_ENTITY_CONF', '0.70')
         os.environ.setdefault('ENHANCED_LEVEL3_RELATION_CONF', '0.65')
+        os.environ.setdefault('HOTMEM_MIN_EDGE_CONFIDENCE', '0.7')
 
 
 def run_turn(facade: HotMemoryFacade, text: str, session: str, turn_id: int) -> Dict[str, Any]:

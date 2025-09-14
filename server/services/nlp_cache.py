@@ -31,7 +31,7 @@ def get_spacy(model_name: str, disable: Optional[Iterable[str]] = None):
     if key in _SPACY_CACHE:
         return _SPACY_CACHE[key]
     try:
-        nlp = spacy.load(model_name, disable=list(disable_tuple) if disable_tuple else None)
+        nlp = spacy.load(model_name, disable=list(disable_tuple))
         _SPACY_CACHE[key] = nlp
         logger.info(f"[nlp_cache] Loaded spaCy model: {model_name} disable={list(disable_tuple) if disable_tuple else []}")
         return nlp
@@ -60,4 +60,3 @@ def prewarm_from_env() -> None:
         _ = get_en_model_from_env()
     except Exception:
         pass
-
