@@ -54,6 +54,12 @@ def compare_extractors():
             print(f"   Sample output:")
             for r in kg_enhanced['relations'][:5]:
                 print(f"     - {r.subject} | {r.predicate} | {r.object} [conf={r.confidence:.2f}]")
+
+        # Predicate breakdown (verb vs verb_prep) for quick audit
+        if kg_enhanced['relations']:
+            verb_only = sum(1 for r in kg_enhanced['relations'] if '_' not in r.predicate)
+            verb_prep = sum(1 for r in kg_enhanced['relations'] if '_' in r.predicate)
+            print(f"   Predicates: verb={verb_only} | verb_prep={verb_prep}")
         
         # Winner
         print(f"\n🏆 PERFORMANCE WINNER: ", end="")
@@ -70,4 +76,3 @@ def compare_extractors():
 
 if __name__ == "__main__":
     compare_extractors()
-

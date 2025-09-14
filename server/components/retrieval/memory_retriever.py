@@ -73,6 +73,11 @@ class MemoryRetriever:
             self.fts_min_overlap = 0.05
         # Pin a top KG candidate that matches query intent (e.g., lives_in for where/live queries)
         self.pin_intent_match = os.getenv('HOTMEM_PIN_INTENT_MATCH', 'true').lower() in ('1', 'true', 'yes')
+        # Boost for verb+prep predicates (e.g., watch_from, live_in) in retrieval scoring
+        try:
+            self.verb_prep_boost = float(os.getenv('HOTMEM_RETRIEVAL_VERB_PREP_BOOST', '0.12'))
+        except Exception:
+            self.verb_prep_boost = 0.12
 
         logger.info(f"[MemoryRetriever] Initialized with LEANN={'✓' if self.use_leann else '✗'}, fusion={'✓' if self.retrieval_fusion else '✗'}")
     
@@ -297,6 +302,14 @@ class MemoryRetriever:
                 relation_boost += 0.3
             if s == 'you':
                 relation_boost += 0.2
+            # Small boost for verb+prep relations (spatial/temporal nuance)
+            if '_' in r:
+                try:
+                    verb, prep = r.split('_', 1)
+                except ValueError:
+                    verb, prep = r, ''
+                if prep in {"in", "on", "at", "to", "from", "with", "under", "over", "near", "across", "during", "before", "after"}:
+                    relation_boost += self.verb_prep_boost
 
             # Composite scoring (clamped)
             score = max(0.0, 0.4 * rec + 0.4 * sem + 0.2 * w + relation_boost - base_penalty)
