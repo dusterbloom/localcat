@@ -42,18 +42,6 @@ try:
 except Exception:
     OnnxTokenNER = None
     OnnxSRLTagger = None
-try:
-    from components.extraction.hotmem_extractor import HotMemExtractor
-except Exception:
-    HotMemExtractor = None
-try:
-    from components.extraction.enhanced_hotmem_extractor import EnhancedHotMemExtractor
-except Exception:
-    EnhancedHotMemExtractor = None
-try:
-    from components.extraction.hybrid_spacy_llm_extractor import HybridRelationExtractor
-except Exception:
-    HybridRelationExtractor = None
 # Lazy import fastcoref only when coref is enabled to avoid startup downloads
 FCoref = None
 
@@ -210,10 +198,7 @@ class HotMemoryFacade:
         self._onnx_ner = None
         self._onnx_srl = None
         
-        # ReLiK integration
-        self.use_relik = self.config.features.use_relik
-        self._relik = None
-        
+          
         # Coreference resolution
         self.use_coref = self.config.features.use_coref
         self.coref_max_entities = self.config.coref_max_entities
@@ -231,7 +216,7 @@ class HotMemoryFacade:
         # Pending edge properties
         self._pending_edge_props = {}
     
-    def process_turn(self, text: str, session_id: str, turn_id: int) -> Tuple[List[str], List[Tuple[str, str, str]]]:
+    def process_turn(self, text: str, session_id: str, turn_id: int, user_id: str = None) -> Tuple[List[str], List[Tuple[str, str, str]]]:
         """
         Process a conversation turn - same interface as original
         """
@@ -263,7 +248,7 @@ class HotMemoryFacade:
             # Still retrieve context for responses
             retrieve_start = time.perf_counter()
             entities = self._extract_entities_light(text)
-            bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
+            bullets = self._retrieve_context(text, entities, turn_id, intent=intent, session_id=session_id, user_id=user_id)
             self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
             
             # Extract triples even for pure questions (for testing and analysis)
@@ -598,16 +583,29 @@ class HotMemoryFacade:
         """Generate and store session summary"""
         try:
             # Use the summarizer service if available
-            from services.summarizer import periodic_summarizer
-            
+            from services.summarizer import _http_chat_completion, _build_summary_prompt
+
             # Format conversation for summarization
             conversation_text = "\n".join([
                 f"{'User' if msg.role == 'user' else 'Assistant'}: {msg.content}"
                 for msg in conversation[-8:]  # Use last 8 messages for summary
             ])
-            
+
+            # Build summary prompt
+            messages = [
+                {"role": "user", "content": msg.content}
+                for msg in conversation[-8:]
+            ]
+            prompt = _build_summary_prompt(messages)
+
+            # Get summarizer configuration
+            model = os.getenv("SUMMARIZER_MODEL", os.getenv("OPENAI_MODEL", "qwen3:4b"))
+            base_url = os.getenv("SUMMARIZER_BASE_URL") or os.getenv("OPENAI_BASE_URL", "http://127.0.0.1:11434/v1")
+            api_key = os.getenv("SUMMARIZER_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+            max_tokens = int(os.getenv("SUMMARIZER_MAX_TOKENS", "160"))
+
             # Generate summary
-            summary = periodic_summarizer.summarize_text(conversation_text, session_id)
+            summary = _http_chat_completion(base_url, api_key, model, prompt, max_tokens, session_id)
             
             if summary:
                 self.session_store.add_session_summary(session_id, summary, "auto")
@@ -619,6 +617,135 @@ class HotMemoryFacade:
     def get_session_context(self, session_id: str) -> str:
         """Get session context for retrieval"""
         return self.session_store.get_conversation_context(session_id, max_messages=10)
+
+    def get_user_session_context(self, user_id: str) -> str:
+        """Get comprehensive user session context for retrieval"""
+        try:
+            stats = self.session_store.get_user_session_stats(user_id)
+            if not stats or stats.get('total_sessions', 0) == 0:
+                return "No previous sessions found."
+
+            context = f"User Session Context:\n"
+            context += f"- Total Sessions: {stats.get('total_sessions', 0)}\n"
+
+            total_time = stats.get('total_time_spent_seconds', 0)
+            if total_time > 0:
+                hours = total_time // 3600
+                minutes = (total_time % 3600) // 60
+                context += f"- Total Time Spent: {hours}h {minutes}m\n"
+
+            avg_duration = stats.get('avg_session_duration', 0)
+            if avg_duration > 0:
+                avg_minutes = avg_duration // 60
+                context += f"- Average Session Duration: {avg_minutes}m\n"
+
+            context += f"- Total Messages: {stats.get('total_messages', 0)}\n"
+
+            # Add recent session information
+            recent_sessions = stats.get('recent_sessions', [])
+            if recent_sessions:
+                context += "- Recent Sessions:\n"
+                for session in recent_sessions[:3]:  # Show last 3 sessions
+                    session_id = session.get('session_id', 'unknown')
+                    duration = session.get('duration_seconds', 0)
+                    minutes = duration // 60
+                    context += f"  • {session_id}: {minutes}m, {session.get('message_count', 0)} messages\n"
+
+            return context.strip()
+
+        except Exception as e:
+            logger.warning(f"Failed to get user session context: {e}")
+            return "User session information available."
+
+    def get_session_navigation_context(self, user_id: str, current_session_id: str) -> str:
+        """Get session navigation context for cross-session awareness"""
+        try:
+            history = self.session_store.get_user_session_history(user_id, limit=5)
+            if not history:
+                return "No session history available for navigation."
+
+            context = f"Session Navigation (User: {user_id}):\n"
+            context += f"Current Session: {current_session_id}\n\n"
+
+            context += "Previous Sessions:\n"
+            for i, session in enumerate(history):
+                if session['session_id'] == current_session_id:
+                    continue  # Skip current session
+
+                duration = session.get('duration_seconds', 0)
+                minutes = duration // 60
+                hours = minutes // 60
+                minutes = minutes % 60
+
+                time_str = f"{hours}h {minutes}m" if hours else f"{minutes}m"
+
+                context += f"{i+1}. Session {session['session_id']}: {time_str}, {session.get('message_count', 0)} messages"
+                if session.get('has_detailed_summary'):
+                    context += " [Summary Available]"
+                context += "\n"
+
+                # Include brief summary if available
+                summary = session.get('summary', '')
+                if summary and len(summary) > 10:
+                    # Truncate long summaries
+                    context += f"   Summary: {summary[:100]}{'...' if len(summary) > 100 else ''}\n"
+
+            return context.strip()
+
+        except Exception as e:
+            logger.warning(f"Failed to get session navigation context: {e}")
+            return "Session navigation context unavailable."
+
+    def format_temporal_session_awareness(self, user_id: str, current_session_id: str) -> str:
+        """Format temporal session awareness for time transversality"""
+        try:
+            stats = self.session_store.get_user_session_stats(user_id)
+            if not stats or stats.get('total_sessions', 0) <= 1:
+                return "This appears to be your first or only session."
+
+            current_analytics = self.session_store.get_session_analytics(current_session_id)
+            if not current_analytics:
+                return "Session timing information available."
+
+            context = "Temporal Session Awareness:\n"
+
+            # Current session info
+            current_duration = current_analytics.get('duration_seconds', 0)
+            current_minutes = current_duration // 60
+            context += f"- Current Session: {current_minutes} minutes, {current_analytics.get('message_count', 0)} messages\n"
+
+            # Comparison with average
+            avg_duration = stats.get('avg_session_duration', 0)
+            if avg_duration > 0:
+                avg_minutes = avg_duration // 60
+                if current_duration > avg_duration * 1.2:
+                    context += f"- This session is longer than {user_id}'s average ({avg_minutes}m)\n"
+                elif current_duration < avg_duration * 0.8:
+                    context += f"- This session is shorter than {user_id}'s average ({avg_minutes}m)\n"
+                else:
+                    context += f"- This session is about {user_id}'s average length ({avg_minutes}m)\n"
+
+            # Time-based insights
+            first_session = stats.get('first_session_time')
+            last_session = stats.get('last_session_time')
+            if first_session and last_session:
+                from datetime import datetime
+                first_dt = datetime.fromtimestamp(first_session)
+                last_dt = datetime.fromtimestamp(last_session)
+                current_dt = datetime.fromtimestamp(current_analytics.get('start_time', int(time.time())))
+
+                days_span = (last_dt - first_dt).days
+                context += f"- {user_id} has been using this platform over {days_span} days\n"
+
+                if days_span > 0:
+                    sessions_per_day = stats.get('total_sessions', 0) / days_span
+                    context += f"- Average: {sessions_per_day:.1f} sessions per day\n"
+
+            return context.strip()
+
+        except Exception as e:
+            logger.warning(f"Failed to format temporal session awareness: {e}")
+            return "Temporal session awareness available."
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get performance metrics"""
@@ -652,9 +779,9 @@ class HotMemoryFacade:
         return triples
     
     # Legacy method for backward compatibility
-    def _retrieve_context(self, query: str, entities: List[str], turn_id: int, intent=None) -> List[str]:
+    def _retrieve_context(self, query: str, entities: List[str], turn_id: int, intent=None, session_id: str = None, user_id: str = None) -> List[str]:
         """Legacy method for backward compatibility"""
-        result = self.retriever.retrieve_context(query, entities, turn_id, intent=intent)
+        result = self.retriever.retrieve_context(query, entities, turn_id, intent=intent, session_id=session_id, user_id=user_id)
         return result.bullets
     
     # Legacy prewarm method

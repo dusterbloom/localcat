@@ -361,15 +361,16 @@ class IMemoryService(ABC):
     """Main interface for the complete memory service."""
     
     @abstractmethod
-    def process_turn(self, text: str, session_id: str, turn_id: int) -> Dict[str, Any]:
+    def process_turn(self, text: str, session_id: str, turn_id: int, user_id: str = None) -> Dict[str, Any]:
         """
         Process a conversational turn and store extracted information.
-        
+
         Args:
             text: Input text
             session_id: Session identifier
             turn_id: Turn identifier
-            
+            user_id: User identifier for personalized context (optional)
+
         Returns:
             Dictionary with processing results
         """

@@ -150,9 +150,9 @@ class HotMemory:
     All operations target <200ms p95
     """
     
-    def __init__(self, store: MemoryStore, max_recency: int = 50):
+    def __init__(self, store: MemoryStore, max_recency: int = 50, user_id: str = "you"):
         self.store = store
-        self.user_eid = "you"
+        self.user_eid = user_id
         
         # Hot indices (RAM)
         self.entity_index = defaultdict(set)  # entity -> set of (s,r,d) triples
@@ -324,7 +324,7 @@ class HotMemory:
         except Exception:
             pass
 
-    def process_turn(self, text: str, session_id: str, turn_id: int) -> Tuple[List[str], List[Tuple[str, str, str]]]:
+    def process_turn(self, text: str, session_id: str, turn_id: int, user_id: str = None) -> Tuple[List[str], List[Tuple[str, str, str]]]:
         """
         Process a conversation turn with intelligent intent analysis
         Returns: (memory_bullets, extracted_triples)
@@ -347,7 +347,7 @@ class HotMemory:
             # Still retrieve context for responses
             retrieve_start = time.perf_counter()
             entities = self._extract_entities_light(text)
-            bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
+            bullets = self._retrieve_context(text, entities, turn_id, intent=intent, session_id=session_id, user_id=user_id)
             self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
             
             # Extract triples even for pure questions (for testing and analysis)
@@ -540,7 +540,7 @@ class HotMemory:
         
         # Stage 3: Retrieve relevant memories
         retrieve_start = time.perf_counter()
-        bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
+        bullets = self._retrieve_context(text, entities, turn_id, intent=intent, session_id=session_id, user_id=user_id)
         self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
         
         # Update recency with stored triples only
@@ -581,8 +581,8 @@ class HotMemory:
         try:
             if not self._extraction_registry:
                 return [], []
-            default_name = os.getenv('DEFAULT_EXTRACTION_STRATEGY', 'asi1')
-            fallback_name = os.getenv('FALLBACK_EXTRACTION_STRATEGY', 'asi2')
+            default_name = os.getenv('DEFAULT_EXTRACTION_STRATEGY', 'enhanced_level3')
+            fallback_name = os.getenv('FALLBACK_EXTRACTION_STRATEGY', 'ud')
 
             def run(name: str) -> List[Tuple[str, str, str]]:
                 try:
@@ -1338,7 +1338,8 @@ class HotMemory:
                     entities.add(oprd)
                 break
     
-    def _format_memory_bullet(self, s: str, r: str, d: str) -> str:
+    ##TODO Review this function to and its hardcoded items as it might be interfering with normal memory retrieval 
+    def _format_memory_bullet(self, s: str, r: str, d: str, user_id: str = None) -> str:
         """Format a memory triple into a human-readable bullet point"""
         # Lazy import and use enhanced formatter if available
         if self.bullet_formatter is None:
@@ -1353,6 +1354,7 @@ class HotMemory:
         
         # Fallback to original formatting
         # Handle pronouns and possessives more naturally
+        effective_user_id = user_id or self.user_eid
         if s == "you":
             if r == "name":
                 # Clean up redundant text in name extraction
@@ -1395,7 +1397,7 @@ class HotMemory:
                 return f"• You are a friend of {d}"
             elif r == "husband":
                 return f"• Your husband is {d}"
-            elif r == "wife":  
+            elif r == "wife":
                 return f"• Your wife is {d}"
             elif r == "married_to":
                 return f"• You are married to {d}"
@@ -1476,7 +1478,7 @@ class HotMemory:
                 else:
                     return f"• {s.title()}'s {relation} is {d}"
     
-    def _retrieve_context(self, query: str, entities: List[str], turn_id: int, intent=None) -> List[str]:
+    def _retrieve_context(self, query: str, entities: List[str], turn_id: int, intent=None, session_id: str = None, user_id: str = None) -> List[str]:
         """
         Retrieve relevant memory bullets for context
         Returns up to 5 most relevant memories based on scoring
@@ -1816,7 +1818,9 @@ class HotMemory:
                 _sc, _ts, k, p = chosen
                 if k == 'kg':
                     s, r, d = p
-                    bullets.append(self._format_memory_bullet(s, r, d))
+                    # Use provided user_id or fall back to default
+                    effective_user_id = user_id or self.user_eid
+                    bullets.append(self._format_memory_bullet(s, r, d, effective_user_id))
                     seen_triples.add((s, r, d))
                 else:
                     # Clean one-line snippet for summaries

@@ -90,7 +90,7 @@ class MemoryRetriever:
         try:
             # Expand entities with aliases and relationships
             expanded_entities = self._expand_query_entities(entities, query)
-            logger.debug(f"[MemoryRetriever] Retrieval context: query='{query[:50]}...', entities={entities}, total_edges={sum(len(triples) for triples in self.entity_index.values())}")
+            logger.debug(f"[MemoryRetriever] Retrieval context: query='{query[:5]}...', entities={entities}, total_edges={sum(len(triples) for triples in self.entity_index.values())}")
             
             # Get candidate triples through multiple strategies
             candidate_triples = self._gather_candidate_triples(query, expanded_entities, intent)
