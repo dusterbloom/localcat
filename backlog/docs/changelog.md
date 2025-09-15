@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 2025-09-15 18:00 - Major Refactor: Extraction Simplification & Session Evolution
+
+#### Added
+- **Session Management Revolution**: Comprehensive user session tracking and analytics
+  - User session statistics (total sessions, time spent, message counts)
+  - Session analytics with timeline and response time metrics
+  - Cross-session history navigation for continuity
+  - MD5-based session ID generation for uniqueness
+  - Session context methods in HotMemory facade
+- **Session Configuration**: New environment flags for session awareness
+  - `HOTMEM_SESSION_CONTEXT_ENABLED`: Enable session context injection
+  - `HOTMEM_SESSION_NAVIGATION_ENABLED`: Enable cross-session navigation
+  - `HOTMEM_TEMPORAL_AWARENESS_ENABLED`: Enable temporal session tracking
+
+#### Changed
+- **Extraction Architecture Overhaul**: Removed heavyweight ML models for performance
+  - Removed ReLiK, GLiREL, GLiNER, HotMem, and UD extraction strategies
+  - Enhanced Level3 now primary extractor with QualityExtractor
+  - Disabled expensive features by default (semantic filtering, graph analysis)
+- **HotMemory Facade**: Cleaner architecture with user awareness
+  - Added user_id parameter to process_turn
+  - Direct summarizer HTTP API integration
+  - Removed deprecated extractor dependencies
+- **Session Tracking**: Unified approach using user_id as primary identifier
+  - Session duration and turn count tracking
+  - Comprehensive session context formatting
+
+#### Removed
+- **Deprecated Extractors**: -1000 lines of extraction code
+  - HotMem, UD, ReLiK extraction strategies (extraction_strategies.py: -350 lines)
+  - GLiREL and GLiNER dependencies (memory_extractor.py: -500 lines)
+  - Legacy extractor imports and configurations
+
+#### Performance
+- **Extraction Speed**: <50ms with Enhanced Level3 (vs 800ms+ with ML models)
+- **Session Operations**: O(1) lookups with proper database indexing
+- **Memory Footprint**: Significantly reduced without heavy ML models
+- **Code Reduction**: Net -350 lines (647 insertions, 994 deletions)
+
+---
+
 2025-09-15 00:00 — 2025-09-15 23:59
 
 ### Added

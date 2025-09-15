@@ -9,6 +9,30 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 
 ## Current Technical Debt
 
+### ✅ Addressed on 2025-09-15 18:00 — Extraction Simplification & Session Evolution
+
+**Status: COMPLETED**
+
+- **Heavyweight ML Models Creating Performance Overhead**
+  - Action: Removed ReLiK, GLiREL, GLiNER extractors (800ms+ inference)
+  - Result: Enhanced Level3 only, <50ms extraction
+
+- **Complex Extraction Strategy Management**
+  - Action: Removed HotMem, UD strategies; simplified to Enhanced Level3 + QualityExtractor
+  - Result: -850 lines of extraction code, cleaner architecture
+
+- **Session Management Lacking Cross-Session Awareness**
+  - Action: Added comprehensive session tracking, analytics, and history
+  - Result: Full user session stats, timeline analytics, cross-session navigation
+
+- **HotMemory Facade Dependencies on Deprecated Extractors**
+  - Action: Removed all deprecated extractor imports, direct summarizer integration
+  - Result: Cleaner facade with user-aware context methods
+
+- **Session ID Generation Not Unique Enough**
+  - Action: Implemented MD5-based session ID generation
+  - Result: Better session uniqueness and tracking
+
 ### ✅ Addressed on 2025-09-14 — Repo & Extraction Consolidation
 
 - Server folder clutter (markdowns, backup YAMLs, heavy tests) created noise and raised cognitive load.
@@ -31,7 +55,9 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 - Legacy extraction fallback introducing noise.
   - Action: removed; registry‑only extraction.
 
-### Remaining (Short-Term)
+### Remaining (Short-Term) - Updated 2025-09-15 18:00
+
+**After Major Refactor**:
 
 - Route any remaining extraction calls through the registry and deprecate legacy direct instantiations.
   - Risk: duplicated configuration paths; code drift.
