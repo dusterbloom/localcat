@@ -407,6 +407,24 @@ class IMemoryService(ABC):
         """Reset service state and clear data."""
         pass
 
+class IIntentClassifier(ABC):
+    """Interface for intent classification systems."""
+
+    @abstractmethod
+    def classify(self, text: str, context: Optional[List[str]] = None) -> Any:
+        """Classify the intent of the given text."""
+        pass
+
+    @abstractmethod
+    def should_retrieve_memory(self, intent: Any) -> bool:
+        """Determine if memory retrieval is needed."""
+        pass
+
+    @abstractmethod
+    def should_store_memory(self, intent: Any) -> bool:
+        """Determine if information should be stored."""
+        pass
+
 class IExtractionStrategy(ABC):
     """Interface for extraction strategies."""
     

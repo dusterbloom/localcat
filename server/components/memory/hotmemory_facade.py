@@ -242,14 +242,22 @@ class HotMemoryFacade:
         intent = intent_classifier.analyze(text, lang)
         self.metrics['intent_ms'].append((time.perf_counter() - intent_start) * 1000)
         
+        # Check if SOTA classifier determined we need retrieval
+        needs_retrieval = getattr(intent, 'requires_retrieval', True)  # Default to True for backward compat
+        needs_storage = getattr(intent, 'requires_memory', True)
+
         # Early exit for reactions and pure questions (no fact extraction)
-        if intent.intent in {IntentType.REACTION, IntentType.PURE_QUESTION}:
+        if intent.intent in {IntentType.REACTION, IntentType.PURE_QUESTION} and not needs_storage:
             logger.debug(f"Skipping extraction for {intent.intent.value}: {text[:50]}...")
-            # Still retrieve context for responses
-            retrieve_start = time.perf_counter()
-            entities = self._extract_entities_light(text)
-            bullets = self._retrieve_context(text, entities, turn_id, intent=intent, session_id=session_id, user_id=user_id)
-            self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
+            # Only retrieve if SOTA classifier says we need to
+            if needs_retrieval:
+                retrieve_start = time.perf_counter()
+                entities = self._extract_entities_light(text)
+                bullets = self._retrieve_context(text, entities, turn_id, intent=intent, session_id=session_id, user_id=user_id)
+                self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
+            else:
+                bullets = []
+                logger.info(f"🎯 SOTA: Skipping retrieval for {intent.intent.value}")
             
             # Extract triples even for pure questions (for testing and analysis)
             extraction_result = self._extract_with_registry(text, lang)
@@ -442,10 +450,15 @@ class HotMemoryFacade:
             self.recency_buffer.append(RecencyItem(s, r, d, text, now_ts, turn_id))
         
         # Stage 4: Context retrieval using new MemoryRetriever
-        retrieve_start = time.perf_counter()
-        retrieval_result = self.retriever.retrieve_context(text, entities, turn_id, intent=intent)
-        bullets = retrieval_result.bullets
-        self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
+        # Only retrieve if SOTA classifier says we need to
+        if needs_retrieval:
+            retrieve_start = time.perf_counter()
+            retrieval_result = self.retriever.retrieve_context(text, entities, turn_id, intent=intent)
+            bullets = retrieval_result.bullets
+            self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
+        else:
+            bullets = []
+            logger.info(f"🎯 SOTA: Skipping retrieval for {intent.intent.value} (saved {self.config.retrieval_limit} lookups)")
         
         # Store final triples and link to session (with per-triple confidence)
         if stored_triples:
