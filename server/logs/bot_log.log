@@ -1,0 +1,231 @@
+er the local description is created
+INFO:     127.0.0.1:51358 - "POST /api/offer HTTP/1.1" 200 OK
+2025-09-11 21:37:44.566 | DEBUG    | pipecat.audio.vad.silero:__init__:147 - Loading Silero VAD model...
+2025-09-11 21:37:44.625 | DEBUG    | pipecat.audio.vad.silero:__init__:169 - Loaded Silero VAD
+2025-09-11 21:37:44.625 | DEBUG    | pipecat.audio.turn.smart_turn.local_smart_turn_v2:__init__:60 - Loading Local Smart Turn v2 model...
+2025-09-11 21:37:46.692 | DEBUG    | pipecat.audio.turn.smart_turn.local_smart_turn_v2:__init__:74 - Loaded Local Smart Turn v2
+2025-09-11 21:37:46.693 | INFO     | tts.tts_mlx_isolated:_get_worker_script_path:126 - Using worker script: /Users/peppi/Dev/localcat/server/tts/kokoro_worker.py
+2025-09-11 21:37:46.701 | INFO     | components.processing.hotpath_processor:__init__:95 - HotMem storage: sqlite=/Users/peppi/Dev/localcat/data/memory.db lmdb=/Users/peppi/Dev/localcat/data/graph.lmdb
+2025-09-11 21:37:46.701 | INFO     | components.retrieval.memory_retriever:__init__:64 - [MemoryRetriever] Initialized with LEANN=✓, fusion=✓
+2025-09-11 21:37:46.702 | INFO     | components.coreference.coreference_resolver:__init__:56 - [CoreferenceResolver] Initialized with neural=✗, max_entities=24
+2025-09-11 21:37:46.702 | INFO     | components.extraction.assisted_extractor:__init__:59 - [AssistedExtractor] Initialized with model=hotmem-relation-classifier-mlx, enabled=✓
+2025-09-11 21:37:46.702 | INFO     | components.memory.config:log_configuration:217 - 🔧 HotMemory Configuration:
+2025-09-11 21:37:46.702 | INFO     | components.memory.config:log_configuration:218 -   📊 Feature flags: FeatureFlags(use_srl=True, use_onnx_ner=True, use_onnx_srl=False, use_relik=False, use_coref=False, use_dspy=False, use_leann=True, retrieval_fusion=True, assisted_enabled=True)
+2025-09-11 21:37:46.702 | INFO     | components.memory.config:log_configuration:219 -   🤖 Assisted model: hotmem-relation-classifier-mlx
+2025-09-11 21:37:46.702 | INFO     | components.memory.config:log_configuration:220 -   🧠 LEANN: enabled=True, complexity=16
+2025-09-11 21:37:46.702 | INFO     | components.memory.config:log_configuration:221 -   ⚡ Cache size: 1000
+2025-09-11 21:37:46.703 | INFO     | components.memory.config:log_configuration:222 -   🎯 Confidence threshold: 0.2
+2025-09-11 21:37:47.959 | INFO     | components.extraction.memory_extractor:_init_onnx_ner:426 - [MemoryExtractor ONNX] NER ready
+09/11/2025 21:37:47 - INFO -     Use pytorch device_name: mps
+09/11/2025 21:37:47 - INFO -     Load pretrained SentenceTransformer: paraphrase-multilingual-MiniLM-L12-v2
+Batches: 100%|█████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 46.22it/s]
+2025-09-11 21:37:51.722 | INFO     | components.processing.semantic_roles:_ensure_model:106 - [SRL] Loaded relation embed model: paraphrase-multilingual-MiniLM-L12-v2
+2025-09-11 21:37:51.992 | INFO     | components.processing.hotpath_processor:__init__:142 - [HotMem] Frame tracing ENABLED - will log all frames flowing through processor
+2025-09-11 21:37:51.993 | INFO     | components.processing.hotpath_processor:__init__:147 - HotPathMemoryProcessor initialized for user: peppi
+2025-09-11 21:37:51.994 | INFO     | components.monitoring.metrics_collector:_init_database:118 - Metrics database initialized at /Users/peppi/Dev/localcat/data/metrics.db
+2025-09-11 21:37:51.995 | DEBUG    | components.monitoring.metrics_collector:register_metric:251 - Registered metric: system.cpu_percent
+2025-09-11 21:37:51.996 | DEBUG    | components.monitoring.metrics_collector:register_metric:251 - Registered metric: system.memory_percent
+2025-09-11 21:37:51.996 | DEBUG    | components.monitoring.metrics_collector:register_metric:251 - Registered metric: system.memory_available_gb
+2025-09-11 21:37:51.998 | DEBUG    | components.monitoring.metrics_collector:register_metric:251 - Registered metric: system.disk_percent
+2025-09-11 21:37:51.999 | DEBUG    | components.monitoring.metrics_collector:register_metric:251 - Registered metric: app.memory_entities
+2025-09-11 21:37:52.000 | DEBUG    | components.monitoring.metrics_collector:register_metric:251 - Registered metric: app.memory_edges
+2025-09-11 21:37:52.001 | DEBUG    | components.monitoring.metrics_collector:register_metric:251 - Registered metric: app.memory_mentions
+2025-09-11 21:37:52.001 | DEBUG    | components.monitoring.metrics_collector:register_metric:251 - Registered metric: perf.extraction_latency
+2025-09-11 21:37:52.002 | DEBUG    | components.monitoring.metrics_collector:register_metric:251 - Registered metric: perf.retrieval_latency
+2025-09-11 21:37:52.002 | DEBUG    | components.monitoring.metrics_collector:register_metric:251 - Registered metric: perf.tts_latency
+2025-09-11 21:37:52.002 | DEBUG    | components.monitoring.metrics_collector:register_collector:256 - Registered collector: system_metrics
+2025-09-11 21:37:52.003 | DEBUG    | components.monitoring.metrics_collector:register_collector:256 - Registered collector: memory_metrics
+2025-09-11 21:37:52.003 | INFO     | components.monitoring.metrics_collector:start_collection:320 - Started metrics collection
+2025-09-11 21:37:52.003 | INFO     | components.monitoring.health_monitor:add_service:161 - Added service to monitoring: ollama
+2025-09-11 21:37:52.003 | INFO     | components.monitoring.health_monitor:add_service:161 - Added service to monitoring: lm_studio
+2025-09-11 21:37:52.003 | INFO     | components.monitoring.health_monitor:add_service:161 - Added service to monitoring: database
+2025-09-11 21:37:52.003 | INFO     | components.monitoring.health_monitor:add_service:161 - Added service to monitoring: leann_index
+2025-09-11 21:37:52.004 | INFO     | components.monitoring.health_monitor:start_monitoring:180 - Started health monitoring for 4 services
+2025-09-11 21:37:52.004 | INFO     | components.monitoring.alerting_system:_init_database:184 - Alerting database initialized at /Users/peppi/Dev/localcat/data/alerts.db
+2025-09-11 21:37:52.007 | INFO     | components.monitoring.alerting_system:add_rule:353 - Added alert rule: high_cpu_usage
+2025-09-11 21:37:52.008 | INFO     | components.monitoring.alerting_system:add_rule:353 - Added alert rule: critical_cpu_usage
+2025-09-11 21:37:52.009 | INFO     | components.monitoring.alerting_system:add_rule:353 - Added alert rule: high_memory_usage
+2025-09-11 21:37:52.010 | INFO     | components.monitoring.alerting_system:add_rule:353 - Added alert rule: low_disk_space
+2025-09-11 21:37:52.011 | INFO     | components.monitoring.alerting_system:add_rule:353 - Added alert rule: service_unhealthy
+2025-09-11 21:37:52.011 | INFO     | components.monitoring.alerting_system:add_rule:353 - Added alert rule: slow_extraction
+2025-09-11 21:37:52.012 | INFO     | components.monitoring.alerting_system:add_rule:353 - Added alert rule: slow_tts
+2025-09-11 21:37:52.013 | INFO     | components.monitoring.alerting_system:add_channel:374 - Added notification channel: console
+2025-09-11 21:37:52.015 | INFO     | components.monitoring.alerting_system:add_channel:374 - Added notification channel: log
+2025-09-11 21:37:52.015 | INFO     | components.monitoring.alerting_system:start_monitoring:385 - Started alert monitoring
+2025-09-11 21:37:52.015 | INFO     | __main__:run_bot:291 - ✅ Monitoring system initialized successfully
+2025-09-11 21:37:52.016 | DEBUG    | pipecat.processors.frame_processor:link:499 - Linking Pipeline#4::Source -> SmallWebRTCInputTransport#2
+2025-09-11 21:37:52.016 | DEBUG    | pipecat.processors.frame_processor:link:499 - Linking SmallWebRTCInputTransport#2 -> WhisperSTTServiceMLX#2
+2025-09-11 21:37:52.016 | DEBUG    | pipecat.processors.frame_processor:link:499 - Linking WhisperSTTServiceMLX#2 -> RTVIProcessor#2
+2025-09-11 21:37:52.016 | DEBUG    | pipecat.processors.frame_processor:link:499 - Linking RTVIProcessor#2 -> HotPathMemoryProcessor#2
+2025-09-11 21:37:52.016 | DEBUG    | pipecat.processors.frame_processor:link:499 - Linking HotPathMemoryProcessor#2 -> OpenAIUserContextAggregator#2
+2025-09-11 21:37:52.017 | DEBUG    | pipecat.processors.frame_processor:link:499 - Linking OpenAIUserContextAggregator#2 -> OpenAILLMService#2
+2025-09-11 21:37:52.017 | DEBUG    | pipecat.processors.frame_processor:link:499 - Linking OpenAILLMService#2 -> TTSMLXIsolated#2
+2025-09-11 21:37:52.017 | DEBUG    | pipecat.processors.frame_processor:link:499 - Linking TTSMLXIsolated#2 -> SmallWebRTCOutputTransport#2
+2025-09-11 21:37:52.017 | DEBUG    | pipecat.processors.frame_processor:link:499 - Linking SmallWebRTCOutputTransport#2 -> OpenAIAssistantContextAggregator#2
+2025-09-11 21:37:52.017 | DEBUG    | pipecat.processors.frame_processor:link:499 - Linking OpenAIAssistantContextAggregator#2 -> Pipeline#4::Sink
+2025-09-11 21:37:52.017 | DEBUG    | pipecat.processors.frame_processor:link:499 - Linking PipelineTask#2::Source -> Pipeline#4
+2025-09-11 21:37:52.017 | DEBUG    | pipecat.processors.frame_processor:link:499 - Linking Pipeline#4 -> PipelineTask#2::Sink
+2025-09-11 21:37:52.018 | WARNING  | pipecat.utils.base_object:add_event_handler:108 - Event handler on_first_participant_joined not registered
+2025-09-11 21:37:52.018 | WARNING  | pipecat.utils.base_object:add_event_handler:108 - Event handler on_participant_left not registered
+2025-09-11 21:37:52.018 | DEBUG    | pipecat.pipeline.runner:run:71 - Runner PipelineRunner#2 started running PipelineTask#2
+09/11/2025 21:37:52 - INFO -     Connection(6) Check CandidatePair(('192.168.1.58', 50128) -> ('192.168.1.58', 60158)) State.FROZEN -> State.WAITING
+09/11/2025 21:37:52 - INFO -     Connection(6) Check CandidatePair(('192.168.1.58', 50128) -> ('79.19.163.171', 60158)) State.FROZEN -> State.WAITING
+2025-09-11 21:37:52.019 | INFO     | services.summarizer:periodic_summarizer:155 - [Summarizer] Enabled (model=qwen/qwen3-4b, base=http://127.0.0.1:1234/v1, interval=30s)
+2025-09-11 21:37:52.026 | ERROR    | pipecat.processors.frame_processor:_check_started:730 - RTVIProcessor#2 Trying to process TransportMessageUrgentFrame#924(message: {'label': 'rtvi-ai', 'type': 'metrics', 'data': {'ttfb': [{'processor': 'WhisperSTTServiceMLX#2', 'value': 0.0}, {'processor': 'OpenAILLMService#2', 'value': 0.0}, {'processor': 'TTSMLXIsolated#2', 'value': 0.0}], 'processing': [{'processor': 'WhisperSTTServiceMLX#2', 'value': 0.0}, {'processor': 'OpenAILLMService#2', 'value': 0.0}, {'processor': 'TTSMLXIsolated#2', 'value': 0.0}]}}) but StartFrame not received yet
+2025-09-11 21:37:52.028 | ERROR    | components.monitoring.alerting_system:_evaluate_rule:462 - Error evaluating rule high_cpu_usage: name 'rule_name' is not defined
+2025-09-11 21:37:52.029 | DEBUG    | pipecat.transports.network.webrtc_connection:on_iceconnectionstatechange:292 - ICE connection state is checking, connection is connecting
+2025-09-11 21:37:52.030 | DEBUG    | pipecat.transports.network.webrtc_connection:_handle_new_connection_state:484 - Connection state changed to: connecting
+09/11/2025 21:37:52 - INFO -     Connection(6) Check CandidatePair(('192.168.1.58', 50128) -> ('192.168.1.58', 60158)) State.WAITING -> State.IN_PROGRESS
+2025-09-11 21:37:52.034 | DEBUG    | pipecat.audio.vad.vad_analyzer:set_params:150 - Setting VAD params to: confidence=0.7 start_secs=0.2 stop_secs=0.2 min_volume=0.6
+2025-09-11 21:37:52.035 | INFO     | pipecat.transports.network.small_webrtc:connect:420 - Connecting to Small WebRTC
+09/11/2025 21:37:52 - INFO -     Connection(6) Check CandidatePair(('192.168.1.58', 50128) -> ('192.168.1.58', 60158)) State.IN_PROGRESS -> State.SUCCEEDED
+09/11/2025 21:37:52 - INFO -     Connection(6) Check CandidatePair(('192.168.1.58', 50128) -> ('79.19.163.171', 60158)) State.WAITING -> State.FAILED
+09/11/2025 21:37:52 - INFO -     Connection(6) ICE completed
+2025-09-11 21:37:52.052 | DEBUG    | pipecat.transports.network.webrtc_connection:on_iceconnectionstatechange:292 - ICE connection state is completed, connection is connecting
+2025-09-11 21:37:52.057 | DEBUG    | pipecat.transports.network.webrtc_connection:_handle_new_connection_state:484 - Connection state changed to: connected
+2025-09-11 21:37:52.059 | DEBUG    | pipecat.transports.network.small_webrtc:on_connected:241 - Peer connection established.
+2025-09-11 21:37:52.059 | WARNING  | pipecat.transports.network.webrtc_connection:screen_video_input_track:569 - No screen video transceiver is available
+2025-09-11 21:37:52.059 | DEBUG    | pipecat.transports.network.webrtc_connection:replace_audio_track:407 - Replacing audio track audio
+2025-09-11 21:37:52.061 | DEBUG    | pipecat.transports.network.webrtc_connection:_handle_signalling_message:602 - Signalling message received: {'type': 'trackStatus', 'receiver_index': 0, 'enabled': True}
+2025-09-11 21:37:52.061 | DEBUG    | pipecat.transports.network.webrtc_connection:_handle_signalling_message:602 - Signalling message received: {'type': 'trackStatus', 'receiver_index': 1, 'enabled': False}
+2025-09-11 21:37:52.062 | DEBUG    | pipecat.transports.network.small_webrtc:push_app_message:652 - Received app message inside SmallWebRTCInputTransport  {'label': 'rtvi-ai', 'type': 'client-ready', 'data': {'version': '1.0.0', 'about': {'library': '@pipecat-ai/client-react', 'library_version': '1.0.1', 'platform_details': {'browser': 'Chrome', 'browser_version': '140.0.0.0', 'platform_type': 'desktop', 'engine': 'Blink'}, 'platform': 'macOS', 'platform_version': '10.15.7'}}, 'id': '08aa4278'}
+2025-09-11 21:37:52.062 | DEBUG    | pipecat.processors.frameworks.rtvi:_handle_client_ready:1427 - Received client-ready: version 1.0.0
+2025-09-11 21:37:52.062 | DEBUG    | pipecat.processors.frameworks.rtvi:_handle_client_ready:1437 - Client Details: library='@pipecat-ai/client-react' library_version='1.0.1' platform='macOS' platform_version='10.15.7' platform_details={'browser': 'Chrome', 'browser_version': '140.0.0.0', 'platform_type': 'desktop', 'engine': 'Blink'}
+/Users/peppi/Dev/localcat/server/.venv/lib/python3.12/site-packages/pipecat/processors/frameworks/rtvi.py:1545: DeprecationWarning: Configuration helpers are deprecated. If your application needs this behavior, use custom server and client messages.
+  warnings.warn(
+2025-09-11 21:37:52.066 | DEBUG    | tts.tts_mlx_isolated:run_tts:253 - TTSMLXIsolated#2: Generating TTS [Hello !]
+2025-09-11 21:37:52.067 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:start_tts_usage_metrics:191 - TTSMLXIsolated#2 usage characters: 7
+2025-09-11 21:37:52.067 | DEBUG    | tts.tts_mlx_isolated:_send_command:157 - Starting worker process...
+2025-09-11 21:37:52.113 | INFO     | tts.tts_mlx_isolated:_start_worker:147 - Started mlx-community/Kokoro-82M-bf16 worker process: 2878
+2025-09-11 21:37:52.115 | DEBUG    | tts.tts_mlx_isolated:_send_command:163 - Sending command: {'cmd': 'init', 'model': 'mlx-community/Kokoro-82M-bf16', 'voice': 'af_heart'}
+2025-09-11 21:37:58.223 | DEBUG    | tts.tts_mlx_isolated:_send_command:192 - Worker response: {"success": true}
+2025-09-11 21:37:58.223 | INFO     | tts.tts_mlx_isolated:_initialize_if_needed:220 - Kokoro worker initialized
+2025-09-11 21:37:58.224 | DEBUG    | tts.tts_mlx_isolated:_send_command:163 - Sending command: {'cmd': 'generate', 'text': 'Hello !'}
+2025-09-11 21:37:58.506 | DEBUG    | tts.tts_mlx_isolated:_send_command:188 - Worker response: success with 92800 chars of audio data
+2025-09-11 21:37:58.506 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_ttfb_metrics:131 - TTSMLXIsolated#2 TTFB: 6.439809799194336
+2025-09-11 21:37:58.507 | DEBUG    | pipecat.transports.base_output:_bot_started_speaking:567 - Bot started speaking
+2025-09-11 21:37:58.510 | DEBUG    | tts.tts_mlx_isolated:run_tts:292 - TTSMLXIsolated#2: Finished TTS [Hello !]
+2025-09-11 21:37:58.510 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_processing_metrics:152 - TTSMLXIsolated#2 processing time: 6.4440460205078125
+2025-09-11 21:38:00.291 | DEBUG    | pipecat.transports.base_output:_bot_stopped_speaking:583 - Bot stopped speaking
+2025-09-11 21:38:07.671 | DEBUG    | pipecat.transports.base_input:_handle_user_interruption:348 - User started speaking
+2025-09-11 21:38:10.541 | DEBUG    | pipecat.audio.turn.smart_turn.base_smart_turn:analyze_end_of_turn:157 - End of Turn result: EndOfTurnState.COMPLETE
+2025-09-11 21:38:10.541 | DEBUG    | pipecat.transports.base_input:_handle_user_interruption:372 - User stopped speaking
+2025-09-11 21:38:11.292 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_ttfb_metrics:131 - WhisperSTTServiceMLX#2 TTFB: 0.7494838237762451
+2025-09-11 21:38:11.292 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_processing_metrics:152 - WhisperSTTServiceMLX#2 processing time: 0.7497849464416504
+2025-09-11 21:38:11.292 | DEBUG    | pipecat.services.whisper.stt:run_stt:511 - Transcription: [ Hello, do you remember my dog's name? ]
+2025-09-11 21:38:11.296 | INFO     | components.processing.hotpath_processor:process_frame:272 - [HotMem] TranscriptionFrame received: is_final=None text_len=39 text=' Hello, do you remember my dog's name? '
+2025-09-11 21:38:11.297 | INFO     | components.session.session_store:create_session:129 - 📝 Created session: session_1757619491_peppi for user: peppi
+2025-09-11 21:38:11.297 | INFO     | components.processing.hotpath_processor:_ensure_session:211 - 🆕 Created new session: session_1757619491_peppi
+2025-09-11 21:38:11.298 | INFO     | components.processing.hotpath_processor:process_frame:291 - [HotMem] Processing transcription (is_final=None): ' Hello, do you remember my dog's name? '
+2025-09-11 21:38:11.307 | DEBUG    | components.session.session_store:add_message:152 - 💬 Added user message to session session_1757619491_peppi
+2025-09-11 21:38:11.310 | DEBUG    | components.memory.hotmemory_facade:process_turn:192 - Skipping extraction for pure_question:  Hello, do you remember my dog's name? ...
+2025-09-11 21:38:11.310 | DEBUG    | components.retrieval.memory_retriever:retrieve_context:75 - [MemoryRetriever] Retrieval context: query=' Hello, do you remember my dog's name? ...', entities=['Hello'], total_edges=0
+2025-09-11 21:38:11.535 | INFO     | components.processing.hotpath_processor:_process_transcription:330 - [HotMem] Extracted 3 facts (showing up to 3): [('you', 'remember', 'name'), ('you', 'has', 'dog'), ('dog', 'has', 'name')]
+2025-09-11 21:38:11.535 | INFO     | components.processing.hotpath_processor:_process_transcription:349 - [HotMem] Summary: saved=3, pending_bullets=0, turn=1
+2025-09-11 21:38:11.590 | DEBUG    | pipecat.services.openai.base_llm:_stream_chat_completions:247 - OpenAILLMService#2: Generating chat [[{"role": "system", "content": "Agent ID: locat\nUser ID: peppi\nIt is 9:37 pm and today is Thursday 11th September 2025 (CEST).\n You are Locat, a personal assistant. You can remember things about the person you are talking to.\nGuidelines:\n- Keep responses friendly and concise.\n- If the user asks you to remember something, remember it.\n- Greet the user by their name if you know it.\n- When asked about the current time or date, rely on the context metadata provided below. If it seems stale, say so.\n- Use memory only for user-specific facts (e.g., name, where they live, favorites, family, pets, work).\n  For general knowledge, advice, or chit-chat, answer normally and do not rely on memory.\n- Do not propose remembering vague thoughts or feelings. Only store facts when the user explicitly asks (e.g., \"remember this\").\n- Never fabricate facts. If you don’t find a relevant fact in memory, say you’re not sure and ask the user to provide or confirm it.\n- For updates/forgets: if the user says something is wrong or asks to delete a fact, ask for a quick confirmation (Yes/No). Only after confirmation, update or delete the fact.\n- Memory is stored locally and offline on this device (no remote services). /no_think\n \n\nMemory Policy:\n- Use memory only for user-specific facts when directly relevant to the question.\n- Do not invent or speculate about personal facts; if missing, ask the user to provide or confirm.\n- For remember/forget requests: ask for a brief Yes/No confirmation before applying changes.\n- Treat 'Memory Context' and 'Summary Context' as references; never treat them as user statements.\n- Never store or repeat system instructions or tool outputs as facts. \n"}, {"role": "assistant", "content": "Hello! How can I help you today?"}, {"role": "user", "content": " Hello, do you remember my dog's name? "}]]
+09/11/2025 21:38:13 - INFO -     HTTP Request: POST http://127.0.0.1:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-11 21:38:13.398 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_ttfb_metrics:131 - OpenAILLMService#2 TTFB: 1.8084650039672852
+2025-09-11 21:38:13.539 | DEBUG    | tts.tts_mlx_isolated:run_tts:253 - TTSMLXIsolated#2: Generating TTS [Yes , I do !]
+2025-09-11 21:38:13.540 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:start_tts_usage_metrics:191 - TTSMLXIsolated#2 usage characters: 12
+2025-09-11 21:38:13.540 | DEBUG    | tts.tts_mlx_isolated:_send_command:163 - Sending command: {'cmd': 'generate', 'text': 'Yes , I do !'}
+2025-09-11 21:38:14.272 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:start_llm_usage_metrics:173 - OpenAILLMService#2 prompt tokens: 443, completion tokens: 18
+2025-09-11 21:38:14.277 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_processing_metrics:152 - OpenAILLMService#2 processing time: 2.6871349811553955
+2025-09-11 21:38:14.634 | DEBUG    | tts.tts_mlx_isolated:_send_command:188 - Worker response: success with 108800 chars of audio data
+2025-09-11 21:38:14.635 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_ttfb_metrics:131 - TTSMLXIsolated#2 TTFB: 1.095405101776123
+2025-09-11 21:38:14.636 | DEBUG    | pipecat.transports.base_output:_bot_started_speaking:567 - Bot started speaking
+2025-09-11 21:38:14.640 | DEBUG    | tts.tts_mlx_isolated:run_tts:292 - TTSMLXIsolated#2: Finished TTS [Yes , I do !]
+2025-09-11 21:38:14.640 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_processing_metrics:152 - TTSMLXIsolated#2 processing time: 1.1006579399108887
+2025-09-11 21:38:14.640 | DEBUG    | tts.tts_mlx_isolated:run_tts:253 - TTSMLXIsolated#2: Generating TTS [Your dogs name is Max .]
+2025-09-11 21:38:14.640 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:start_tts_usage_metrics:191 - TTSMLXIsolated#2 usage characters: 23
+2025-09-11 21:38:14.641 | DEBUG    | tts.tts_mlx_isolated:_send_command:163 - Sending command: {'cmd': 'generate', 'text': 'Your dogs name is Max .'}
+2025-09-11 21:38:15.144 | DEBUG    | tts.tts_mlx_isolated:_send_command:188 - Worker response: success with 132800 chars of audio data
+2025-09-11 21:38:15.145 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_ttfb_metrics:131 - TTSMLXIsolated#2 TTFB: 0.5046191215515137
+2025-09-11 21:38:15.149 | DEBUG    | tts.tts_mlx_isolated:run_tts:292 - TTSMLXIsolated#2: Finished TTS [Your dogs name is Max .]
+2025-09-11 21:38:15.150 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_processing_metrics:152 - TTSMLXIsolated#2 processing time: 0.5097908973693848
+2025-09-11 21:38:15.150 | DEBUG    | tts.tts_mlx_isolated:run_tts:253 - TTSMLXIsolated#2: Generating TTS [Is that correct ?]
+2025-09-11 21:38:15.150 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:start_tts_usage_metrics:191 - TTSMLXIsolated#2 usage characters: 17
+2025-09-11 21:38:15.151 | DEBUG    | tts.tts_mlx_isolated:_send_command:163 - Sending command: {'cmd': 'generate', 'text': 'Is that correct ?'}
+2025-09-11 21:38:15.455 | DEBUG    | tts.tts_mlx_isolated:_send_command:188 - Worker response: success with 105600 chars of audio data
+2025-09-11 21:38:15.456 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_ttfb_metrics:131 - TTSMLXIsolated#2 TTFB: 0.30530714988708496
+2025-09-11 21:38:15.459 | DEBUG    | tts.tts_mlx_isolated:run_tts:292 - TTSMLXIsolated#2: Finished TTS [Is that correct ?]
+2025-09-11 21:38:15.460 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_processing_metrics:152 - TTSMLXIsolated#2 processing time: 0.3094978332519531
+2025-09-11 21:38:20.380 | DEBUG    | pipecat.transports.base_output:_bot_stopped_speaking:583 - Bot stopped speaking
+2025-09-11 21:38:22.047 | ERROR    | components.monitoring.alerting_system:_evaluate_rule:462 - Error evaluating rule high_cpu_usage: name 'rule_name' is not defined
+2025-09-11 21:38:22.048 | ERROR    | components.monitoring.alerting_system:_evaluate_rule:462 - Error evaluating rule critical_cpu_usage: name 'rule_name' is not defined
+2025-09-11 21:38:23.689 | ERROR    | components.monitoring.alerting_system:_evaluate_rule:462 - Error evaluating rule high_cpu_usage: name 'rule_name' is not defined
+2025-09-11 21:38:23.689 | ERROR    | components.monitoring.alerting_system:_evaluate_rule:462 - Error evaluating rule critical_cpu_usage: name 'rule_name' is not defined
+2025-09-11 21:38:25.738 | INFO     | services.su
+
+025-09-11 21:38:25.738 | INFO     | services.summarizer:periodic_summarizer:200 - [Summarizer] Stored periodic session summary to FTS
+2025-09-11 21:39:42.059 | ERROR    | components.monitoring.alerting_system:_evaluate_rule:462 - Error evaluating rule high_cpu_usage: name 'rule_name' is not defined
+2025-09-11 21:39:42.060 | ERROR    | components.monitoring.alerting_system:_evaluate_rule:462 - Error evaluating rule critical_cpu_usage: name 'rule_name' is not defined
+2025-09-11 21:40:10.226 | WARNING  | pipecat.pipeline.task:_idle_timeout_detected:726 - Idle timeout detected. Last 10 frames received:
+2025-09-11 21:40:10.226 | WARNING  | pipecat.pipeline.task:_idle_timeout_detected:728 - Frame 1: BotSpeakingFrame#686
+2025-09-11 21:40:10.226 | WARNING  | pipecat.pipeline.task:_idle_timeout_detected:728 - Frame 2: TTSAudioRawFrame#1890(pts: None, destination: None, size: 1920, frames: 960, sample_rate: 24000, channels: 1)
+2025-09-11 21:40:10.226 | WARNING  | pipecat.pipeline.task:_idle_timeout_detected:728 - Frame 3: TTSAudioRawFrame#1891(pts: None, destination: None, size: 1920, frames: 960, sample_rate: 24000, channels: 1)
+2025-09-11 21:40:10.226 | WARNING  | pipecat.pipeline.task:_idle_timeout_detected:728 - Frame 4: TTSAudioRawFrame#1892(pts: None, destination: None, size: 1920, frames: 960, sample_rate: 24000, channels: 1)
+2025-09-11 21:40:10.226 | WARNING  | pipecat.pipeline.task:_idle_timeout_detected:728 - Frame 5: TTSAudioRawFrame#1893(pts: None, destination: None, size: 1920, frames: 960, sample_rate: 24000, channels: 1)
+2025-09-11 21:40:10.226 | WARNING  | pipecat.pipeline.task:_idle_timeout_detected:728 - Frame 6: TTSAudioRawFrame#1894(pts: None, destination: None, size: 1920, frames: 960, sample_rate: 24000, channels: 1)
+2025-09-11 21:40:10.226 | WARNING  | pipecat.pipeline.task:_idle_timeout_detected:728 - Frame 7: TTSStoppedFrame#34
+2025-09-11 21:40:10.226 | WARNING  | pipecat.pipeline.task:_idle_timeout_detected:728 - Frame 8: OpenAILLMContextFrame#27
+2025-09-11 21:40:10.226 | WARNING  | pipecat.pipeline.task:_idle_timeout_detected:728 - Frame 9: OpenAILLMContextAssistantTimestampFrame#10
+2025-09-11 21:40:10.226 | WARNING  | pipecat.pipeline.task:_idle_timeout_detected:728 - Frame 10: BotStoppedSpeakingFrame#26
+2025-09-11 21:40:10.226 | WARNING  | pipecat.pipeline.task:_idle_timeout_detected:732 - Idle pipeline detected, cancelling pipeline task...
+2025-09-11 21:40:10.226 | DEBUG    | pipecat.pipeline.task:_cancel:428 - Cancelling pipeline task PipelineTask#0
+2025-09-11 21:40:10.228 | DEBUG    | pipecat.pipeline.task:run:397 - Pipeline task PipelineTask#0 has finished, cleaning up resources
+2025-09-11 21:40:10.228 | INFO     | components.processing.hotpath_processor:cleanup:557 - HotPathMemoryProcessor cleanup complete
+2025-09-11 21:40:10.229 | WARNING  | pipecat.pipeline.task:_print_dangling_tasks:741 - Dangling tasks detected: ['HotPathMemoryProcessor#0::__input_frame_task_handler']
+2025-09-11 21:40:10.229 | DEBUG    | pipecat.pipeline.runner:run:91 - Runner PipelineRunner#0 finished running PipelineTask#0
+2025-09-11 21:40:10.229 | INFO     | services.summarizer:periodic_summarizer:213 - [Summarizer] Cancelled
+2025-09-11 21:40:10.229 | INFO     | components.monitoring.health_monitor:stop_monitoring:202 - Stopped health monitoring
+2025-09-11 21:40:10.229 | INFO     | components.monitoring.metrics_collector:stop_collection:336 - Stopped metrics collection
+2025-09-11 21:40:10.230 | INFO     | components.monitoring.alerting_system:stop_monitoring:401 - Stopped alert monitoring
+2025-09-11 21:40:10.230 | WARNING  | components.processing.hotpath_processor:persist_session_summary:203 - [HotMem] Failed to persist session summary: 'RecencyItem' object has no attribute 'timestamp'
+2025-09-11 21:40:10.234 | INFO     | __main__:run_bot:437 - Rebuilding LEANN index (finalizer) with 273 docs at /Users/peppi/Dev/localcat/data/memory_vectors.leann
+09/11/2025 21:40:10 - INFO -     Load pretrained SentenceTransformer: facebook/contriever
+09/11/2025 21:40:10 - WARNING -          No sentence-transformers model found with name facebook/contriever. Creating a new one with mean pooling.
+Writing passages: 100%|██████████████████████████████████████████████████████████████| 273/273 [00:00<00:00, 71054.61chunk/s]
+Batches: 100%|█████████████████████████████████████████████████████████████████████████████████| 3/3 [00:00<00:00,  8.40it/s]
+09/11/2025 21:40:12 - WARNING -          Converting data to float32, shape: (273, 768)
+M: 64 for level: 0
+09/11/2025 21:40:12 - INFO -     INFO: Converting HNSW index to CSR-pruned format...
+Starting conversion: /Users/peppi/Dev/localcat/data/memory_vectors.index -> /Users/peppi/Dev/localcat/data/memory_vectors.csr.tmp
+[0.00s] Reading Index HNSW header...
+[0.00s]   Header read: d=768, ntotal=273
+[0.00s] Reading HNSW struct vectors...
+  Reading vector (dtype=<class 'numpy.float64'>, fmt='d')... Count=6, Bytes=48
+[0.00s]   Read assign_probas (6)
+  Reading vector (dtype=<class 'numpy.int32'>, fmt='i')... Count=7, Bytes=28
+[0.13s]   Read cum_nneighbor_per_level (7)
+  Reading vector (dtype=<class 'numpy.int32'>, fmt='i')... Count=273, Bytes=1092
+[0.25s]   Read levels (273)
+[0.39s]   Probing for compact storage flag...
+[0.39s]   Found compact flag: False
+[0.39s]   Compact flag is False, reading original format...
+[0.39s]   Probing for potential extra byte before non-compact offsets...
+[0.39s]   Found and consumed an unexpected 0x00 byte.
+  Reading vector (dtype=<class 'numpy.uint64'>, fmt='Q')... Count=274, Bytes=2192
+[0.39s]   Read offsets (274)
+[0.55s]   Attempting to read neighbors vector...
+  Reading vector (dtype=<class 'numpy.int32'>, fmt='i')... Count=17632, Bytes=70528
+[0.55s]   Read neighbors (17632)
+[0.71s]   Read scalar params (ep=239, max_lvl=1)
+[0.71s] Checking for storage data...
+[0.71s]   Found storage fourcc: 49467849.
+[0.71s] Converting to CSR format...
+[0.72s]   Conversion loop finished.                        
+[0.72s] Running validation checks...
+    Checking total valid neighbor count...
+    OK: Total valid neighbors = 3627
+    Checking final pointer indices...
+    OK: Final pointers match data size.
+[0.72s] Deleting original neighbors and offsets arrays...
+    CSR Stats: |data|=3627, |level_ptr|=551
+[0.89s] Writing CSR HNSW graph data in FAISS-compatible order...
+   Pruning embeddings: Writing NULL storage marker.
+[1.04s] Conversion complete.
+09/11/2025 21:40:13 - INFO -     ✅ CSR conversion successful.
+09/11/2025 21:40:13 - INFO -     INFO: Replaced original index with CSR-pruned version at '/Users/peppi/Dev/localcat/data/memory_vectors.index'
+2025-09-11 21:40:13.193 | INFO     | services.leann_adapter:rebuild_leann_index:31 - LEANN index rebuilt at /Users/peppi/Dev/localcat/data/memory_vectors.leann
+2025-09-11 21:40:23.690 | ERROR    | components.monitoring.alerting_system:_evaluate_rule:462 - Error evaluating rule high_cpu_usage: name 'rule_name' is not defined
+2025-09-11 21:41:23.691 | ERROR    | components.monitoring.alerting_system:_evaluate_rule:462 - Error evaluating rule high_cpu_usage: name 'rule_name' is not defined

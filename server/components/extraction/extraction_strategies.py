@@ -591,6 +591,13 @@ class EnhancedLevel3ExtractionStrategy(ExtractionStrategyBase):
     def _initialize_extractor(self) -> None:
         """Initialize the Enhanced Level3 Quality extractor."""
         try:
+            import sys
+            import os
+            # Add server directory to path if needed
+            server_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            if server_dir not in sys.path:
+                sys.path.insert(0, server_dir)
+
             from enhanced_level3_extractor import QualityExtractor
             from services.nlp_cache import get_en_model_from_env
 

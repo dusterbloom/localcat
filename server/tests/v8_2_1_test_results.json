@@ -1,0 +1,393 @@
+{
+  "test_timestamp": 1757869687.51545,
+  "processor_version": "V8.2.1-spacy",
+  "total_test_cases": 12,
+  "performance": {
+    "avg_processing_time_ms": 7.2,
+    "total_processing_time_ms": 86.42,
+    "performance_target_met": false
+  },
+  "quality": {
+    "total_triples": 16,
+    "signal_triples": 16,
+    "noise_triples": 0,
+    "signal_rate_percent": 100.0,
+    "quality_target_met": true
+  },
+  "scaling": {
+    "simple_avg": 0.7,
+    "medium_avg": 1.3,
+    "complex_avg": 2.3,
+    "scaling_progressive": true,
+    "range_compliance_percent": 33.3,
+    "scaling_target_met": false
+  },
+  "patterns": {
+    "v8_0_applications": 16,
+    "v8_1_applications": 0,
+    "total_applications": 16
+  },
+  "test_cases": [
+    {
+      "text": "John works",
+      "complexity": "simple",
+      "expected_range": "1-2",
+      "actual_triples": 1,
+      "processing_time_ms": 12.87,
+      "avg_quality": 0.85,
+      "avg_confidence": 0.96,
+      "noise_count": 0,
+      "in_expected_range": true,
+      "patterns_applied": 1,
+      "v8_0_patterns": 1,
+      "v8_1_patterns": 0,
+      "spacy_stats": {
+        "spacy_deps_used": {
+          "cc": 1,
+          "conj": 1
+        },
+        "pattern_distribution": {
+          "v8_0_coordination": 1
+        },
+        "quality_distribution": {
+          "high": 0,
+          "medium": 1,
+          "recovery": 0
+        },
+        "inheritance_summary": {
+          "v8_0_core_patterns": 1,
+          "v8_1_edge_cases": 0,
+          "total_patterns_applied": 1
+        }
+      }
+    },
+    {
+      "text": "Mary lives in Paris",
+      "complexity": "simple",
+      "expected_range": "1-2",
+      "actual_triples": 1,
+      "processing_time_ms": 5.42,
+      "avg_quality": 0.85,
+      "avg_confidence": 0.96,
+      "noise_count": 0,
+      "in_expected_range": true,
+      "patterns_applied": 1,
+      "v8_0_patterns": 1,
+      "v8_1_patterns": 0,
+      "spacy_stats": {
+        "spacy_deps_used": {
+          "cc": 1,
+          "conj": 1
+        },
+        "pattern_distribution": {
+          "v8_0_coordination": 1
+        },
+        "quality_distribution": {
+          "high": 0,
+          "medium": 1,
+          "recovery": 0
+        },
+        "inheritance_summary": {
+          "v8_0_core_patterns": 1,
+          "v8_1_edge_cases": 0,
+          "total_patterns_applied": 1
+        }
+      }
+    },
+    {
+      "text": "Book is red",
+      "complexity": "simple",
+      "expected_range": "1-2",
+      "actual_triples": 0,
+      "processing_time_ms": 4.84,
+      "avg_quality": 0,
+      "avg_confidence": 0,
+      "noise_count": 0,
+      "in_expected_range": false,
+      "patterns_applied": 0,
+      "v8_0_patterns": 0,
+      "v8_1_patterns": 0,
+      "spacy_stats": {}
+    },
+    {
+      "text": "John gave Mary book yesterday",
+      "complexity": "medium",
+      "expected_range": "2-4",
+      "actual_triples": 1,
+      "processing_time_ms": 5.78,
+      "avg_quality": 0.85,
+      "avg_confidence": 0.96,
+      "noise_count": 0,
+      "in_expected_range": false,
+      "patterns_applied": 1,
+      "v8_0_patterns": 1,
+      "v8_1_patterns": 0,
+      "spacy_stats": {
+        "spacy_deps_used": {
+          "cc": 1,
+          "conj": 1
+        },
+        "pattern_distribution": {
+          "v8_0_coordination": 1
+        },
+        "quality_distribution": {
+          "high": 0,
+          "medium": 1,
+          "recovery": 0
+        },
+        "inheritance_summary": {
+          "v8_0_core_patterns": 1,
+          "v8_1_edge_cases": 0,
+          "total_patterns_applied": 1
+        }
+      }
+    },
+    {
+      "text": "CEO announced quarterly profits exceeded expectations",
+      "complexity": "medium",
+      "expected_range": "3-5",
+      "actual_triples": 2,
+      "processing_time_ms": 7.14,
+      "avg_quality": 0.85,
+      "avg_confidence": 0.96,
+      "noise_count": 0,
+      "in_expected_range": false,
+      "patterns_applied": 1,
+      "v8_0_patterns": 2,
+      "v8_1_patterns": 0,
+      "spacy_stats": {
+        "spacy_deps_used": {
+          "cc": 2,
+          "conj": 2
+        },
+        "pattern_distribution": {
+          "v8_0_coordination": 2
+        },
+        "quality_distribution": {
+          "high": 0,
+          "medium": 2,
+          "recovery": 0
+        },
+        "inheritance_summary": {
+          "v8_0_core_patterns": 2,
+          "v8_1_edge_cases": 0,
+          "total_patterns_applied": 2
+        }
+      }
+    },
+    {
+      "text": "Students study hard at library",
+      "complexity": "medium",
+      "expected_range": "2-4",
+      "actual_triples": 1,
+      "processing_time_ms": 6.34,
+      "avg_quality": 0.85,
+      "avg_confidence": 0.96,
+      "noise_count": 0,
+      "in_expected_range": false,
+      "patterns_applied": 1,
+      "v8_0_patterns": 1,
+      "v8_1_patterns": 0,
+      "spacy_stats": {
+        "spacy_deps_used": {
+          "cc": 1,
+          "conj": 1
+        },
+        "pattern_distribution": {
+          "v8_0_coordination": 1
+        },
+        "quality_distribution": {
+          "high": 0,
+          "medium": 1,
+          "recovery": 0
+        },
+        "inheritance_summary": {
+          "v8_0_core_patterns": 1,
+          "v8_1_edge_cases": 0,
+          "total_patterns_applied": 1
+        }
+      }
+    },
+    {
+      "text": "John walked to store through park yesterday and bought groceries",
+      "complexity": "complex",
+      "expected_range": "4-8",
+      "actual_triples": 1,
+      "processing_time_ms": 8.54,
+      "avg_quality": 0.85,
+      "avg_confidence": 0.96,
+      "noise_count": 0,
+      "in_expected_range": false,
+      "patterns_applied": 1,
+      "v8_0_patterns": 1,
+      "v8_1_patterns": 0,
+      "spacy_stats": {
+        "spacy_deps_used": {
+          "cc": 1,
+          "conj": 1
+        },
+        "pattern_distribution": {
+          "v8_0_coordination": 1
+        },
+        "quality_distribution": {
+          "high": 0,
+          "medium": 1,
+          "recovery": 0
+        },
+        "inheritance_summary": {
+          "v8_0_core_patterns": 1,
+          "v8_1_edge_cases": 0,
+          "total_patterns_applied": 1
+        }
+      }
+    },
+    {
+      "text": "CEO who founded company announced that quarterly profits exceeded analyst expectations during meeting",
+      "complexity": "complex",
+      "expected_range": "6-12",
+      "actual_triples": 3,
+      "processing_time_ms": 8.84,
+      "avg_quality": 0.85,
+      "avg_confidence": 0.96,
+      "noise_count": 0,
+      "in_expected_range": false,
+      "patterns_applied": 1,
+      "v8_0_patterns": 3,
+      "v8_1_patterns": 0,
+      "spacy_stats": {
+        "spacy_deps_used": {
+          "cc": 3,
+          "conj": 3
+        },
+        "pattern_distribution": {
+          "v8_0_coordination": 3
+        },
+        "quality_distribution": {
+          "high": 0,
+          "medium": 3,
+          "recovery": 0
+        },
+        "inheritance_summary": {
+          "v8_0_core_patterns": 3,
+          "v8_1_edge_cases": 0,
+          "total_patterns_applied": 3
+        }
+      }
+    },
+    {
+      "text": "Smart AI system that processes natural language efficiently helps researchers analyze complex data",
+      "complexity": "complex",
+      "expected_range": "5-10",
+      "actual_triples": 3,
+      "processing_time_ms": 9.4,
+      "avg_quality": 0.85,
+      "avg_confidence": 0.96,
+      "noise_count": 0,
+      "in_expected_range": false,
+      "patterns_applied": 1,
+      "v8_0_patterns": 3,
+      "v8_1_patterns": 0,
+      "spacy_stats": {
+        "spacy_deps_used": {
+          "cc": 3,
+          "conj": 3
+        },
+        "pattern_distribution": {
+          "v8_0_coordination": 3
+        },
+        "quality_distribution": {
+          "high": 0,
+          "medium": 3,
+          "recovery": 0
+        },
+        "inheritance_summary": {
+          "v8_0_core_patterns": 3,
+          "v8_1_edge_cases": 0,
+          "total_patterns_applied": 3
+        }
+      }
+    },
+    {
+      "text": "John ate apples and Mary oranges",
+      "complexity": "edge_case",
+      "expected_range": "2-4",
+      "actual_triples": 2,
+      "processing_time_ms": 6.11,
+      "avg_quality": 0.85,
+      "avg_confidence": 0.96,
+      "noise_count": 0,
+      "in_expected_range": true,
+      "patterns_applied": 1,
+      "v8_0_patterns": 2,
+      "v8_1_patterns": 0,
+      "spacy_stats": {
+        "spacy_deps_used": {
+          "cc": 2,
+          "conj": 2
+        },
+        "pattern_distribution": {
+          "v8_0_coordination": 2
+        },
+        "quality_distribution": {
+          "high": 0,
+          "medium": 2,
+          "recovery": 0
+        },
+        "inheritance_summary": {
+          "v8_0_core_patterns": 2,
+          "v8_1_edge_cases": 0,
+          "total_patterns_applied": 2
+        }
+      }
+    },
+    {
+      "text": "John kicked the bucket",
+      "complexity": "edge_case",
+      "expected_range": "1-2",
+      "actual_triples": 1,
+      "processing_time_ms": 5.19,
+      "avg_quality": 0.85,
+      "avg_confidence": 0.96,
+      "noise_count": 0,
+      "in_expected_range": true,
+      "patterns_applied": 1,
+      "v8_0_patterns": 1,
+      "v8_1_patterns": 0,
+      "spacy_stats": {
+        "spacy_deps_used": {
+          "cc": 1,
+          "conj": 1
+        },
+        "pattern_distribution": {
+          "v8_0_coordination": 1
+        },
+        "quality_distribution": {
+          "high": 0,
+          "medium": 1,
+          "recovery": 0
+        },
+        "inheritance_summary": {
+          "v8_0_core_patterns": 1,
+          "v8_1_edge_cases": 0,
+          "total_patterns_applied": 1
+        }
+      }
+    },
+    {
+      "text": "Solution is better than alternative",
+      "complexity": "edge_case",
+      "expected_range": "1-3",
+      "actual_triples": 0,
+      "processing_time_ms": 5.95,
+      "avg_quality": 0,
+      "avg_confidence": 0,
+      "noise_count": 0,
+      "in_expected_range": false,
+      "patterns_applied": 0,
+      "v8_0_patterns": 0,
+      "v8_1_patterns": 0,
+      "spacy_stats": {}
+    }
+  ],
+  "overall_success": false
+}

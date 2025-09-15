@@ -1,0 +1,604 @@
+# ULTRAGROK v6.0 — Universal UD→SRL Backbone (YAML-only, latency-safe)
+# Purpose: push coverage toward ~100% argument identification & >=95% role assignment
+# without leaving pattern-matching land. Precision-first; recall via safe expansions.
+# Assumptions: Engine supports regex on POS/DEPREL, optional edges with '?', FEATS access,
+# name-span merge (flat:name|flat|compound|fixed), multiword ADP (case+fixed) and postpositions.
+
+meta:
+  version: "6.0-ultragrok"
+  universal: true
+  perf:
+    avg_ms_target: 150
+    max_ms_sentence: 200
+    rule_budget: 28               # hard cap rules fired per sentence
+  design:
+    principle: "UD_relations_as_semantics"
+    do_not_require_root: true     # rules should not depend on dep=ROOT
+    reify_events_optional: true
+  coverage:
+    aim: ">=97% arg-id; >=95% role"
+
+engine:
+  propagate_conj: ["subj","obj","dep","theme","recip","head","alias","comp","loc","time"]
+  merge_name_deps: ["flat:name","flat","compound","fixed"]
+  read_mwadp: true           # case + fixed → multiword ADP (in_front_of)
+  read_postpositions: true   # ADP after noun (Hindi/Japanese/Turkish)
+  use_morph_case: true       # fallback to FEATS.Case when no explicit 'case'
+  expose_feats: true         # FEATS: Voice, Polarity, Tense, Aspect, Mood, Degree, Evident, etc.
+  dedupe: true
+  attributes_on_triple: ["negated","modality","voice","tense","aspect","evidential"]
+  predicate_template: "{verb_lemma}{prt_suffix}{prep_suffix}"  # default composer
+
+# =============================
+# Global TAGS (metadata carriers)
+# =============================
+tags:
+  - name: NEGATION
+    priority: 255
+    pattern:
+      anchor: { pos: "VERB|AUX|ADJ|NOUN" }
+      edges:
+        - { from: anchor, rel: "^neg$", as: neg }
+    set: { negated: true }
+    also_when: { feats: { Polarity: "Neg" } }
+
+  - name: VOICE_PASS
+    priority: 254
+    pattern: { anchor: { pos: "VERB", feats: { Voice: "Pass" } } }
+    set: { voice: "Pass" }
+    also_when:
+      edges: [ { from: anchor, rel: "^aux:pass$", as: auxp? } ]
+
+  - name: MODALITY
+    priority: 253
+    pattern:
+      anchor: { pos: "VERB" }
+      edges: [ { from: anchor, rel: "^aux$", as: aux? } ]
+    set: { modality: "{aux.lemma}" }
+
+  - name: TENSE_ASPECT
+    priority: 252
+    pattern: { anchor: { pos: "VERB" } }
+    set:
+      tense: "{feats.Tense}"
+      aspect: "{feats.Aspect}"
+
+  - name: PARTICLE
+    priority: 251
+    pattern:
+      anchor: { pos: "VERB" }
+      edges: [ { from: anchor, rel: "^compound:prt$", as: prt, pos: "PART" } ]
+    set: { prt_suffix: "_{prt.lemma}" }
+
+  - name: TOPIC
+    priority: 250
+    pattern:
+      anchor: { rel: "^topic$" }
+    set: { is_topic: true }
+
+# ======================
+# Universal CORE rules
+# ======================
+rules:
+  # --- 1) Core verbal predicate extraction ---
+  - name: SVO_ACTIVE
+    priority: 200
+    kind: relation
+    pattern:
+      anchor: { pos: "VERB" }
+      edges:
+        - { from: anchor, rel: "^nsubj|^csubj$", as: subj }
+        - { from: anchor, rel: "^obj|^iobj$",    as: obj? }
+        - { from: anchor, rel: "^obl|^nmod$",    as: dep? }
+        - { from: dep,    rel: "^case|^mark$",   as: case? }   # mark for some languages
+        - { from: anchor, rel: "^compound:prt$", as: prt?, pos: "PART" }
+    emit:
+      - when: "{obj?}"
+        subj: "{subj.text}"
+        pred: "{verb_lemma}{prt_suffix}"
+        obj:  "{obj.text}"
+        canon: "VERB[nsubj]-OBJ"
+      - when: "{dep?}"
+        subj: "{subj.text}"
+        pred: "{verb_lemma}{prt_suffix}{prep_suffix}"
+        obj:  "{dep.text}"
+        canon: "VERB[nsubj]-OBL"
+
+  - name: PASSIVE_AGENT
+    priority: 198
+    kind: relation
+    pattern:
+      anchor: { pos: "VERB" }
+      edges:
+        - { from: anchor, rel: "^nsubj:pass$", as: patient }
+        - { from: anchor, rel: "^obl:agent|^nmod:agent$", as: agent }
+        - { from: agent,  rel: "^case|^mark$", as: by? }
+    emit:
+      - subj: "{agent.text}"
+        pred: "{verb_lemma}"
+        obj:  "{patient.text}"
+        canon: "PASSIVE→ACTIVE"
+    guards: { agent_markers: true }
+
+  - name: PASSIVE_NO_AGENT
+    priority: 150
+    kind: relation
+    pattern:
+      anchor: { pos: "VERB", feats: { Voice: "Pass" } }
+      edges: [ { from: anchor, rel: "^nsubj:pass$", as: patient } ]
+    emit:
+      - subj: "{patient.text}"
+        pred: "undergo_{verb_lemma}"
+        obj:  ""
+        canon: "PASSIVE-NOAG"
+
+  # Zero-copula (no explicit 'cop')
+  - name: ZERO_COPULA
+    priority: 194
+    kind: relation
+    pattern:
+      anchor: { pos: "NOUN|ADJ" }
+      edges:
+        - { from: anchor, rel: "^nsubj$", as: subj }
+      not_edges: [ { from: anchor, rel: "^cop$" } ]
+    emit:
+      - subj: "{subj.text}"
+        pred: "be"
+        obj:  "{anchor.text}"
+        canon: "COP-zero"
+
+  - name: COPULA_ATTR
+    priority: 193
+    kind: relation
+    pattern:
+      anchor: { pos: "NOUN|PROPN|ADJ" }
+      edges:
+        - { from: anchor, rel: "^cop$",  as: cop }
+        - { from: anchor, rel: "^nsubj$", as: subj }
+    emit:
+      - subj: "{subj.text}"
+        pred: "be"
+        obj:  "{anchor.text}"
+        canon: "COP-attr"
+
+  # Ditransitives (iobj or obl-dative)
+  - name: DITRANSITIVE
+    priority: 190
+    kind: relation
+    pattern:
+      anchor: { pos: "VERB" }
+      edges:
+        - { from: anchor, rel: "^nsubj|^csubj$", as: subj }
+        - { from: anchor, rel: "^obj$",          as: theme? }
+        - { from: anchor, rel: "^iobj|^obl$",    as: recip? }
+        - { from: recip,  rel: "^case|^mark$",   as: rcase? }
+    emit:
+      - when: "{recip?}"
+        subj: "{subj.text}"
+        pred: "{verb_lemma}_to"
+        obj:  "{recip.text}"
+        canon: "RECIP"
+      - when: "{theme?}"
+        subj: "{subj.text}"
+        pred: "{verb_lemma}"
+        obj:  "{theme.text}"
+        canon: "OBJ"
+    guards: { prefer_dative: true }
+
+  # Light-Verb constructions (compound:lvc) → noun predicate
+  - name: LVC
+    priority: 176
+    kind: relation
+    pattern:
+      anchor: { pos: "VERB" }
+      edges:
+        - { from: anchor, rel: "^obj$", as: n, pos: "NOUN" }
+        - { from: n,      rel: "^compound:lvc$", as: lvc }
+        - { from: anchor, rel: "^nsubj$", as: subj? }
+        - { from: n,      rel: "^nmod|^obl$", as: arg? }
+    emit:
+      - subj: "{subj.text}"
+        pred: "{n.lemma}"
+        obj:  "{arg.text}"
+        canon: "LVC"
+
+  # Serial verbs (compound:svc) — share subject
+  - name: SERIAL_VERB
+    priority: 174
+    kind: relation
+    pattern:
+      anchor: { pos: "VERB" }
+      edges:
+        - { from: anchor, rel: "^compound:svc$", as: v2, pos: "VERB" }
+        - { from: anchor, rel: "^nsubj$", as: subj? }
+        - { from: v2,     rel: "^obj$", as: obj? }
+    emit:
+      - subj: "{subj.text}"
+        pred: "{v2.lemma}"
+        obj:  "{obj.text}"
+        canon: "SVC"
+
+  # Control/raising (xcomp). Default: subject control when xcomp has no subject.
+  - name: XCOMP_CONTROL
+    priority: 172
+    kind: relation
+    pattern:
+      anchor: { pos: "VERB" }
+      edges:
+        - { from: anchor, rel: "^nsubj$", as: ctrl? }
+        - { from: anchor, rel: "^xcomp$", as: xc }
+        - { from: xc,     rel: "^nsubj$", as: xsubj? }
+        - { from: xc,     rel: "^obj$",   as: xobj? }
+    emit:
+      - subj: "{(xsubj.text or ctrl.text)}"
+        pred: "{xc.lemma}"
+        obj:  "{xobj.text}"
+        canon: "XCOMP"
+
+  # Causatives (make/let/faire/lassen/让/讓/hacer/dejar)
+  - name: CAUSATIVE
+    priority: 170
+    kind: relation
+    pattern:
+      anchor: { pos: "VERB" }
+      edges:
+        - { from: anchor, rel: "^obj$",    as: causee? }
+        - { from: anchor, rel: "^xcomp$",  as: act }
+        - { from: anchor, rel: "^nsubj$",  as: causer? }
+        - { from: act,    rel: "^obj$",    as: theme? }
+    emit:
+      - subj: "{causer.text}"
+        pred: "cause"
+        obj:  "{(causee.text or theme.text)}"
+        canon: "CAUS"
+      - when: "{causee?}"
+        subj: "{causee.text}"
+        pred: "{act.lemma}"
+        obj:  "{theme.text}"
+        canon: "CAUSEE-ACT"
+    guards: { causative_lemmas: true }
+
+  # Existentials
+  - name: EXISTENTIAL
+    priority: 165
+    kind: relation
+    pattern:
+      anchor: { pos: "VERB" }
+      edges:
+        - { from: anchor, rel: "^expl$", as: expl }
+        - { from: anchor, rel: "^nsubj$", as: ent }
+        - { from: anchor, rel: "^obl|^nmod$", as: loc? }
+        - { from: loc,    rel: "^case|^mark$", as: lmk? }
+    emit:
+      - when: "{loc?}"
+        subj: "{ent.text}"
+        pred: "exist_in"
+        obj:  "{loc.text}"
+        canon: "EXIST-IN"
+      - when_not: "{loc?}"
+        subj: "{ent.text}"
+        pred: "exist"
+        obj:  ""
+        canon: "EXIST"
+
+  # Possession verb → has
+  - name: HAVE_POSSESSION
+    priority: 164
+    kind: relation
+    pattern:
+      anchor: { pos: "VERB" }
+      edges: [ { from: anchor, rel: "^nsubj$", as: owner }, { from: anchor, rel: "^obj$", as: item } ]
+    emit:
+      - subj: "{owner.text}"
+        pred: "has"
+        obj:  "{item.text}"
+        canon: "HAVE"
+    guards: { have_lemmas: true }
+
+  # Adjectival complements (proud of X)
+  - name: ADJ_COMPLEMENT
+    priority: 156
+    kind: relation
+    pattern:
+      anchor: { pos: "ADJ" }
+      edges:
+        - { from: anchor, rel: "^nsubj$", as: subj? }
+        - { from: anchor, rel: "^obl|^nmod$", as: dep }
+        - { from: dep,    rel: "^case|^mark$", as: c? }
+    emit:
+      - subj: "{(subj.text or anchor.head.text)}"
+        pred: "has_attr_{prep}"
+        obj:  "{dep.text}"
+        canon: "ADJ-COMP"
+
+  # Relative clauses
+  - name: RELCL_PROPAGATE
+    priority: 154
+    kind: relation
+    pattern:
+      anchor: { pos: "VERB", rel: "^acl:relcl$" }
+      edges:
+        - { from: anchor, rel: "^obj$", as: robj? }
+        - { from: anchor, rel: "^obl|^nmod$", as: rdep? }
+        - { from: anchor, rel: "^compound:prt$", as: prt?, pos: "PART" }
+    context: { head_from: "anchor.head" }
+    emit:
+      - when: "{robj?}"
+        subj: "{head.text}"
+        pred: "{verb_lemma}{prt_suffix}"
+        obj:  "{robj.text}"
+        canon: "RELCL-OBJ"
+      - when: "{rdep?}"
+        subj: "{head.text}"
+        pred: "{verb_lemma}{prt_suffix}{prep_suffix}"
+        obj:  "{rdep.text}"
+        canon: "RELCL-OBL"
+
+  # Topic-comment (zh/jp/ko etc.)
+  - name: TOPIC_COMMENT
+    priority: 152
+    kind: relation
+    pattern:
+      anchor: { rel: "^topic$" }
+      edges: [ { from: anchor.head, rel: "^root|^conj|^ccomp|^advcl", as: predv? } ]
+    emit:
+      - subj: "{anchor.text}"
+        pred: "{(predv.lemma or anchor.head.lemma)}"
+        obj:  "{predv.obj.text}"
+        canon: "TOPIC"
+
+  # Apposition → be
+  - name: APPOSITION_IS_A
+    priority: 150
+    kind: relation
+    pattern:
+      anchor: { pos: "PROPN|NOUN" }
+      edges: [ { from: anchor, rel: "^appos$", as: app, pos: "NOUN|PROPN" } ]
+    emit:
+      - subj: "{anchor.text}"
+        pred: "be"
+        obj:  "{app.text}"
+        canon: "APPOS"
+
+  # Possessives (det:poss / nmod:poss / of|de|di/genitive case)
+  - name: POSSESSIVES
+    priority: 148
+    kind: relation
+    pattern:
+      anchor: { pos: "NOUN|PROPN" }
+      edges:
+        - { from: anchor, rel: "^det:poss$",   as: poss? }
+        - { from: anchor, rel: "^nmod:poss$",  as: p2? }
+        - { from: anchor, rel: "^nmod$",       as: ofN? }
+        - { from: ofN,    rel: "^case|^mark$", as: ofC? }
+    emit:
+      - when: "{poss?}"
+        subj: "{poss.text}"
+        pred: "possess_of"
+        obj:  "{anchor.text}"
+        canon: "POSS-DET"
+      - when: "{p2?}"
+        subj: "{p2.text}"
+        pred: "possess_of"
+        obj:  "{anchor.text}"
+        canon: "POSS-NMOD"
+      - when: "{ofN?}"
+        subj: "{ofN.text}"
+        pred: "possess_of"
+        obj:  "{anchor.text}"
+        canon: "POSS-OF"
+
+  # Comparatives/Superlatives
+  - name: COMPARATIVE
+    priority: 140
+    kind: relation
+    pattern:
+      anchor: { pos: "ADJ|ADV" }
+      edges:
+        - { from: anchor, rel: "^obl|^nmod$", as: comp }
+        - { from: comp,   rel: "^case|^mark$", as: c? }
+    emit:
+      - subj: "{anchor.head.text}"
+        pred: "greater_than_by"
+        obj:  "{comp.text}"
+        canon: "CMP"
+    guards: { comparative_markers: true }
+
+  - name: SUPERLATIVE
+    priority: 138
+    kind: relation
+    pattern: { anchor: { pos: "ADJ", feats: { Degree: "Sup" } } }
+    emit:
+      - subj: "{anchor.head.text}"
+        pred: "superlative"
+        obj:  "{anchor.text}"
+        canon: "SUP"
+
+  # Quantifiers & numerals (attributes)
+  - name: QUANTIFIER_ATTR
+    priority: 136
+    kind: relation
+    pattern:
+      anchor: { pos: "NOUN|PRON" }
+      edges: [ { from: anchor, rel: "^det$", as: det? }, { from: anchor, rel: "^nummod$", as: num? } ]
+    emit:
+      - when: "{det?}"
+        subj: "{anchor.text}"
+        pred: "quantified_as"
+        obj:  "{det.text}"
+        canon: "QUANT"
+      - when: "{num?}"
+        subj: "{anchor.text}"
+        pred: "has_measure"
+        obj:  "{num.text}"
+        canon: "MEASURE"
+
+  # Partitives (det:part / nmod:partitive)
+  - name: PARTITIVE
+    priority: 134
+    kind: relation
+    pattern:
+      anchor: { pos: "NOUN" }
+      edges:
+        - { from: anchor, rel: "^det:part$", as: dpart? }
+        - { from: anchor, rel: "^nmod:part$|^nmod:partitive$", as: whole? }
+    emit:
+      - when: "{whole?}"
+        subj: "{anchor.text}"
+        pred: "part_of"
+        obj:  "{whole.text}"
+        canon: "PART"
+
+  # Gapping/ellipsis via orphan
+  - name: GAPPING_ORPHAN
+    priority: 132
+    kind: relation
+    pattern:
+      anchor: { rel: "^conj$", pos: "NOUN|PROPN|PRON" }
+      edges: [ { from: anchor, rel: "^orphan$", as: orphan } ]
+    context: { inherit_predicate_from_prev_conj: true }
+    emit:
+      - subj: "{anchor.text}"
+        pred: "{inherited_predicate}"
+        obj:  "{orphan.text}"
+        canon: "GAP"
+
+# ======================
+# Language packs (surgical)
+# ======================
+language_packs:
+  es:
+    - name: GUSTAR_FAMILY
+      priority: 240
+      kind: relation
+      pattern:
+        anchor: { pos: "VERB" }
+        edges:
+          - { from: anchor, rel: "^iobj|^obl$", as: exp }
+          - { from: anchor, rel: "^nsubj$",     as: theme }
+      emit:
+        - subj: "{exp.text}"
+          pred: "like"
+          obj:  "{theme.text}"
+          canon: "EXP-THEME→LIKE"
+      guards: { verb_lemma_in: ["gustar","encantar","interesar","parecer"] }
+
+  de:
+    - name: SEPARABLE_PREFIX
+      priority: 220
+      kind: tag
+      pattern:
+        anchor: { pos: "VERB" }
+        edges: [ { from: anchor, rel: "^compound:prt$", as: prt, pos: "PART" } ]
+      set: { prt_suffix: "_{prt.lemma}" }
+
+  zh:
+    - name: BEI_PASSIVE
+      priority: 238
+      kind: relation
+      pattern:
+        anchor: { pos: "VERB" }
+        edges:
+          - { from: anchor, rel: "^nsubj$", as: patient }
+          - { from: anchor, rel: "^obl|^nmod$", as: agent }
+          - { from: agent,  rel: "^case|^mark$", as: mk? }
+      emit:
+        - subj: "{agent.text}"
+          pred: "{verb_lemma}"
+          obj:  "{patient.text}"
+          canon: "PASSIVE→ACTIVE"
+      guards: { require_marker_in: ["被"] }
+
+    - name: BA_OBJECT
+      priority: 236
+      kind: relation
+      pattern:
+        anchor: { pos: "VERB" }
+        edges:
+          - { from: anchor, rel: "^obj$", as: obj }
+          - { from: obj,    rel: "^case|^mark$", as: mk? }
+          - { from: anchor, rel: "^nsubj$", as: subj }
+      emit:
+        - subj: "{subj.text}"
+          pred: "{verb_lemma}"
+          obj:  "{obj.text}"
+          canon: "BA-OBJ"
+      guards: { require_marker_in: ["把"] }
+
+  ja:
+    - name: JAPANESE_CASE_PARTICLES
+      priority: 230
+      kind: relation
+      pattern:
+        anchor: { pos: "VERB" }
+        edges:
+          - { from: anchor, rel: "^nsubj$", as: subj? }
+          - { from: anchor, rel: "^obj$",   as: obj? }
+          - { from: anchor, rel: "^obl$",   as: obl? }
+      emit:
+        - when: "{subj?}"
+          subj: "{subj.text}"
+          pred: "{verb_lemma}"
+          obj:  "{obj.text}"
+          canon: "JA-SVO"
+      notes: "Engine should map particles が/を/に/へ/で/と as Case via postposition support."
+
+  tr:
+    - name: TURKISH_CASE
+      priority: 228
+      kind: relation
+      pattern: { anchor: { pos: "VERB" } }
+      emit: []
+      notes: "Engine uses FEATS.Case: Dat→_to, Loc→_in, Abl→_from, Ins→_with when building prep_suffix."
+
+  hi:
+    - name: HINDI_POSTPOSITIONS
+      priority: 226
+      kind: relation
+      pattern: { anchor: { pos: "VERB" } }
+      emit: []
+      notes: "Engine treats को/से/में/पर/के_लिए as postpositions; populate {prep} via postposition reader."
+
+# ======================
+# Guards / Helpers (to implement once in engine)
+# ======================
+guards:
+  agent_markers:
+    impl: any_case_in
+    args: [["by","von","par","por","da","ب","被"]]
+  prefer_dative:
+    impl: prefer_morph_case
+    args: ["Dat"]
+  comparative_markers:
+    impl: any_case_or_mark_in
+    args: [["than","que","che","als","como","比"]]
+  causative_lemmas:
+    impl: lemma_in
+    args: [["make","let","have","cause","tell","ask","force","allow","faire","laisser","lassen","hacer","dejar","让","讓"]]
+  have_lemmas:
+    impl: lemma_in
+    args: [["have","has","had","tener","avoir","avere","haben","有"]]
+  require_marker_in:
+    impl: child_marker_in
+
+# ======================
+# Post-processing (deterministic)
+# ======================
+post:
+  dedupe: span_overlap_0.8_keep_max_conf
+  cap_triples_per_sentence: 20
+  scope_isolation: ["ccomp","acl","advcl"]
+  collapse_event_attrs:
+    - { from: "occurs_at", to: "@time" }
+  normalize_predicates:
+    - lowercase: true
+    - remove_double_underscores: true
+
+# ======================
+# Integrator notes
+# ======================
+# • Compose {prep} as: (i) read ADP from case child + fixed chain; (ii) if none, read FEATS.Case
+#   via mapping (Dat→to, Loc→in, Abl→from, Ins→with, Gen→of, All→to, Ill→into, Ade→at/on, etc.).
+# • For pro-drop, you may leave subj empty; a coref/pronominal post-pass can fill it.
+# • NOMINALIZATION/LVC rules are conservative; enrich with your lexicon if available.
+# • Do not exceed rule_budget; short-circuit once enough high-priority rules fire.

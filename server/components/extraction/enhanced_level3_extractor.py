@@ -162,7 +162,37 @@ class QualityExtractor:
 
         for sent in doc.sents:
             for token in sent:
-                if token.lemma_.lower() in self.core_verbs and token.pos_ == 'VERB':
+                # Handle copula (is/are/was/were) relations first
+                if token.lemma_.lower() in ['be', 'is', 'are', 'was', 'were'] and token.pos_ in ['AUX', 'VERB']:
+                    # Extract copula relations (e.g., "My dog's name is Potola")
+                    subjects = [child for child in token.children if child.dep_ in ['nsubj', 'nsubjpass']]
+                    attrs = [child for child in token.children if child.dep_ in ['attr', 'acomp']]
+
+                    for subj in subjects:
+                        subj_text = self._get_clean_noun_phrase(subj, role='subject')
+
+                        for attr in attrs:
+                            if attr.pos_ in ['NOUN', 'PROPN']:
+                                attr_text = self._get_clean_noun_phrase(attr)
+                            else:
+                                attr_text = attr.text
+
+                            # Create copula relation
+                            relation = QualityRelation(
+                                id=f"relation_{self.relation_counter}",
+                                subject=subj_text,
+                                predicate='is',
+                                object=attr_text,
+                                relation_type="copula",
+                                confidence=0.85,
+                                source_sentence=0,
+                                semantic_roles={'ARG0': subj_text, 'ARG1': attr_text}
+                            )
+                            relations.append(relation)
+                            self.relation_counter += 1
+
+                # Then handle action verbs as before
+                elif token.lemma_.lower() in self.core_verbs and token.pos_ == 'VERB':
                     # Find clear subject-verb-object patterns
                     subjects = [child for child in token.children if child.dep_ == 'nsubj']
                     objects = [child for child in token.children if child.dep_ in ['dobj', 'attr']]

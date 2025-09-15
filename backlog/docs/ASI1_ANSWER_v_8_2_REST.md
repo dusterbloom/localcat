@@ -1,3 +1,4 @@
+
 # ========== SPACY-COMPATIBLE VALIDATION & TESTING ==========
 
 def validate_spacy_compatibility(yaml_file: str = "ULTRAGROK_V8.2.1_SPACY.yaml"):

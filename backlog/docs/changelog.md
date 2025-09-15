@@ -18,10 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Default extraction strategy set to Enhanced Level3; `.env` now locks transformer alias and lite coref with fusion on.
-- Enhanced bullet formatting in Retrieval (fallback path conjugates verb_prep; artifact filtering; de‑duplication).
-- Retrieval fusion: user text indexed each turn into FTS to strengthen fusion without stored edges.
 
 ### Fixed
+- Enhanced Level3 now extracts copula relations (is/are/was/were) - previously returned 0 triples for sentences like "My dog's name is Potola"
+- Import path issue in extraction_strategies.py for Enhanced Level3 initialization
+- Enhanced bullet formatting in Retrieval (fallback path conjugates verb_prep; artifact filtering; de‑duplication).
+- Retrieval fusion: user text indexed each turn into FTS to strengthen fusion without stored edges.
 - Avoided duplicate spaCy loads across components; first‑turn latency reduced via prewarm.
 - Removed legacy extraction fallback to prevent noisy/generic triples entering the KG.
 
