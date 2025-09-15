@@ -117,7 +117,11 @@ class SessionStore:
     def create_session(self, user_id: str, session_id: Optional[str] = None) -> str:
         """Create a new session"""
         if session_id is None:
-            session_id = f"session_{int(time.time())}_{user_id}"
+            # Create hash-based session ID: timestamp + user_id hash
+            import hashlib
+            timestamp = int(time.time())
+            user_hash = hashlib.md5(user_id.encode()).hexdigest()[:8]  # First 8 chars of MD5 hash
+            session_id = f"sess_{timestamp}_{user_hash}"
         
         now = int(time.time())
         self.conn.execute("""
@@ -309,16 +313,16 @@ class SessionStore:
         """Get session storage statistics"""
         cursor = self.conn.execute("SELECT COUNT(*) FROM sessions")
         session_count = cursor.fetchone()[0]
-        
+
         cursor = self.conn.execute("SELECT COUNT(*) FROM session_messages")
         message_count = cursor.fetchone()[0]
-        
+
         cursor = self.conn.execute("SELECT COUNT(*) FROM session_summaries")
         summary_count = cursor.fetchone()[0]
-        
+
         cursor = self.conn.execute("SELECT COUNT(*) FROM session_knowledge_links")
         link_count = cursor.fetchone()[0]
-        
+
         return {
             'sessions': session_count,
             'messages': message_count,
@@ -327,6 +331,165 @@ class SessionStore:
             'avg_messages_per_session': message_count / max(session_count, 1),
             'sessions_with_summaries': summary_count
         }
+
+    def get_user_session_stats(self, user_id: str) -> Dict[str, Any]:
+        """Get comprehensive session statistics for a specific user"""
+        # Get user's sessions
+        cursor = self.conn.execute("""
+            SELECT session_id, start_time, end_time, message_count, summary
+            FROM sessions
+            WHERE user_id = ?
+            ORDER BY start_time DESC
+        """, (user_id,))
+
+        sessions = cursor.fetchall()
+        total_sessions = len(sessions)
+
+        if total_sessions == 0:
+            return {
+                'user_id': user_id,
+                'total_sessions': 0,
+                'total_time_spent_seconds': 0,
+                'total_messages': 0,
+                'avg_session_duration': 0,
+                'avg_messages_per_session': 0,
+                'sessions_with_summaries': 0,
+                'recent_sessions': []
+            }
+
+        # Calculate statistics
+        total_time_spent = 0
+        total_messages = 0
+        sessions_with_summaries = 0
+        recent_sessions = []
+
+        for session in sessions:
+            session_id, start_time, end_time, message_count, summary = session
+            duration = (end_time or int(time.time())) - start_time
+            total_time_spent += duration
+            total_messages += message_count or 0
+            if summary:
+                sessions_with_summaries += 1
+
+            # Include recent session details
+            if len(recent_sessions) < 5:
+                recent_sessions.append({
+                    'session_id': session_id,
+                    'start_time': start_time,
+                    'duration_seconds': duration,
+                    'message_count': message_count or 0,
+                    'has_summary': bool(summary)
+                })
+
+        return {
+            'user_id': user_id,
+            'total_sessions': total_sessions,
+            'total_time_spent_seconds': total_time_spent,
+            'total_messages': total_messages,
+            'avg_session_duration': total_time_spent / total_sessions,
+            'avg_messages_per_session': total_messages / total_sessions,
+            'sessions_with_summaries': sessions_with_summaries,
+            'recent_sessions': recent_sessions,
+            'first_session_time': sessions[-1][1] if sessions else None,
+            'last_session_time': sessions[0][2] or sessions[0][1] if sessions else None
+        }
+
+    def get_session_analytics(self, session_id: str) -> Dict[str, Any]:
+        """Get detailed analytics for a specific session"""
+        # Get session metadata
+        metadata = self.get_session_metadata(session_id)
+        if not metadata:
+            return {}
+
+        # Get conversation timeline
+        cursor = self.conn.execute("""
+            SELECT role, timestamp, turn_id
+            FROM session_messages
+            WHERE session_id = ?
+            ORDER BY timestamp
+        """, (session_id,))
+
+        messages = cursor.fetchall()
+
+        if not messages:
+            return {
+                'session_id': session_id,
+                'duration_seconds': metadata.end_time - metadata.start_time if metadata.end_time else None,
+                'message_count': 0,
+                'turn_count': 0,
+                'avg_response_time': None,
+                'timeline': []
+            }
+
+        # Calculate analytics
+        turn_count = max(msg[2] for msg in messages) if messages else 0
+        user_messages = [msg for msg in messages if msg[0] == 'user']
+        assistant_messages = [msg for msg in messages if msg[0] == 'assistant']
+
+        # Calculate response times (time between user message and next assistant message)
+        response_times = []
+        for i in range(len(messages) - 1):
+            if messages[i][0] == 'user' and messages[i + 1][0] == 'assistant':
+                response_time = messages[i + 1][1] - messages[i][1]
+                response_times.append(response_time)
+
+        avg_response_time = sum(response_times) / len(response_times) if response_times else None
+
+        # Create timeline
+        timeline = []
+        for i, (role, timestamp, turn_id) in enumerate(messages):
+            timeline.append({
+                'sequence': i + 1,
+                'role': role,
+                'timestamp': timestamp,
+                'turn_id': turn_id,
+                'time_from_start': timestamp - messages[0][1]
+            })
+
+        return {
+            'session_id': session_id,
+            'duration_seconds': metadata.end_time - metadata.start_time if metadata.end_time else None,
+            'message_count': len(messages),
+            'turn_count': turn_count,
+            'user_messages': len(user_messages),
+            'assistant_messages': len(assistant_messages),
+            'avg_response_time_seconds': avg_response_time,
+            'extraction_count': metadata.extraction_count,
+            'has_summary': bool(metadata.summary),
+            'timeline': timeline,
+            'start_time': metadata.start_time,
+            'end_time': metadata.end_time
+        }
+
+    def get_user_session_history(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get user's session history with summaries for navigation"""
+        cursor = self.conn.execute("""
+            SELECT s.session_id, s.start_time, s.end_time, s.message_count,
+                   s.extraction_count, s.summary, ss.summary_text
+            FROM sessions s
+            LEFT JOIN session_summaries ss ON s.session_id = ss.session_id
+            WHERE s.user_id = ?
+            ORDER BY s.start_time DESC
+            LIMIT ?
+        """, (user_id, limit))
+
+        sessions = []
+        for row in cursor.fetchall():
+            session_id, start_time, end_time, message_count, extraction_count, summary, summary_text = row
+            duration = (end_time or int(time.time())) - start_time
+
+            sessions.append({
+                'session_id': session_id,
+                'start_time': start_time,
+                'end_time': end_time,
+                'duration_seconds': duration,
+                'message_count': message_count or 0,
+                'extraction_count': extraction_count or 0,
+                'summary': summary or summary_text,  # Use either field summary
+                'has_detailed_summary': bool(summary_text)
+            })
+
+        return sessions
 
 
 # Global session store instance

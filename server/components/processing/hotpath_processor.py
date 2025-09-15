@@ -116,10 +116,10 @@ class HotPathMemoryProcessor(BaseProcessor):
         # Store user ID for session management
         self.user_id = user_id
         
-        # Session tracking
+        # Session tracking - unified approach using user_id as primary session identifier
         self._turn_id = 0
-        self._session_id = user_id  # Legacy session ID
-        self._current_session_id = None
+        self._session_id = user_id  # Primary session identifier (user_id-based)
+        self._session_start_time = int(time.time())  # Track session start time
         self._enable_metrics = enable_metrics
         self._pending_bullets: List[str] = []
         self._inject_role = os.getenv("HOTMEM_INJECT_ROLE", "system").strip().lower()
@@ -218,28 +218,210 @@ class HotPathMemoryProcessor(BaseProcessor):
             return None
     
     def _ensure_session(self):
-        """Ensure we have a current session"""
-        if self._current_session_id is None:
-            self._current_session_id = self.session_store.create_session(self.user_id)
-            self._turn_id = 0
-            logger.info(f"🆕 Created new session: {self._current_session_id}")
-    
+        """Ensure we have a session created in SessionStore"""
+        try:
+            # If _session_id is same as user_id, generate a proper unique session_id
+            if self._session_id == self.user_id:
+                self._session_id = f"session_{int(time.time())}_{self.user_id}"
+
+            # Create or get session with unique session_id
+            self.session_store.create_session(self.user_id, self._session_id)
+            logger.debug(f"📝 Session ensured: {self._session_id} for user: {self.user_id}")
+        except Exception as e:
+            logger.warning(f"Failed to ensure session: {e}")
+
     def store_assistant_response(self, response: str):
         """Store assistant response for the current session"""
-        if self._current_session_id:
-            self.hot.store_assistant_response(self._current_session_id, response, self._turn_id)
-            logger.debug(f"💾 Stored assistant response for session {self._current_session_id}")
-    
-    def get_current_session_id(self) -> Optional[str]:
+        try:
+            self.hot.store_assistant_response(self._session_id, response, self._turn_id)
+            logger.debug(f"💾 Stored assistant response for session {self._session_id}")
+        except Exception as e:
+            logger.warning(f"Failed to store assistant response: {e}")
+
+    def get_current_session_id(self) -> str:
         """Get the current session ID"""
-        return self._current_session_id
-    
+        return self._session_id
+
     def create_new_session(self) -> str:
         """Create a new session and return its ID"""
-        self._current_session_id = self.session_store.create_session(self.user_id)
+        self._session_id = f"session_{int(time.time())}_{self.user_id}"
+        self._session_start_time = int(time.time())
         self._turn_id = 0
-        logger.info(f"🆕 Created new session: {self._current_session_id}")
-        return self._current_session_id
+        self.session_store.create_session(self.user_id, self._session_id)
+        logger.info(f"🆕 Created new session: {self._session_id}")
+        return self._session_id
+
+    def get_session_duration(self) -> int:
+        """Get current session duration in seconds"""
+        return int(time.time()) - self._session_start_time
+
+    def get_session_turn_count(self) -> int:
+        """Get current session turn count"""
+        return self._turn_id
+
+    def get_user_session_stats(self) -> Dict[str, Any]:
+        """Get comprehensive user session statistics"""
+        try:
+            return self.session_store.get_user_session_stats(self.user_id)
+        except Exception as e:
+            logger.warning(f"Failed to get user session stats: {e}")
+            return {}
+
+    def get_current_session_analytics(self) -> Dict[str, Any]:
+        """Get analytics for the current session"""
+        try:
+            return self.session_store.get_session_analytics(self._session_id)
+        except Exception as e:
+            logger.warning(f"Failed to get current session analytics: {e}")
+            return {}
+
+    def get_user_session_history(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get user's session history for navigation"""
+        try:
+            return self.session_store.get_user_session_history(self.user_id, limit)
+        except Exception as e:
+            logger.warning(f"Failed to get user session history: {e}")
+            return []
+
+    def format_session_context(self) -> str:
+        """Format current session information for context injection"""
+        try:
+            duration = self.get_session_duration()
+            turn_count = self.get_session_turn_count()
+            user_stats = self.get_user_session_stats()
+
+            session_context = f"Session Context:\n"
+            session_context += f"- Current Session: {self._session_id}\n"
+            session_context += f"- Session Duration: {duration // 60} minutes {duration % 60} seconds\n"
+            session_context += f"- Conversation Turns: {turn_count}\n"
+
+            if user_stats:
+                session_context += f"- Total Sessions: {user_stats.get('total_sessions', 0)}\n"
+                total_time = user_stats.get('total_time_spent_seconds', 0)
+                hours = total_time // 3600
+                minutes = (total_time % 3600) // 60
+                session_context += f"- Total Time Spent: {hours}h {minutes}m\n"
+
+                # Add recent session info
+                recent_sessions = user_stats.get('recent_sessions', [])
+                if recent_sessions:
+                    session_context += f"- Recent Sessions: {len(recent_sessions)}\n"
+
+            return session_context.strip()
+
+        except Exception as e:
+            logger.warning(f"Failed to format session context: {e}")
+            return "Session Context: Available"
+
+    def format_session_summary(self) -> str:
+        """Format session summary for navigation and context"""
+        try:
+            history = self.get_user_session_history(limit=3)
+            if not history:
+                return "No previous sessions available."
+
+            summary = "Session History:\n"
+            for i, session in enumerate(history):
+                duration = session.get('duration_seconds', 0)
+                minutes = duration // 60
+                hours = minutes // 60
+                minutes = minutes % 60
+
+                time_str = f"{hours}h {minutes}m" if hours else f"{minutes}m"
+
+                summary += f"- Session {i+1}: {time_str}, {session.get('message_count', 0)} messages"
+                if session.get('has_detailed_summary'):
+                    summary += " (with summary)"
+                summary += "\n"
+
+            return summary.strip()
+
+        except Exception as e:
+            logger.warning(f"Failed to format session summary: {e}")
+            return "Session history available but details could not be loaded."
+
+    def get_session_navigation_info(self) -> Dict[str, Any]:
+        """Get comprehensive session navigation information"""
+        try:
+            user_stats = self.get_user_session_stats()
+            session_history = self.get_user_session_history(limit=10)
+            current_analytics = self.get_current_session_analytics()
+
+            navigation_info = {
+                'current_session': {
+                    'session_id': self._session_id,
+                    'duration_seconds': self.get_session_duration(),
+                    'turn_count': self.get_session_turn_count(),
+                    'analytics': current_analytics
+                },
+                'user_statistics': user_stats,
+                'session_history': session_history,
+                'temporal_awareness': self.hot.format_temporal_session_awareness(self.user_id, self._session_id),
+                'navigation_context': self.hot.get_session_navigation_context(self.user_id, self._session_id)
+            }
+
+            return navigation_info
+
+        except Exception as e:
+            logger.warning(f"Failed to get session navigation info: {e}")
+            return {'error': str(e)}
+
+    def format_navigation_response(self, query_type: str) -> str:
+        """Format responses for session navigation queries"""
+        try:
+            if query_type == "sessions":
+                # Response for "How many sessions have we had?"
+                user_stats = self.get_user_session_stats()
+                total_sessions = user_stats.get('total_sessions', 0)
+                total_time = user_stats.get('total_time_spent_seconds', 0)
+
+                response = f"We've had {total_sessions} session{'s' if total_sessions != 1 else ''} together"
+                if total_time > 0:
+                    hours = total_time // 3600
+                    minutes = (total_time % 3600) // 60
+                    if hours > 0:
+                        response += f", spending {hours} hour{'s' if hours != 1 else ''} and {minutes} minute{'s' if minutes != 1 else ''} talking"
+                    else:
+                        response += f", spending {minutes} minute{'s' if minutes != 1 else ''} talking"
+
+                return response + "."
+
+            elif query_type == "current_session":
+                # Response for "How long have we been talking?"
+                duration = self.get_session_duration()
+                turns = self.get_session_turn_count()
+
+                if duration < 60:
+                    time_str = f"{duration} seconds"
+                elif duration < 3600:
+                    minutes = duration // 60
+                    seconds = duration % 60
+                    time_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
+                    if seconds > 0:
+                        time_str += f" and {seconds} seconds"
+                else:
+                    hours = duration // 3600
+                    minutes = (duration % 3600) // 60
+                    time_str = f"{hours} hour{'s' if hours != 1 else ''}"
+                    if minutes > 0:
+                        time_str += f" and {minutes} minute{'s' if minutes != 1 else ''}"
+
+                return f"We've been talking for {time_str} in this session, with {turns} conversation turns."
+
+            elif query_type == "session_history":
+                # Response for "Tell me about our previous conversations"
+                return self.hot.get_session_navigation_context(self.user_id, self._session_id)
+
+            elif query_type == "temporal_awareness":
+                # Response for temporal awareness queries
+                return self.hot.format_temporal_session_awareness(self.user_id, self._session_id)
+
+            else:
+                return "I can help you with session information. Ask me about our sessions, how long we've been talking, or our conversation history."
+
+        except Exception as e:
+            logger.warning(f"Failed to format navigation response: {e}")
+            return "I can access our session information, but I'm having trouble formatting it right now."
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """
@@ -332,7 +514,7 @@ class HotPathMemoryProcessor(BaseProcessor):
             
             # Extract facts and retrieve relevant memories
             try:
-                bullets, triples = self.hot.process_turn(text, self._current_session_id, self._turn_id)
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, self.user_id)
             except Exception as inner_e:
                 logger.error(f"[HotMem] Error in hot.process_turn: {inner_e}")
                 import traceback
@@ -353,6 +535,13 @@ class HotPathMemoryProcessor(BaseProcessor):
                 logger.info(f"[HotMem] Prepared {len(bullets)} memory bullets for injection")
                 # Dynamic 1..5 already applied by HotMemoryFacade; cap by env
                 self._pending_bullets = bullets[: self._bullets_max]
+
+                # Add session context as the first bullet if enabled
+                include_session_context = os.getenv("HOTMEM_SESSION_CONTEXT", "true").lower() in ("1", "true", "yes")
+                if include_session_context:
+                    session_context = self.format_session_context()
+                    if session_context and session_context != "Session Context: Available":
+                        self._pending_bullets.insert(0, session_context)
             
             # Track performance
             elapsed_ms = (time.perf_counter() - start) * 1000
