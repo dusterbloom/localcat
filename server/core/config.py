@@ -82,14 +82,14 @@ class MemoryConfig:
     
     # HotMem settings
     enable_hotmem: bool = field(default_factory=lambda: os.getenv("ENABLE_HOTMEM", "true").lower() == "true")
-    hotmem_max_facts_per_injection: int = 3
+    hotmem_max_facts_per_injection: int = 5
     hotmem_temporal_alpha: float = 0.15
     hotmem_temporal_beta: float = 0.60
     
     # Session settings
     max_session_duration: int = 3600  # 1 hour
     max_idle_time: int = 1800  # 30 minutes
-    max_sessions_per_user: int = 5
+    max_sessions_per_user: int = 10
     
     # Cross-session features
     enable_cross_session_context: bool = True

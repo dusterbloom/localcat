@@ -122,28 +122,29 @@ class EnhancedBulletFormatter:
         "delivers": "{s} delivers {d}",
     }
     
-    # Special handling for complex subjects
+    # Special handling for pronouns
     SUBJECT_ENHANCEMENTS = {
         "you": "You",
         "your": "Your",
-        "brother": "Your brother",
-        "sister": "Your sister",
-        "mother": "Your mother",
-        "father": "Your father",
-        "son": "Your son",
-        "daughter": "Your daughter",
-        "friend": "Your friend",
-        "colleague": "Your colleague",
-        "boss": "Your boss",
-        "teacher": "Your teacher",
-        "student": "Your student",
-        "pet": "Your pet",
-        "dog": "Your dog",
-        "cat": "Your cat",
+        "i": "I",
+        "me": "me",
+        "my": "my",
+        "he": "he",
+        "him": "him",
+        "his": "his",
+        "she": "she",
+        "her": "her",
+        "it": "it",
+        "they": "they",
+        "them": "them",
+        "their": "their",
+        "we": "we",
+        "us": "us",
+        "our": "our",
     }
     
-    def format_bullet(self, subject: str, relation: str, obj: str, 
-                     include_context: bool = True) -> str:
+    def format_bullet(self, subject: str, relation: str, obj: str,
+                     include_context: bool = True, user_id: str = None) -> str:
         """
         Format a triple into a rich, detailed bullet point.
         
@@ -165,7 +166,7 @@ class EnhancedBulletFormatter:
         s_enhanced = self.SUBJECT_ENHANCEMENTS.get(s.lower(), s)
         
         # Handle special cases first
-        bullet = self._handle_special_cases(s, r, d)
+        bullet = self._handle_special_cases(s, r, d, user_id)
         if bullet:
             return bullet
         
@@ -250,22 +251,14 @@ class EnhancedBulletFormatter:
             relation = relation[4:]
         return relation
     
-    def _handle_special_cases(self, s: str, r: str, d: str) -> Optional[str]:
+    def _handle_special_cases(self, s: str, r: str, d: str, user_id: str = None) -> Optional[str]:
         """Handle special formatting cases."""
-        s_lower = s.lower()
-        
-        # Handle "you" + "name" special case to avoid "You's name"
-        if s_lower == "you" and r == "name":
+
+        # Handle "you" + "name" to avoid grammatically incorrect "You's name"
+        if s.lower() == "you" and r == "name":
             return f"• Your name is {d}"
-        
-        # Handle "has" relation grammar fixes
-        if r == "has":
-            if "two children" in d.lower():
-                return f"• {s.title()} have two children"
-            elif "three children" in d.lower():
-                return f"• {s.title()} have three children"
-        
-        # Handle age with special formatting
+
+        # Handle age formatting
         if r == "age":
             if "years old" in d.lower():
                 return f"• {s.title()} is {d}"
@@ -273,28 +266,23 @@ class EnhancedBulletFormatter:
                 return f"• {s.title()} is {d} years old"
             else:
                 return f"• {s.title()}'s age is {d}"
-        
+
         # Handle time/date relations
         if r == "time" or r == "date":
             return f"• {s.title()} occurred in {d}"
-        
+
         # Handle "and" relations (conjunctions)
         if r == "and":
             return f"• {s.title()} and {d} are connected"
-        
+
         # Handle quality/attribute relations
         if r == "quality":
             return f"• {s.title()} is {d}"
-        
+
         # Handle capital city relations
         if r == "capital":
             return f"• {d.title()} is the capital of {s.title()}"
-        
-        # Handle CEO/founder special relations
-        if "ceo" in s_lower or "founder" in s_lower:
-            if r == "modified_by" or r == "of":
-                return f"• {s.title()} of {d}"
-        
+
         return None
     
     def _conjugate_verb(self, verb: str, subject: str) -> str:

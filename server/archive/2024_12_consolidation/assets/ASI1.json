@@ -3,7 +3,7 @@
   "deployment_environment": "production",
   "pipeline_configuration": {
     "model": {
-      "name": "en_core_web_trf",
+      "name": "en_core_web_rtf",
       "accuracy_priority": true,
       "max_length": 500000,
       "batch_size": 1000
@@ -250,7 +250,7 @@
   "cost_optimization": {
     "model_selection": {
       "development": "en_core_web_sm",
-      "production": "en_core_web_trf",
+      "production": "en_core_web_rtf",
       "high_volume": "en_core_web_sm"
     },
     "caching_strategy": "LRU",

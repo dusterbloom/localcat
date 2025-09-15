@@ -109,5 +109,5 @@ for token in doc:
 
 print("\n" + "="*50)
 print("Using spacy-experimental displacy for visualization:")
-print("python -m spacy download en_core_web_trf")
+print("python -m spacy download en_core_web_rtf")
 print("Then: python -m spacy parse 'My dog's name is Potola' --displacy")

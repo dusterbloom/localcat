@@ -13,7 +13,7 @@ Production-ready for enterprise knowledge graph construction.
 
 Author: Oak AI Systems
 Version: V8.3.0-advanced
-Requires: spaCy 3.x + en_core_web_trf (recommended)
+Requires: spaCy 3.x + en_core_web_rtf (recommended)
 """
 
 import yaml
@@ -142,13 +142,13 @@ class ULTRAGROKV830Processor:
     """
     
     def __init__(self, yaml_config: str = "ULTRAGROK_V8.3.0.yaml",
-                 model_name: str = "en_core_web_trf"):
+                 model_name: str = "en_core_web_rtf"):
         """
         Initialize V8.3.0 Advanced Processor
         
         Args:
             yaml_config: Path to V8.3.0 configuration
-            model_name: spaCy model (recommend en_core_web_trf for accuracy)
+            model_name: spaCy model (recommend en_core_web_rtf for accuracy)
         """
         logger.info("Initializing ULTRAGROK V8.3.0 Advanced Processor")
         
@@ -4093,7 +4093,7 @@ class ULTRAGROKV830Processor:
                 'internal_validation_status': self.validation['status']
             },
             'deployment_recommendations': [
-                "Use en_core_web_trf model for production accuracy",
+                "Use en_core_web_rtf model for production accuracy",
                 "Enable parallel processing for batch workloads > 50 documents",
                 "Monitor discourse coherence (<0.6 indicates domain adaptation needed)",
                 "Regularly update idiom lexicon for domain-specific language",
@@ -4119,7 +4119,7 @@ def production_deployment_example():
     print("# Initialize V8.3.0 advanced processor")
     print("processor = ULTRAGROKV830Processor(")
     print("    yaml_config='ULTRAGROK_V8.3.0.yaml',")
-    print("    model_name='en_core_web_trf'  # High accuracy model")
+    print("    model_name='en_core_web_rtf'  # High accuracy model")
     print(")")
     print("")
     print("# Deploy production pipeline")

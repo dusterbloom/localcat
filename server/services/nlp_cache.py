@@ -14,11 +14,11 @@ _SPACY_CACHE: Dict[Tuple[str, Tuple[str, ...]], object] = {}
 
 
 def resolve_model_alias(model_name: str) -> str:
-    """Normalize common aliases (e.g., en_core_web_rtf -> en_core_web_trf)."""
+    """Normalize common aliases (e.g., en_core_web_rtf -> en_core_web_rtf)."""
     if not model_name:
         return 'en_core_web_sm'
     if model_name.endswith('_rtf') or model_name == 'en_core_web_rtf':
-        logger.warning("Model alias detected: 'en_core_web_rtf' -> 'en_core_web_trf'")
+        logger.warning("Model alias detected: 'en_core_web_rtf' -> 'en_core_web_rtf'")
         return model_name.replace('_rtf', '_trf')
     return model_name
 

@@ -21,3 +21,10 @@ sessions.db*
 
 # Ignore backup YAMLs
 server/ULTRAGROK_V8.2.1_SPACY.yaml.bak*
+
+
+# Books
+backlog/docs/elements_of_code.md
+
+# Embeddings
+.leann/
