@@ -34,10 +34,10 @@ class UnifiedExtractionOrchestrator(IMemoryExtractor):
         self.config = config or {}
         
         # Strategy configuration
-        self.enabled_strategies = self.config.get('enabled_strategies', 
-                                              ['hotmem', 'ud', 'hybrid', 'lightweight'])
+        self.enabled_strategies = self.config.get('enabled_strategies',
+                                              ['enhanced_level3'])
         self.strategy_configs = self.config.get('strategy_configs', {})
-        self.fallback_strategies = self.config.get('fallback_strategies', ['pattern'])
+        self.fallback_strategies = self.config.get('fallback_strategies', [])
         
         # Performance configuration
         self.max_extraction_time_ms = self.config.get('max_extraction_time_ms', 5000)

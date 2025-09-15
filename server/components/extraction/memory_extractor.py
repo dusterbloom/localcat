@@ -29,13 +29,7 @@ try:
     from services.onnx_nlp import OnnxTokenNER, OnnxSRLTagger  # type: ignore
 except Exception:
     OnnxTokenNER = None
-
-# GLiREL integration for zero-shot relation extraction
-try:
-    from components.extraction.glirel_extractor import GLiRELExtractor
-    GLIREL_AVAILABLE = True
-except ImportError:
-    GLIREL_AVAILABLE = None
+# GLiREL integration removed - using Enhanced Level3 instead
 
 # Import centralized UD patterns
 try:
@@ -64,7 +58,9 @@ try:
     from components.extraction.tiered_extractor import TieredRelationExtractor  # type: ignore
 except Exception:
     TieredRelationExtractor = None
+           
 
+from components.extraction.enhanced_level3_extractor import QualityExtractor
 
 @dataclass
 class ExtractionResult:
@@ -77,10 +73,6 @@ class ExtractionResult:
 
 # Global singleton cache for expensive models
 _GLOBAL_MODEL_CACHE = {
-    'relik': None,
-    'relik_loading': False,
-    'glirel': None,
-    'glirel_loading': False,
     'gliner': None,
     'gliner_loading': False,
     'tiered': None,
@@ -104,8 +96,6 @@ class MemoryExtractor:
         self.use_srl = config.get('use_srl', False)
         self.use_onnx_ner = config.get('use_onnx_ner', False)
         self.use_onnx_srl = config.get('use_onnx_srl', False)
-        self.use_relik = config.get('use_relik', False)  # Legacy ReLiK (deprecated)
-        self.use_glirel = config.get('use_glirel', GLIREL_AVAILABLE is not None)  # Use GLiREL if available
         self.use_dspy = config.get('use_dspy', False)
         self.use_gliner = config.get('use_gliner', True)  # Enable GLiNER by default
         
@@ -113,8 +103,6 @@ class MemoryExtractor:
         self._srl: Optional[Any] = None
         self._onnx_ner = None
         self._onnx_srl = None
-        self._relik = None  # Legacy ReLiK
-        self._glirel = None  # New GLiREL extractor
         self._dspy_extractor = None
         self._gliner = None
         self._tiered_extractor = None
@@ -251,299 +239,20 @@ class MemoryExtractor:
         all_triples = []
         neg_count = 0
         
-        # Strategy 0: GLiNER entity extraction (if enabled)
-        if self.use_gliner and GLiNERExtractor is not None:
-            if self._gliner is None:
-                # Check global cache first
-                if _GLOBAL_MODEL_CACHE['gliner'] is not None:
-                    self._gliner = _GLOBAL_MODEL_CACHE['gliner']
-                elif not _GLOBAL_MODEL_CACHE['gliner_loading']:
-                    _GLOBAL_MODEL_CACHE['gliner_loading'] = True
-                    try:
-                        self._gliner = GLiNERExtractor()
-                        _GLOBAL_MODEL_CACHE['gliner'] = self._gliner
-                    finally:
-                        _GLOBAL_MODEL_CACHE['gliner_loading'] = False
-            try:
-                if self._gliner:
-                    gliner_result = self._gliner.extract(text)
-                    all_entities.update(gliner_result.entities)
-                    logger.debug(f"[GLiNER] Extracted {len(gliner_result.entities)} entities")
-            except Exception as e:
-                logger.debug(f"[GLiNER] Extraction failed: {e}")
+       
+        if 'enhanced_level3' in self.config.get('default_strategy', ''):
+            extractor = QualityExtractor(entity_threshold=0.70, relation_threshold=0.65)
+            kg = extractor.extract_quality_kg(doc)
+            all_entities = [e.text for e in kg['entities']]
+            all_triples = [(r.subject, r.predicate, r.object) for r in kg['relations']]
+            logger.debug(f"[Enhanced Level3] Extracted {len(all_entities)} entities, {len(all_triples)} relations")
         
-        # Strategy 1: Tiered extraction (FORCE TIER 1 ONLY for performance)
-        if TieredRelationExtractor is not None:
-            if self._tiered_extractor is None:
-                # Check global cache first
-                if _GLOBAL_MODEL_CACHE['tiered'] is not None:
-                    self._tiered_extractor = _GLOBAL_MODEL_CACHE['tiered']
-                elif not _GLOBAL_MODEL_CACHE['tiered_loading']:
-                    _GLOBAL_MODEL_CACHE['tiered_loading'] = True
-                    try:
-                        # Initialize with coref and SRL enabled
-                        # Avoid duplicate GLiNER loading inside TieredExtractor since
-                        # MemoryExtractor already performs entity extraction via GLiNER.
-                        self._tiered_extractor = TieredRelationExtractor(
-                            enable_srl=self.use_srl,
-                            enable_coref=self.config.get('use_coref', False),  # keep coref off in tiered for speed
-                            enable_gliner=False,  # prevent a second GLiNER model load
-                            llm_base_url=self.config.get('llm_base_url', 'http://127.0.0.1:1234/v1')
-                        )
-                        _GLOBAL_MODEL_CACHE['tiered'] = self._tiered_extractor
-                    finally:
-                        _GLOBAL_MODEL_CACHE['tiered_loading'] = False
-            try:
-                # FORCE TIER 1 ONLY - directly call _extract_tier1 instead of extract
-                if hasattr(self._tiered_extractor, '_extract_tier1'):
-                    tiered_result = self._tiered_extractor._extract_tier1(text, doc)
-                    all_entities.update(tiered_result.entities)
-                    all_triples.extend(tiered_result.relationships)
-                    logger.debug(f"[Tiered] Extracted {len(tiered_result.relationships)} relationships using tier 1 (forced)")
-                else:
-                    # Fallback if _extract_tier1 not available
-                    tiered_result = self._tiered_extractor.extract(text, doc)
-                    all_entities.update(tiered_result.entities)
-                    all_triples.extend(tiered_result.relationships)
-                    logger.debug(f"[Tiered] Extracted {len(tiered_result.relationships)} relationships using tier {tiered_result.tier_used}")
-            except Exception as e:
-                logger.debug(f"[Tiered] Extraction failed: {e}")
-                # Fallback to UD patterns
-                entities, triples, neg_count = self._extract_from_doc(doc)
-                all_entities.update(entities)
-                all_triples.extend(triples)
-        else:
-            # Fallback: Universal Dependencies extraction (base)
-            entities, triples, neg_count = self._extract_from_doc(doc)
-            all_entities.update(entities)
-            all_triples.extend(triples)
-        
-        # Strategy 2: SRL enhancement (if enabled)
-        if self.use_srl and SRLExtractor is not None and self._srl is None:
-            try:
-                self._srl = SRLExtractor(use_normalizer=True)
-            except Exception:
-                pass
-                
-        if self.use_srl and self._srl:
-            try:
-                srl_trips = self._srl.extract(doc)
-                for (s, r, d) in srl_trips:
-                    all_entities.add(_canon_entity_text(s))
-                    all_entities.add(_canon_entity_text(d))
-                all_triples.extend(srl_trips)
-            except Exception:
-                pass
-        
-        # Strategy 3: ONNX enhancement (if enabled)
-        if self.use_onnx_ner and self._onnx_ner is None:
-            self._init_onnx_ner()
-        if self.use_onnx_srl and self._onnx_srl is None:
-            self._init_onnx_srl()
-            
-        # Strategy 4: Rule-based fast paths for common patterns
-        if len(all_triples) < 3:  # Only apply if we need more relations
-            rule_triples = self._extract_rule_based_fast_paths(text, all_entities)
-            all_triples.extend(rule_triples)
-            logger.debug(f"[Rule-based] Extracted {len(rule_triples)} fast-path relations")
-            
-        # Strategy 5: GLiREL enhancement (if enabled) - 2025 SOTA zero-shot relation extraction
-        if self.use_glirel:
-            if self._glirel is None:
-                self._init_glirel()
 
-            if self._glirel:
-                try:
-                    glirel_start = time.perf_counter()
+                 
 
-                    # Only use GLiREL if we have meaningful entities (avoid overhead on simple texts)
-                    if len(all_entities) < 2:
-                        logger.debug(f"[GLiREL] Skipping - only {len(all_entities)} entities found")
-                        glirel_time = (time.perf_counter() - glirel_start) * 1000
-                        self.metrics['glirel_ms'].append(glirel_time)
-                        return all_triples, all_entities, neg_count
-
-                    # Convert our entities to GLiREL format
-                    glirel_entities = []
-                    for entity_text in all_entities:
-                        # Find entity position in text (case-insensitive)
-                        pos = text.lower().find(entity_text.lower())
-                        if pos != -1:
-                            # Use the actual text case from the original text
-                            actual_text = text[pos:pos + len(entity_text)]
-                            # Smart entity type inference for better GLiREL results
-                            entity_lower = actual_text.lower()
-                            if any(name_indicator in entity_lower for name_indicator in ['steve', 'john', 'mary', 'david', 'jobs']) or \
-                               (len(actual_text.split()) == 2 and all(word[0].isupper() for word in actual_text.split())):
-                                label = 'PERSON'
-                            elif any(org_indicator in entity_lower for org_indicator in ['inc', 'corp', 'ltd', 'company', 'apple', 'microsoft', 'google']):
-                                label = 'ORG'
-                            elif any(loc_indicator in entity_lower for loc_indicator in ['city', 'country', 'cupertino', 'california', 'new york', 'london', 'san francisco']):
-                                label = 'LOC'
-                            else:
-                                label = 'ENTITY'
-
-                            glirel_entities.append({
-                                'text': actual_text,
-                                'start': pos,
-                                'end': pos + len(actual_text),
-                                'label': label
-                            })
-                            logger.debug(f"[GLiREL] Found entity '{actual_text}' at position {pos}")
-                        else:
-                            logger.debug(f"[GLiREL] Could not find entity '{entity_text}' in text")
-
-                    logger.debug(f"[GLiREL] Total entities to process: {len(glirel_entities)}")
-
-                    # Extract relations using GLiREL
-                    glirel_triples = self._glirel.extract_with_gliner_integration(
-                        text=text,
-                        gliner_result=glirel_entities,
-                        threshold=0.4  # Lower threshold for better recall
-                    )
-
-                    # Add GLiREL relations to results
-                    glirel_count = 0
-                    for triple in glirel_triples:
-                        subject, relation, obj = triple
-                        # Avoid duplicates and low-quality relations
-                        if (subject, relation, obj) not in all_triples and len(relation) > 1:
-                            all_triples.append((subject, relation, obj))
-                            all_entities.add(subject)
-                            all_entities.add(obj)
-                            glirel_count += 1
-                            logger.debug(f"[GLiREL] Relation: {subject} --{relation}--> {obj}")
-
-                    glirel_time = (time.perf_counter() - glirel_start) * 1000
-                    logger.info(f"[GLiREL] Added {glirel_count} relations in {glirel_time:.1f}ms")
-                    self.metrics['glirel_ms'].append(glirel_time)
-
-                except Exception as e:
-                    logger.warning(f"[GLiREL] Enhancement failed: {e}")
-
-        # Legacy ReLiK support (if explicitly enabled)
-        if self.use_relik and not self.use_glirel:
-            if self._relik is None:
-                self._init_relik()
-            
-            if self._relik:
-                try:
-                    relik_start = time.perf_counter()
-
-                    # Check if this is a full Relik model (from our new initialization)
-                    if hasattr(self._relik, '__call__') and hasattr(self._relik, 'reader'):
-                        # This is a full Relik model - use it directly
-                        # It handles sample formatting internally
-                        # Optionally provide entity candidates from GLiNER
-                        candidates = list(all_entities) if all_entities else None
-
-                        import torch
-                        with torch.no_grad():
-                            try:
-                                # Call the Relik model directly - it handles formatting
-                                relik_result = self._relik(text, candidates=candidates)
-                                logger.debug(f"[ReLiK] Model returned result type: {type(relik_result)}")
-                            except Exception as relik_error:
-                                logger.debug(f"[ReLiK] Model call failed: {relik_error}")
-                                relik_result = None
-
-                    # Handle wrapper extractors (HybridRelationExtractor, etc.)
-                    elif hasattr(self._relik, 'extract'):
-                        relik_result = self._relik.extract(text)
-                    elif callable(self._relik):
-                        relik_result = self._relik(text)
-                    else:
-                        logger.warning("[ReLiK] ReLiK object is not callable and has no extract method")
-                        relik_result = None
-                    
-                    # CRITICAL FIX: Handle case where ReLiK returns None when retriever is disabled
-                    if relik_result is None:
-                        logger.debug("[ReLiK] ReLiK returned None (likely due to disabled retriever)")
-                        # Try to use the reader directly if available
-                        if hasattr(self._relik, 'reader') and self._relik.reader is not None:
-                            try:
-                                # Import proper ReLiK data structures
-                                from relik.reader.pytorch_modules.hf.modeling_relik import RelikReaderSample
-                                from dataclasses import dataclass
-
-                                @dataclass
-                                class SimpleSpan:
-                                    start: int
-                                    end: int
-                                    text: str
-                                    label: str = "--NME--"
-
-                                # Convert existing entities to spans
-                                spans = []
-                                for entity_text in all_entities:
-                                    # Find entity position in text (approximate)
-                                    pos = text.find(entity_text)
-                                    if pos != -1:
-                                        spans.append(SimpleSpan(pos, pos + len(entity_text), entity_text))
-
-                                # Create proper RelikReaderSample with all required attributes
-                                sample = RelikReaderSample(
-                                    text=text,
-                                    spans=spans,
-                                    candidates=[],
-                                    offset=0,  # Required attribute
-                                    _mixin_prediction_position=None  # Required by ReLiK
-                                )
-
-                                # Use the proper ReLiK reader API
-                                import torch
-                                with torch.no_grad():
-                                    reader_result = self._relik.reader.read(
-                                        text=[text],
-                                        samples=[sample],
-                                        max_length=256
-                                    )
-
-                                # Process reader result
-                                if reader_result and len(reader_result) > 0 and hasattr(reader_result[0], 'triplets'):
-                                    relik_result = reader_result[0]
-                                    logger.debug("[ReLiK] Successfully used reader directly")
-                                else:
-                                    logger.debug("[ReLiK] Reader returned empty result")
-
-                            except Exception as reader_e:
-                                logger.debug(f"[ReLiK] Reader direct call failed: {reader_e}")
-                        else:
-                            logger.debug("[ReLiK] No reader available for fallback")
-                    
-                    # Convert ReLiK result to our format - handle triplets properly
-                    if relik_result is not None and hasattr(relik_result, 'triplets'):
-                        # ReLiK returns triplets with subject, object, and label attributes
-                        relik_triplet_count = 0
-                        for triplet in relik_result.triplets:
-                            if hasattr(triplet, 'subject') and hasattr(triplet, 'object') and hasattr(triplet, 'label'):
-                                # Extract text from subject/object spans
-                                subject = triplet.subject.text if hasattr(triplet.subject, 'text') else str(triplet.subject)
-                                obj = triplet.object.text if hasattr(triplet.object, 'text') else str(triplet.object)
-                                relation = triplet.label
-                                
-                                # Add to results
-                                all_triples.append((subject, relation, obj))
-                                all_entities.add(subject)
-                                all_entities.add(obj)
-                                relik_triplet_count += 1
-                                
-                                logger.debug(f"[ReLiK] Triplet: {subject} --{relation}--> {obj}")
-                        
-                        logger.info(f"[ReLiK] Added {relik_triplet_count} relations from triplets")
-                    
-                    # Fallback for other formats
-                    elif relik_result is not None and hasattr(relik_result, 'triples'):
-                        all_triples.extend(relik_result.triples)
-                    elif relik_result is not None and hasattr(relik_result, 'relationships'):
-                        all_triples.extend(relik_result.relationships)
-                    
-                    relik_time = (time.perf_counter() - relik_start) * 1000
-                    logger.info(f"[ReLiK] Extracted {len(all_triples)} total relations in {relik_time:.1f}ms")
-                    self.metrics['relik_ms'].append(relik_time)
-                except Exception as e:
-                    logger.warning(f"[ReLiK] Enhancement failed: {e}")
-            
+           
+  
+                  
         return list(all_entities), all_triples, neg_count
     
     def _extract_from_doc(self, doc) -> Tuple[List[str], List[Tuple[str, str, str]], int]:
@@ -647,186 +356,8 @@ class MemoryExtractor:
             logger.warning(f"[MemoryExtractor ONNX] SRL unavailable: {e}")
             self._onnx_srl = None
     
-    def _init_relik(self):
-        """Initialize ReLiK extractor with MPS optimization and global caching"""
-        global _GLOBAL_MODEL_CACHE
-
-        # Check if already loaded globally
-        if _GLOBAL_MODEL_CACHE['relik'] is not None:
-            self._relik = _GLOBAL_MODEL_CACHE['relik']
-            logger.debug("[MemoryExtractor ReLiK] Using cached global ReLiK model")
-            return
-
-        # Check if another thread is loading
-        if _GLOBAL_MODEL_CACHE['relik_loading']:
-            logger.debug("[MemoryExtractor ReLiK] Waiting for another thread to load ReLiK...")
-            import time
-            timeout = 30  # 30 second timeout
-            start = time.time()
-            while _GLOBAL_MODEL_CACHE['relik_loading'] and (time.time() - start) < timeout:
-                time.sleep(0.1)
-
-            if _GLOBAL_MODEL_CACHE['relik'] is not None:
-                self._relik = _GLOBAL_MODEL_CACHE['relik']
-                logger.debug("[MemoryExtractor ReLiK] Using ReLiK loaded by another thread")
-                return
-
-        # Mark as loading
-        _GLOBAL_MODEL_CACHE['relik_loading'] = True
-
-        try:
-            import torch
-            # Auto-detect best device for M4 optimization
-            if torch.backends.mps.is_available():
-                device = "mps"
-                logger.info("[MemoryExtractor ReLiK] Using MPS acceleration for M4")
-            elif torch.cuda.is_available():
-                device = "cuda"
-                logger.info("[MemoryExtractor ReLiK] Using CUDA acceleration")
-            else:
-                device = "cpu"
-                logger.info("[MemoryExtractor ReLiK] Using CPU (no acceleration available)")
-
-            # Set optimized parameters for M4
-            relik_id = os.getenv("HOTMEM_RELIK_MODEL_ID", "relik-ie/relik-relation-extraction-small")
-
-            # Try loading full ReLiK model without retriever (avoids Wikipedia loading)
-            try:
-                from relik import Relik
-
-                # Use the full Relik model but disable retriever to avoid Wikipedia loading
-                # This gives us the proper interface that handles sample formatting
-                relik_model = Relik.from_pretrained(relik_id, retriever=None, device=device)
-                logger.info(f"[MemoryExtractor ReLiK] Loaded Relik model without retriever: {relik_id}")
-                _GLOBAL_MODEL_CACHE['relik'] = relik_model
-                self._relik = relik_model
-                relik_loaded = True
-            except Exception as e:
-                logger.debug(f"[MemoryExtractor ReLiK] Full Relik model failed: {e}")
-                relik_loaded = False
-
-            # Fallback to hybrid extractor if ReLiK failed
-            if not relik_loaded:
-                if HybridRelationExtractor is not None:
-                    relik_model = HybridRelationExtractor(device=device)
-                    logger.info("[MemoryExtractor ReLiK] Using hybrid spaCy+LLM extractor")
-                    _GLOBAL_MODEL_CACHE['relik'] = relik_model
-                    self._relik = relik_model
-                # Try enhanced replacement second
-                elif EnhancedHotMemExtractor is not None:
-                    relik_model = EnhancedHotMemExtractor(device=device)
-                    logger.info("[MemoryExtractor] Using enhanced HotMem extractor")
-                    _GLOBAL_MODEL_CACHE['relik'] = relik_model
-                    self._relik = relik_model
-                elif HotMemExtractor is not None:
-                    # Pass optimized parameters for M4
-                    relik_model = HotMemExtractor(
-                        model_id=relik_id,
-                        device=device
-                    )
-                    logger.info(f"[MemoryExtractor ReLiK] ready: {relik_id} on {device}")
-
-                    # Apply M4-specific optimizations if available
-                    if hasattr(relik_model, 'relik'):
-                        try:
-                            # Optimize for speed on M4
-                            if hasattr(relik_model.relik, 'top_k'):
-                                relik_model.relik.top_k = 10  # Reduced from 30 for speed
-                            if hasattr(relik_model.relik, 'window_size'):
-                                relik_model.relik.window_size = 64
-                            if hasattr(relik_model.relik, 'window_stride'):
-                                relik_model.relik.window_stride = 32
-                            logger.info("[MemoryExtractor ReLiK] Applied M4 optimizations")
-                        except Exception as e:
-                            logger.debug(f"[MemoryExtractor ReLiK] Optimization failed: {e}")
-
-                    _GLOBAL_MODEL_CACHE['relik'] = relik_model
-                    self._relik = relik_model
-                else:
-                    logger.warning("[MemoryExtractor ReLiK] No extractor available")
-                    self._relik = None
-        except Exception as e:
-            logger.warning(f"[MemoryExtractor ReLiK] unavailable: {e}")
-            self._relik = None
-        finally:
-            # Mark as not loading
-            _GLOBAL_MODEL_CACHE['relik_loading'] = False
-
-    def _init_glirel(self):
-        """Initialize GLiREL extractor with MPS optimization and global caching"""
-        global _GLOBAL_MODEL_CACHE
-
-        if not GLIREL_AVAILABLE:
-            logger.warning("[MemoryExtractor GLiREL] GLiREL not available")
-            self._glirel = None
-            return
-
-        # Check if already loaded globally
-        if _GLOBAL_MODEL_CACHE['glirel'] is not None:
-            self._glirel = _GLOBAL_MODEL_CACHE['glirel']
-            logger.debug("[MemoryExtractor GLiREL] Using cached global GLiREL model")
-            return
-
-        # Check if another thread is loading
-        if _GLOBAL_MODEL_CACHE['glirel_loading']:
-            logger.debug("[MemoryExtractor GLiREL] Waiting for another thread to load GLiREL...")
-            import time
-            timeout = 60  # 60 second timeout for larger model
-            start = time.time()
-            while _GLOBAL_MODEL_CACHE['glirel_loading'] and (time.time() - start) < timeout:
-                time.sleep(0.1)
-            if _GLOBAL_MODEL_CACHE['glirel'] is not None:
-                self._glirel = _GLOBAL_MODEL_CACHE['glirel']
-                logger.debug("[MemoryExtractor GLiREL] Using GLiREL loaded by another thread")
-                return
-
-        # Mark as loading
-        _GLOBAL_MODEL_CACHE['glirel_loading'] = True
-        try:
-            import torch
-            # Auto-detect best device for M4 optimization
-            if torch.backends.mps.is_available():
-                device = "mps"
-                logger.info("[MemoryExtractor GLiREL] Using MPS acceleration for M4")
-            elif torch.cuda.is_available():
-                device = "cuda"
-                logger.info("[MemoryExtractor GLiREL] Using CUDA acceleration")
-            else:
-                device = "cpu"
-                logger.info("[MemoryExtractor GLiREL] Using CPU (no acceleration available)")
-
-            # Try loading GLiREL model
-            glirel_id = self.config.get('glirel_model_id', 'jackboyla/glirel-large-v0')
-            try:
-                glirel_model = GLiRELExtractor(model_id=glirel_id, device=device)
-                logger.info(f"[MemoryExtractor GLiREL] Loaded GLiREL model: {glirel_id}")
-
-                # Warm up the model with a simple example to avoid first-run latency
-                logger.info("[MemoryExtractor GLiREL] Warming up model...")
-                warmup_text = "Apple Inc. is based in Cupertino."
-                warmup_entities = [
-                    {'text': 'Apple Inc.', 'start': 0, 'end': 10, 'label': 'ORG'},
-                    {'text': 'Cupertino', 'start': 18, 'end': 27, 'label': 'LOC'}
-                ]
-                try:
-                    glirel_model.extract_relations(warmup_text, warmup_entities, ['located_in'], 0.3)
-                    logger.info("[MemoryExtractor GLiREL] Model warmup completed")
-                except Exception as warmup_error:
-                    logger.debug(f"[MemoryExtractor GLiREL] Warmup failed (expected): {warmup_error}")
-
-                _GLOBAL_MODEL_CACHE['glirel'] = glirel_model
-                self._glirel = glirel_model
-            except Exception as e:
-                logger.warning(f"[MemoryExtractor GLiREL] Failed to load GLiREL: {e}")
-                self._glirel = None
-
-        except Exception as e:
-            logger.warning(f"[MemoryExtractor GLiREL] unavailable: {e}")
-            self._glirel = None
-        finally:
-            # Mark as not loading
-            _GLOBAL_MODEL_CACHE['glirel_loading'] = False
-
+    
+  
     def get_metrics(self) -> Dict[str, Any]:
         """Get extraction performance metrics"""
         return dict(self.metrics)
@@ -889,7 +420,7 @@ def _load_nlp(lang: str = "en"):
     try:
         # Try to load the English model
         try:
-            nlp = spacy.load("en_core_web_sm")
+            nlp = spacy.load("en_core_web_rtf")
             _GLOBAL_MODEL_CACHE['spacy_models'][lang] = nlp
             return nlp
         except Exception:
@@ -914,4 +445,4 @@ def _load_nlp(lang: str = "en"):
     
 
 logger.info("🎯 MemoryExtractor initialized - dedicated extraction service")
-logger.info("📊 Strategies: UD, SRL, ONNX, GLiREL, DSPy")
+logger.info("📊 Strategies: level3")

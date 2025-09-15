@@ -31,21 +31,24 @@ class FeatureFlags:
     use_srl: bool = False
     use_onnx_ner: bool = False
     use_onnx_srl: bool = False
-    use_relik: bool = False
     use_coref: bool = True  # Layer 2: Enhanced coreference resolution
     use_dspy: bool = False
-    use_gliner: bool = True  # GLiNER for 96.7% entity extraction accuracy
-    use_glirel: bool = True  # GLiREL for zero-shot relation extraction
+    use_gliner: bool = False  # Disabled for performance
     use_leann: bool = True
     retrieval_fusion: bool = True
     assisted_enabled: bool = False
 
     # Layer 3: Relationship refinement
-    use_semantic_filter: bool = True  # sense2vec semantic filtering
-    use_temporal_extraction: bool = True  # Timexy temporal extraction
+    use_semantic_filter: bool = False  # Disabled for performance
+    use_temporal_extraction: bool = False  # Disabled for performance
 
     # Layer 4: Graph optimization
-    use_graph_analysis: bool = True  # NetworkX graph optimization
+    use_graph_analysis: bool = False  # Disabled for performance
+
+    # Session awareness features
+    session_context_enabled: bool = True
+    session_navigation_enabled: bool = True
+    temporal_awareness_enabled: bool = True
 
 
 @dataclass
@@ -96,11 +99,9 @@ class HotMemoryConfig:
         self.features.use_srl = os.getenv("HOTMEM_USE_SRL", "false").lower() in ("1", "true", "yes")
         self.features.use_onnx_ner = os.getenv("HOTMEM_USE_ONNX_NER", "false").lower() in ("1", "true", "yes") and self._has_onnx_ner()
         self.features.use_onnx_srl = os.getenv("HOTMEM_USE_ONNX_SRL", "false").lower() in ("1", "true", "yes") and self._has_onnx_srl()
-        self.features.use_relik = os.getenv("HOTMEM_USE_RELIK", "false").lower() in ("1", "true", "yes") and self._has_relik()
         self.features.use_coref = os.getenv("HOTMEM_USE_COREF", "true").lower() in ("1", "true", "yes") and self._has_coref()
         self.features.use_dspy = os.getenv("HOTMEM_USE_DSPY", "false").lower() in ("1", "true", "yes")
-        self.features.use_gliner = os.getenv("HOTMEM_USE_GLINER", "true").lower() in ("1", "true", "yes")  # Default to true for best extraction
-        self.features.use_glirel = os.getenv("HOTMEM_USE_GLIREL", "true").lower() in ("1", "true", "yes") and self._has_glirel()
+        self.features.use_gliner = os.getenv("HOTMEM_USE_GLINER", "false").lower() in ("1", "true", "yes")  # Default to true for best extraction
         self.features.use_leann = os.getenv("HOTMEM_USE_LEANN", "true").lower() in ("1", "true", "yes")
         self.features.retrieval_fusion = os.getenv("HOTMEM_RETRIEVAL_FUSION", "true").lower() in ("1", "true", "yes")
         self.features.assisted_enabled = os.getenv("HOTMEM_LLM_ASSISTED", "false").lower() in ("1", "true", "yes")
@@ -111,6 +112,11 @@ class HotMemoryConfig:
 
         # Layer 4: Graph optimization
         self.features.use_graph_analysis = os.getenv("HOTMEM_USE_GRAPH_ANALYSIS", "true").lower() in ("1", "true", "yes")
+
+        # Session awareness features
+        self.features.session_context_enabled = os.getenv("HOTMEM_SESSION_CONTEXT_ENABLED", "true").lower() in ("1", "true", "yes")
+        self.features.session_navigation_enabled = os.getenv("HOTMEM_SESSION_NAVIGATION_ENABLED", "true").lower() in ("1", "true", "yes")
+        self.features.temporal_awareness_enabled = os.getenv("HOTMEM_TEMPORAL_AWARENESS_ENABLED", "true").lower() in ("1", "true", "yes")
         
         # LEANN settings
         self.leann_index_path = os.getenv("LEANN_INDEX_PATH", os.path.join(self.data_dir, 'memory_vectors.leann'))
@@ -176,14 +182,7 @@ class HotMemoryConfig:
         except Exception:
             return False
     
-    def _has_relik(self) -> bool:
-        """Check if ReLiK is available"""
-        try:
-            from components.extraction.hotmem_extractor import HotMemExtractor
-            return HotMemExtractor is not None
-        except Exception:
-            return False
-    
+        
     def _has_coref(self) -> bool:
         """Check if coreference is available"""
         try:
@@ -192,24 +191,15 @@ class HotMemoryConfig:
         except Exception:
             return False
 
-    def _has_glirel(self) -> bool:
-        """Check if GLiREL is available"""
-        try:
-            from components.extraction.glirel_extractor import GLiRELExtractor
-            return GLiRELExtractor is not None
-        except Exception:
-            return False
-    
+        
     def get_extractor_config(self) -> Dict[str, Any]:
         """Get configuration for MemoryExtractor"""
         return {
             'use_srl': self.features.use_srl,
             'use_onnx_ner': self.features.use_onnx_ner,
             'use_onnx_srl': self.features.use_onnx_srl,
-            'use_relik': self.features.use_relik,
             'use_dspy': self.features.use_dspy,
             'use_gliner': self.features.use_gliner,  # Add GLiNER support
-            'use_glirel': self.features.use_glirel,  # Add GLiREL support
             'assisted_model': self.assisted_model,
             'cache_size': self.cache_size
         }

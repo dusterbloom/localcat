@@ -75,7 +75,7 @@ class ULTRAGROKSpacyV821Processor:
         
         Args:
             yaml_file: Path to V8.2.1 spaCy-compatible YAML
-            model_name: spaCy model (en_core_web_sm or en_core_web_trf)
+            model_name: spaCy model (en_core_web_sm or en_core_web_rtf)
         """
         # Load spaCy model
         try:
