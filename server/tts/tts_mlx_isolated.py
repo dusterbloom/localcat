@@ -36,7 +36,12 @@ def add_word_boundaries(text: str) -> str:
     text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)  # camelCase -> camel Case
     text = re.sub(r'([.,!?;:])([a-zA-Z])', r'\1 \2', text)  # Punctuation followed by letter
     text = re.sub(r'([a-zA-Z])([.,!?;:])', r'\1 \2', text)  # Letter followed by punctuation
-    text = re.sub(r"([a-zA-Z])'([a-zA-Z])", r"\1' \2", text)  # Contractions
+    # Fix incorrectly spaced contractions (e.g., "name' s" -> "name's")
+    text = re.sub(r"'\s+([a-zA-Z])", r"'\1", text)  # Remove space after apostrophe
+    # Fixed: Don't add spaces in contractions like "Sardinia's", "don't", etc.
+    # Also clean up spaces around punctuation
+    text = re.sub(r'\s+([.,!?;:])', r'\1', text)  # Remove space before punctuation
+    text = re.sub(r'([.,!?;:])\s+', r'\1 ', text)  # Ensure single space after punctuation
     text = re.sub(r'\s+', ' ', text).strip()  # Clean up multiple spaces
     
     return text
