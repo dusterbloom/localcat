@@ -1,4 +1,57 @@
 
+## 2025-09-16 10:50 - CRITICAL TTS FIX: Apostrophe Preservation in Emoji Removal
+
+### 🔧 **PRODUCTION BUG FIXED: Broken Speech Pronunciation for Contractions**
+
+**The Problem**: TTS was incorrectly removing apostrophes along with emojis, breaking natural speech flow:
+```
+❌ "It's me" (curly apostrophe) → "Its me" (broken pronunciation)
+❌ "I'm here" → "Im here" (missing contraction)
+❌ "We're ready" → "Were ready" (sounds like past tense)
+❌ Result: Robotic, unnatural speech output
+```
+
+**Root Cause**: Unicode range `\U00002000-\U0000206F` in emoji removal regex included critical punctuation:
+- **U+2018-2019**: Single quotes/apostrophes (', ')
+- **U+201C-201D**: Double quotes (", ")
+- **U+2013-2014**: En/em dashes (–, —)
+- **U+2026**: Ellipsis (…)
+
+**The Solution**: Split problematic Unicode range to preserve important punctuation while filtering emojis:
+```python
+# OLD: Removed entire range including apostrophes
+"\U00002000-\U0000206F"  # Broke contractions
+
+# NEW: Surgical removal preserving punctuation
+"\U00002000-\U00002012"  # Remove spaces/formatting
+# Skip U+2013-2014 (preserve dashes)
+"\U00002015-\U00002017"  # Remove bars/lines
+# Skip U+2018-201F (preserve quotes/apostrophes)
+"\U00002020-\U00002025"  # Remove bullets/daggers
+# Skip U+2026 (preserve ellipsis)
+"\U00002027"             # Remove hyphenation
+"\U00002028-\U0000202F"  # Remove separators
+"\U00002030-\U0000206F"  # Remove other punctuation
+```
+
+**Results**:
+```
+✅ "It's me" → "It's me" (natural pronunciation)
+✅ "I'm here" → "I'm here" (proper contraction)
+✅ "Wait—I forgot" → "Wait—I forgot" (preserved dashes)
+✅ "Well…" → "Well…" (preserved ellipsis)
+✅ "Hello 😊 world" → "Hello world" (emojis still removed)
+```
+
+**Testing**: Comprehensive test suite verified fix with ASCII and Unicode apostrophes, quotes, dashes, and mixed emoji scenarios.
+
+**Files Modified**:
+- `tts/tts_mlx_isolated.py`: Fixed `remove_emojis()` function (+19/-3 lines)
+
+**Commit**: `508c363` - fix(tts): preserve apostrophes and punctuation in emoji removal
+
+---
+
 ## 2025-09-15 23:45 - REVOLUTIONARY: Enhanced Rule V2 Intent Classifier Achieves SOTA Performance
 
 ### 🚀 **Status: COMPLETED** - Smart Memory Retrieval with 70% Reduction in Unnecessary Operations
