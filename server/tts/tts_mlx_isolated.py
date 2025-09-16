@@ -43,8 +43,15 @@ def add_word_boundaries(text: str) -> str:
 
 
 def remove_emojis(text: str) -> str:
-    """Remove ALL emoji characters from text to prevent TTS from speaking them."""
-    # Comprehensive emoji removal - covers all Unicode emoji ranges
+    """Remove emoji characters from text while preserving important punctuation."""
+    # Remove emojis but preserve important punctuation like quotes, apostrophes, dashes
+    # The U+2000-206F range contains important punctuation we want to keep:
+    # - U+2013-2014: en/em dashes
+    # - U+2018-2019: single quotes/apostrophes
+    # - U+201C-201D: double quotes
+    # - U+2026: ellipsis
+    # So we'll split this range to exclude these important characters
+
     emoji_pattern = re.compile(
         "["
         "\U0001F1E0-\U0001F1FF"  # flags
@@ -62,7 +69,16 @@ def remove_emojis(text: str) -> str:
         "\U0001F0A0-\U0001F0FF"  # playing cards
         "\U00002300-\U000023FF"  # miscellaneous technical
         "\U0001F100-\U0001F1FF"  # enclosed alphanumeric supplement
-        "\U00002000-\U0000206F"  # general punctuation (some emojis)
+        # Split the general punctuation range to preserve important punctuation
+        "\U00002000-\U00002012"  # spaces and special formatting (can remove)
+        # Skip U+2013-2014 (en/em dashes - preserve these!)
+        "\U00002015-\U00002017"  # horizontal bar, double low line (can remove)
+        # Skip U+2018-201F (quotes and apostrophes - preserve these!)
+        "\U00002020-\U00002025"  # daggers, bullets, leaders (can remove)
+        # Skip U+2026 (ellipsis - preserve this!)
+        "\U00002027"  # hyphenation point (can remove)
+        "\U00002028-\U0000202F"  # line/paragraph separators (can remove)
+        "\U00002030-\U0000206F"  # other punctuation (mostly safe to remove)
         "\U0000FE00-\U0000FE0F"  # variation selectors
         "\U0000E000-\U0000F8FF"  # private use area (some custom emojis)
         "]+",
