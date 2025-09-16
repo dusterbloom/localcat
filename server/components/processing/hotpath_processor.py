@@ -6,7 +6,7 @@ Place between context_aggregator.user() and llm in your Pipeline
 import time
 from typing import List, Optional, Dict, Any
 from loguru import logger
-
+import dspy
 import sys
 import os
 # Add local pipecat to path if needed
@@ -21,13 +21,29 @@ except Exception:
 from pipecat.processors.frame_processor import FrameProcessor as BaseProcessor, FrameDirection
 
 from components.memory.memory_store import MemoryStore, Paths
-from components.memory.hotmemory_facade import HotMemoryFacade
+from components.memory.hotmemory_facade import HotMemoryFacade, ProcessTurnResult
 from components.context.context_orchestrator import pack_context
 from components.context.memory_config import get_global_config
 from components.session.session_store import get_session_store
 
 # Ensure we only add a file sink once per process
 _HOTMEM_LOG_SINK_ADDED = False
+try:
+    import networkx as nx
+    from networkx.algorithms import community
+    NETWORKX_AVAILABLE = True
+except ImportError:
+    NETWORKX_AVAILABLE = False
+    logger.warning("NetworkX not available for dual graph operations")
+
+
+
+# Check DSPy availability
+try:
+    import dspy
+    DSPY_AVAILABLE = True
+except ImportError:
+    DSPY_AVAILABLE = False
 
 
 class HotPathMemoryProcessor(BaseProcessor):
@@ -98,7 +114,13 @@ class HotPathMemoryProcessor(BaseProcessor):
             pass
         
         # Initialize hot memory
+        from components.graph.dual_graph_manager import DualGraphManager
+        from components.ai.dspy_modules import DSPyOptimizer
         self.hot = HotMemoryFacade(self.store)
+        # V7 dual graph integration
+        self.dual_graphs = DualGraphManager(ttl_minutes=5) if NETWORKX_AVAILABLE else None
+        # V7 optimizer for idle-time DSPy/GEPA
+        self.v7_optimizer = DSPyOptimizer() if DSPY_AVAILABLE else None
         # Pre-warm NLP to avoid first-turn latency
         try:
             self.hot.prewarm("en")
@@ -288,22 +310,23 @@ class HotPathMemoryProcessor(BaseProcessor):
             turn_count = self.get_session_turn_count()
             user_stats = self.get_user_session_stats()
 
-            session_context = f"Session Context:\n"
-            session_context += f"- Current Session: {self._session_id}\n"
-            session_context += f"- Session Duration: {duration // 60} minutes {duration % 60} seconds\n"
-            session_context += f"- Conversation Turns: {turn_count}\n"
+            session_context = f"Current Session: {self._session_id}\n"
+            session_context += f"Duration: {duration // 60}m {duration % 60}s\n"
+            session_context += f"Turns: {turn_count}\n"
 
             if user_stats:
-                session_context += f"- Total Sessions: {user_stats.get('total_sessions', 0)}\n"
-                total_time = user_stats.get('total_time_spent_seconds', 0)
-                hours = total_time // 3600
-                minutes = (total_time % 3600) // 60
-                session_context += f"- Total Time Spent: {hours}h {minutes}m\n"
+                total_sessions = user_stats.get('total_sessions', 0)
+                if total_sessions > 1:
+                    session_context += f"Total Sessions: {total_sessions}\n"
 
-                # Add recent session info
-                recent_sessions = user_stats.get('recent_sessions', [])
-                if recent_sessions:
-                    session_context += f"- Recent Sessions: {len(recent_sessions)}\n"
+                total_time = user_stats.get('total_time_spent_seconds', 0)
+                if total_time > 0:
+                    hours = total_time // 3600
+                    minutes = (total_time % 3600) // 60
+                    if hours > 0:
+                        session_context += f"Total Time: {hours}h {minutes}m\n"
+                    else:
+                        session_context += f"Total Time: {minutes}m\n"
 
             return session_context.strip()
 
@@ -512,13 +535,22 @@ class HotPathMemoryProcessor(BaseProcessor):
             
             # Extract facts and retrieve relevant memories
             try:
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, self.user_id)
+                # Use enhanced process_turn that includes intent analysis
+                result = self.hot.process_turn(text, self._session_id, self._turn_id, self.user_id)
+                bullets, triples = result.bullets, result.triples
+
+                # V7: Integrate dual graphs if enabled
+                if self.dual_graphs:
+                    for s, p, o in triples:
+                        conf = 0.75  # From extraction confidence
+                        self.dual_graphs.add_triple(s, p, o, conf, source='user' if conf > 0.8 else 'agent')
+                    self.dual_graphs.cleanup_expired()  # Decay ephemeral
+                    
             except Exception as inner_e:
                 logger.error(f"[HotMem] Error in hot.process_turn: {inner_e}")
                 import traceback
                 logger.error(f"[HotMem] Traceback: {traceback.format_exc()}")
-                raise
-            
+                raise            
             # Log what we stored this turn (after quality filtering)
             if triples:
                 logger.info(f"[HotMem] Stored {len(triples)} facts (showing up to 3): {triples[:3]}")
@@ -528,18 +560,34 @@ class HotPathMemoryProcessor(BaseProcessor):
                 correction_bullet = f"• ✅ Correction applied: {correction_result.get('explanation', 'Memory updated')}"
                 bullets = [correction_bullet] + bullets[:4]  # Keep within 5 bullet limit
             
+            # Always add session context as the first bullet if enabled
+            include_session_context = os.getenv("HOTMEM_SESSION_CONTEXT", "true").lower() in ("1", "true", "yes")
+            if include_session_context:
+                session_context = self.format_session_context()
+                if session_context and session_context != "Session Context: Available":
+                    # Create pending bullets if it doesn't exist
+                    if not hasattr(self, '_pending_bullets'):
+                        self._pending_bullets = []
+                    self._pending_bullets.insert(0, session_context)
+                    logger.info(f"[HotMem] Added session context: {len(session_context.split(chr(10)))} lines")
+
             # Stash bullets to inject just before the aggregated user message
-            if bullets:
+            # Only inject memory context if intent classification says we need retrieval
+            if bullets and result.needs_retrieval:
+                logger.info(f"[HotMem] Memory injection enabled for {result.intent.intent.value} intent")
                 logger.info(f"[HotMem] Prepared {len(bullets)} memory bullets for injection")
                 # Dynamic 1..5 already applied by HotMemoryFacade; cap by env
-                self._pending_bullets = bullets[: self._bullets_max]
+                memory_bullets = bullets[: self._bullets_max]
 
-                # Add session context as the first bullet if enabled
-                include_session_context = os.getenv("HOTMEM_SESSION_CONTEXT", "true").lower() in ("1", "true", "yes")
-                if include_session_context:
-                    session_context = self.format_session_context()
-                    if session_context and session_context != "Session Context: Available":
-                        self._pending_bullets.insert(0, session_context)
+                # Add memory bullets to existing pending bullets (which may already contain session context)
+                if not hasattr(self, '_pending_bullets'):
+                    self._pending_bullets = []
+                self._pending_bullets.extend(memory_bullets)
+            else:
+                if bullets:
+                    logger.info(f"[HotMem] Skipping memory injection for {result.intent.intent.value} intent despite having bullets")
+                else:
+                    logger.info(f"[HotMem] No memory bullets to inject for {result.intent.intent.value} intent")
             
             # Track performance
             elapsed_ms = (time.perf_counter() - start) * 1000
@@ -772,15 +820,23 @@ class HotPathMemoryProcessor(BaseProcessor):
             'store_metrics': self.store.get_metrics()
         }
     
-    async def cleanup(self):
-        """Cleanup when processor is destroyed"""
-        try:
-            # Final flush to ensure all data is persisted
-            self.store.flush()
-            logger.info("HotPathMemoryProcessor cleanup complete")
-        except Exception as e:
-            logger.error(f"Cleanup error: {e}")
-
+async def cleanup(self):
+    try:
+        # Cancel any running tasks to prevent dangling
+        if hasattr(self, '_input_frame_task_handler') and self._input_frame_task_handler:
+            self._input_frame_task_handler.cancel()
+            logger.debug("Cancelled input frame task handler")
+        
+        # V7: Trigger idle-time optimization if session idle > threshold
+        if hasattr(self, 'v7_optimizer') and self.get_session_duration() > 300:  # 5min idle
+            from components.ai.dspy_modules import trigger_idle_optimizer
+            trigger_idle_optimizer(self.v7_optimizer)
+        
+        # Final flush to ensure all data is persisted
+        self.store.flush()
+        logger.info("HotPathMemoryProcessor cleanup complete")
+    except Exception as e:
+        logger.error(f"Cleanup error: {e}")
 
 # For backward compatibility and testing
 class TestMemoryProcessor(HotPathMemoryProcessor):
