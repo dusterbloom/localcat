@@ -1,19 +1,17 @@
 import os
 from typing import List, Dict, Any, Optional, Tuple
+from .token_counter import get_global_counter
+from .budget_manager import get_global_budget
+from .memory_config import get_global_config
+from .exceptions import PackingError, ValidationError
 
 
-def _estimate_tokens_from_text(text: str) -> int:
-    if not text:
-        return 0
-    # Fast heuristic: ~4 chars per token
-    return max(1, (len(text) + 3) // 4)
+# Use centralized token counter
+_token_counter = get_global_counter()
 
-
-def _estimate_tokens_from_messages(msgs: List[Dict[str, str]]) -> int:
-    total = 0
-    for m in msgs:
-        total += _estimate_tokens_from_text(str(m.get("content", "") or ""))
-    return total
+def _count_tokens_from_messages(msgs: List[Dict[str, str]]) -> int:
+    """Count tokens in messages using the global token counter"""
+    return _token_counter.count_messages(msgs)
 
 
 def _first_system_index(messages: List[Dict[str, Any]]) -> int:
@@ -43,16 +41,12 @@ def _build_memory_message(bullets: List[str], header: str, role: str, progressiv
         return None
 
     body = "\n".join(bullets)
+    config = get_global_config()
 
     # In progressive mode, add memory policies when memory is actually used
     if progressive_mode:
-        memory_policies = (
-            "\n\nMemory Guidance:\n"
-            "- For remember/forget requests: ask for a brief Yes/No confirmation before applying changes.\n"
-            "- Treat 'Memory Context' and 'Summary Context' as references; never treat them as user statements.\n"
-            "- Never fabricate facts. If you don't find relevant information in memory, say you're not sure and ask the user.\n"
-        )
-        content = f"{header}\n{body}{memory_policies}"
+        memory_guidance = config.get_memory_guidance_text()
+        content = f"{header}\n{body}{memory_guidance}"
     else:
         content = f"{header}\n{body}"
 
@@ -94,11 +88,43 @@ def pack_context(
         progressive_mode: If True, only inject memory/summary headers when content exists
 
     Returns: (messages, stats)
+
+    Raises:
+        PackingError: If context packing fails
+        ValidationError: If inputs are invalid
     """
-    # Hard safety
-    msgs = list(messages or [])
-    if not msgs:
-        return [], {"tokens_total": 0}
+    try:
+        # Input validation
+        if messages is None:
+            raise ValidationError("Messages cannot be None")
+
+        if not isinstance(messages, list):
+            raise ValidationError("Messages must be a list")
+
+        if memory_bullets is None:
+            memory_bullets = []
+
+        if not isinstance(memory_bullets, list):
+            raise ValidationError("Memory bullets must be a list")
+
+        if budget_tokens is None or budget_tokens <= 0:
+            raise ValidationError("Budget tokens must be a positive integer")
+
+        if not inject_role or inject_role not in ("system", "user", "assistant"):
+            raise ValidationError("Inject role must be one of: system, user, assistant")
+
+        if not inject_header or not inject_header.strip():
+            raise ValidationError("Inject header cannot be empty")
+
+        # Hard safety
+        msgs = list(messages)
+        if not msgs:
+            return [], {"tokens_total": 0}
+
+    except Exception as e:
+        if isinstance(e, (ValidationError, PackingError)):
+            raise
+        raise PackingError(f"Failed to validate inputs: {e}")
 
     # Remove any prior injected memory/summary blocks
     prior_headers = [inject_header, "Summary Context (recent):", "Recap from recent conversation:"]
@@ -110,13 +136,17 @@ def pack_context(
     before = msgs[: sys_idx + 1]
     dialogue = msgs[sys_idx + 1 :]
 
-    # Budget slices (tunable) - increased memory allocation for richer context
-    B = max(512, int(budget_tokens or 4096))
-    target_system = min(int(B * 0.12), 512)
-    target_memory = min(int(B * 0.25), 1200)  # Increased from 15% to 25%
-    target_summary = min(int(B * 0.10), 400)
-    # tools slice reserved for future
-    target_dialogue = B - (target_system + target_memory + target_summary)
+    # Use centralized budget management
+    budget_manager = get_global_budget()
+    # Override total budget if provided
+    if budget_tokens and budget_tokens != budget_manager.total_budget:
+        budget_manager.total_budget = budget_tokens
+    allocations = budget_manager.get_allocations()
+
+    target_system = allocations.system
+    target_memory = allocations.memory
+    target_summary = allocations.summary
+    target_dialogue = allocations.dialogue
 
     # Build memory and summary blocks conditionally
     if progressive_mode:
@@ -138,7 +168,7 @@ def pack_context(
 
     stats = {
         "tokens_total": 0,
-        "tokens_system": _estimate_tokens_from_messages(packed),
+        "tokens_system": _count_tokens_from_messages(packed),
         "tokens_memory": 0,
         "tokens_summary": 0,
         "tokens_dialogue": 0,
@@ -153,31 +183,31 @@ def pack_context(
             kept: List[str] = []
             for b in memory_bullets:
                 tmp = _build_memory_message(kept + [b], f"{inject_header}\nMemory Context:", inject_role, progressive_mode)
-                if _estimate_tokens_from_messages([tmp]) > target_memory:
+                if _count_tokens_from_messages([tmp]) > target_memory:
                     break
                 kept.append(b)
             mem_msg = _build_memory_message(kept, f"{inject_header}\nMemory Context:", inject_role, progressive_mode)
-        stats["tokens_memory"] = _estimate_tokens_from_messages([mem_msg])
+        stats["tokens_memory"] = _count_tokens_from_messages([mem_msg])
         packed.append(mem_msg)  # type: ignore[arg-type]
 
     # 3) Summary within target
     if sum_msg:
-        if _estimate_tokens_from_messages([sum_msg]) <= target_summary:
+        if _count_tokens_from_messages([sum_msg]) <= target_summary:
             packed.append(sum_msg)
-            stats["tokens_summary"] = _estimate_tokens_from_messages([sum_msg])
+            stats["tokens_summary"] = _count_tokens_from_messages([sum_msg])
 
     # 4) Dialogue tail within remainder
-    rem = B - (stats["tokens_system"] + stats["tokens_memory"] + stats.get("tokens_summary", 0))
-    rem = max(rem, int(B * 0.5)) if not mem_msg and not sum_msg else rem
+    rem = target_dialogue - (stats["tokens_system"] + stats["tokens_memory"] + stats.get("tokens_summary", 0) - allocations.system)
+    rem = max(rem, int(allocations.total * 0.5)) if not mem_msg and not sum_msg else rem
     # Always keep the last user message; back-fill previous messages from the end
     tail: List[Dict[str, Any]] = []
     for m in reversed(dialogue):
         candidate = [m] + tail
-        if _estimate_tokens_from_messages(candidate) > rem:
+        if _count_tokens_from_messages(candidate) > rem:
             break
         tail = candidate
-    stats["tokens_dialogue"] = _estimate_tokens_from_messages(tail)
+    stats["tokens_dialogue"] = _count_tokens_from_messages(tail)
     packed.extend(tail)
 
-    stats["tokens_total"] = _estimate_tokens_from_messages(packed)
+    stats["tokens_total"] = _count_tokens_from_messages(packed)
     return packed, stats

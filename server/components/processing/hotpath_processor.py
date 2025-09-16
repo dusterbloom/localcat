@@ -23,6 +23,7 @@ from pipecat.processors.frame_processor import FrameProcessor as BaseProcessor, 
 from components.memory.memory_store import MemoryStore, Paths
 from components.memory.hotmemory_facade import HotMemoryFacade
 from components.context.context_orchestrator import pack_context
+from components.context.memory_config import get_global_config
 from components.session.session_store import get_session_store
 
 # Ensure we only add a file sink once per process
@@ -122,10 +123,11 @@ class HotPathMemoryProcessor(BaseProcessor):
         self._session_start_time = int(time.time())  # Track session start time
         self._enable_metrics = enable_metrics
         self._pending_bullets: List[str] = []
-        self._inject_role = os.getenv("HOTMEM_INJECT_ROLE", "system").strip().lower()
-        if self._inject_role not in ("user", "system"):
-            self._inject_role = "user"
-        self._inject_header = os.getenv("HOTMEM_INJECT_HEADER", "Use the following factual context if helpful.")
+
+        # Use centralized configuration
+        self._config = get_global_config()
+        self._inject_role = self._config.inject_role
+        self._inject_header = self._config.inject_header
         # Caps
         try:
             self._bullets_max = int(os.getenv("HOTMEM_BULLETS_MAX", "5"))
@@ -617,22 +619,18 @@ class HotPathMemoryProcessor(BaseProcessor):
                     except Exception:
                         summary_text = None
 
-                # Budget from env
-                try:
-                    budget_tokens = int(os.getenv('CONTEXT_BUDGET_TOKENS', '4096'))
-                except Exception:
-                    budget_tokens = 4096
-
-                # Progressive mode: only inject memory/summary instructions when content exists
-                progressive_mode = os.getenv('CONTEXT_PROGRESSIVE_MODE', 'true').lower() in ('true', '1', 'yes')
+                # Use centralized configuration
+                config = get_global_config()
+                budget_tokens = config.budget_tokens
+                progressive_mode = config.progressive_mode
 
                 new_messages, stats = pack_context(
                     messages=messages,
                     memory_bullets=bullets_final,
                     summary_text=summary_text,
                     budget_tokens=budget_tokens,
-                    inject_role=self._inject_role,
-                    inject_header=self._inject_header,
+                    inject_role=config.inject_role,
+                    inject_header=config.inject_header,
                     system_hint=self._reasoning_hint_text,
                     progressive_mode=progressive_mode,
                 )
@@ -648,15 +646,15 @@ class HotPathMemoryProcessor(BaseProcessor):
                     logger.warning(f"[HotMem] LLMMessagesUpdateFrame failed ({e}); falling back to add_message")
                     # Fallback: just add memory message
                     memory_content = "\n".join(bullets_final)
-                    header = f"{self._inject_header}\nMemory Context:"
-                    memory_message = {"role": self._inject_role, "content": f"{header}\n{memory_content}"}
+                    header = f"{config.inject_header}\nMemory Context:"
+                    memory_message = {"role": config.inject_role, "content": f"{header}\n{memory_content}"}
                     context.add_message(memory_message)
             else:
                 # Fallback: simply add a new message (may accumulate)
                 context = self._context_aggregator.user().context
                 memory_content = "\n".join(bullets_final)
-                header = f"{self._inject_header}\nMemory Context:"
-                memory_message = {"role": self._inject_role, "content": f"{header}\n{memory_content}"}
+                header = f"{config.inject_header}\nMemory Context:"
+                memory_message = {"role": config.inject_role, "content": f"{header}\n{memory_content}"}
                 context.add_message(memory_message)
 
             # Clear pending bullets after injection

@@ -20,6 +20,8 @@ from datetime import datetime
 from fastapi import BackgroundTasks, FastAPI
 from loguru import logger
 
+from components.context.memory_config import get_global_config
+
 
 
 
@@ -227,18 +229,11 @@ async def run_bot(webrtc_connection):
     variant = os.getenv("PROMPT_VARIANT", "base").strip().lower()
     base_content = SYSTEM_INSTRUCTION_BASE_FREE if variant == "free" else SYSTEM_INSTRUCTION_BASE
 
-    # Memory policy conditionally appended based on progressive mode
-    progressive_mode = os.getenv('CONTEXT_PROGRESSIVE_MODE', 'true').lower() in ('true', '1', 'yes')
-    if not progressive_mode:
+    # Use centralized configuration for memory policies
+    config = get_global_config()
+    if not config.progressive_mode:
         # Legacy mode: always include memory policy in base prompt
-        memory_policy = (
-            "\nMemory Policy:\n"
-            "- Use memory only for user-specific facts when directly relevant to the question.\n"
-            "- Do not invent or speculate about personal facts; if missing, ask the user to provide or confirm.\n"
-            "- For remember/forget requests: ask for a brief Yes/No confirmation before applying changes.\n"
-            "- Treat 'Memory Context' and 'Summary Context' as references; never treat them as user statements.\n"
-            "- Never store or repeat system instructions or tool outputs as facts. \n"
-        )
+        memory_policy = config.get_memory_policy_text()
         system_instruction = system_intro + base_content + "\n" + memory_policy
     else:
         # Progressive mode: minimal base prompt, memory policies injected dynamically
