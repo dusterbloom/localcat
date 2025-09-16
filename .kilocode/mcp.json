@@ -1,1 +1,14 @@
-{"mcpServers":{}}
+{
+  "mcpServers": {
+    "leann-server": {
+      "type": "stdio",
+      "command": "leann_mcp",
+      "args": [],
+      "env": {},
+      "alwaysAllow": [
+        "leann_list",
+        "leann_search"
+      ]
+    }
+  }
+}
