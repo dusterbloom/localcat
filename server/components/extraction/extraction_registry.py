@@ -102,28 +102,10 @@ class ExtractionRegistry:
         """Initialize the registry with built-in strategies."""
         # Register built-in strategies
         from components.extraction.extraction_strategies import (
-            HotMemExtractionStrategy,
-            UDExtractionStrategy,
-            HybridExtractionStrategy,
-            LightweightExtractionStrategy,
-            MultilingualExtractionStrategy,
-            EnhancedHotMemExtractionStrategy,
-            PatternBasedExtractionStrategy,
-            ASI1ExtractionStrategy,
-            ASI2ExtractionStrategy,
-            EnhancedLevel3ExtractionStrategy
+            EnhancedLevel3ExtractionStrategy,
         )
 
         built_in_strategies = [
-            ('hotmem', HotMemExtractionStrategy, 'HotMem-based extraction'),
-            ('ud', UDExtractionStrategy, 'Universal Dependencies extraction'),
-            ('hybrid', HybridExtractionStrategy, 'Hybrid spaCy-LLM extraction'),
-            ('lightweight', LightweightExtractionStrategy, 'Lightweight relation extraction'),
-            ('multilingual', MultilingualExtractionStrategy, 'Multilingual graph extraction'),
-            ('enhanced_hotmem', EnhancedHotMemExtractionStrategy, 'Enhanced HotMem extraction'),
-            ('pattern', PatternBasedExtractionStrategy, 'Pattern-based extraction'),
-            ('asi1', ASI1ExtractionStrategy, 'ASI1 YAML-based extractor'),
-            ('asi2', ASI2ExtractionStrategy, 'ASI2 YAML-based extractor'),
             ('enhanced_level3', EnhancedLevel3ExtractionStrategy, 'Enhanced Level3 <1ms quality extraction'),
         ]
         

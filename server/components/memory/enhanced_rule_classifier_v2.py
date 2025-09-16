@@ -9,13 +9,9 @@ from typing import Dict, List, Optional, Tuple, Set
 from dataclasses import dataclass
 from loguru import logger
 
-try:
-    import spacy
-    from spacy.tokens import Doc
-    SPACY_AVAILABLE = True
-except ImportError:
-    SPACY_AVAILABLE = False
-    Doc = None
+# FORCE SPACY DISABLED FOR MAXIMUM SPEED (<1ms)
+SPACY_AVAILABLE = False
+Doc = None
 
 class IntentType(Enum):
     """Core intent types that matter most"""
@@ -55,8 +51,9 @@ class EnhancedRuleClassifierV2:
 
         # Greeting patterns (multilingual)
         self.greeting_lemmas = {
-            'hello', 'hi', 'hey', 'greetings', 'hola', 'bonjour', 'ciao',
-            'salut', 'hallo', 'aloha', 'namaste', 'konnichiwa'
+            'hello', 'hi', 'hey', 'howdy' 'greetings', 'hola', 'bonjour', 'ciao',
+            'salut', 'hallo', 'aloha', 'namaste', 'konnichiwa', 'calimera'
+            'night', 'morning', 'afternoon', 'evening'  # Time-based greetings
         }
 
         # Acknowledgment lemmas (multilingual)
@@ -181,6 +178,11 @@ class EnhancedRuleClassifierV2:
         if len(tokens) <= 4 and lemmas & self.ack_lemmas:
             return self._create_result(IntentType.ACKNOWLEDGMENT, 0.85, retrieve=False, store=False)
 
+        # Additional greeting patterns: time-based greetings
+        if (lemmas & {'good', 'morning', 'afternoon', 'evening', 'night', 'day'} and
+            len(tokens) <= 3):
+            return self._create_result(IntentType.GREETING, 0.9, retrieve=False, store=False)
+
         # Reaction: Short utterance with emotion/reaction lemmas + exclamation
         if (len(tokens) <= 5 and lemmas & self.reaction_lemmas and
             ('INTJ' in pos_tags or '!' in text)):
@@ -296,7 +298,9 @@ class EnhancedRuleClassifierV2:
         # Quick pattern checks (similar to original V2 but simplified)
 
         # Greetings
-        if first_word in {'hello', 'hi', 'hey', 'greetings'} or 'how are you' in text_lower:
+        if (first_word in {'hello', 'hi', 'hey', 'greetings'} or
+            'how are you' in text_lower or
+            any(greeting in text_lower for greeting in ['good morning', 'good afternoon', 'good evening'])):
             return self._create_result(IntentType.GREETING, 0.9, retrieve=False, store=False)
 
         # Farewells
@@ -323,13 +327,16 @@ class EnhancedRuleClassifierV2:
         if any(p in text_lower for p in ['can you', 'could you', 'would you', 'please']):
             return self._create_result(IntentType.REQUEST, 0.85, retrieve=True, store=False)
 
-        # Questions
-        if text.endswith('?') or first_word in {'what', 'when', 'where', 'who', 'why', 'how', 'is', 'are', 'do'}:
-            return self._create_result(IntentType.QUESTION, 0.8, retrieve=True, store=False)
+        # Facts first (higher priority for first-person statements)
+        if (first_word in {'i', 'my', 'we', 'our'} or
+            any(w in words_set for w in {'is', 'are', 'was', 'were', 'have', 'has', 'am'})):
+            # Additional check to avoid false positives on questions starting with these words
+            if not text.endswith('?') and first_word not in {'is', 'are', 'do', 'does', 'did', 'can', 'could', 'will', 'would'}:
+                return self._create_result(IntentType.FACT, 0.75, retrieve=False, store=True)
 
-        # Facts (simple heuristic)
-        if any(w in words_set for w in {'is', 'are', 'was', 'were', 'have', 'has'}):
-            return self._create_result(IntentType.FACT, 0.7, retrieve=False, store=True)
+        # Questions
+        if text.endswith('?') or first_word in {'what', 'when', 'where', 'who', 'why', 'how', 'is', 'are', 'do', 'does', 'did', 'can', 'could', 'will', 'would'}:
+            return self._create_result(IntentType.QUESTION, 0.8, retrieve=True, store=False)
 
         # Unknown
         return self._create_result(IntentType.UNKNOWN, 0.3, retrieve=True, store=False)

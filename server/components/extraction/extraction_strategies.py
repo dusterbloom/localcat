@@ -88,10 +88,7 @@ class ExtractionStrategyBase(IExtractionStrategy):
         return filtered
 
 
-# Strategy registry - keep only Enhanced Level3 for performance
-EXTRACTION_STRATEGIES = {
-    'enhanced_level3': EnhancedLevel3ExtractionStrategy,
-}
+# Strategy registry - defined later after all classes
 
 def create_strategy(strategy_name: str, config: Optional[Dict[str, Any]] = None) -> Optional[IExtractionStrategy]:
     """Create an extraction strategy by name."""
@@ -339,3 +336,9 @@ class EnhancedLevel3ExtractionStrategy(ExtractionStrategyBase):
     def is_available(self) -> bool:
         """Check if Enhanced Level3 extractor is available."""
         return self.enabled and self.extractor is not None and self.nlp is not None
+
+
+# Strategy registry - keep only Enhanced Level3 for performance
+EXTRACTION_STRATEGIES = {
+    'enhanced_level3': EnhancedLevel3ExtractionStrategy,
+}

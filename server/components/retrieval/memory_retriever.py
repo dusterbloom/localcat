@@ -86,27 +86,41 @@ class MemoryRetriever:
         Main retrieval entry point - retrieves relevant memory context
         """
         start = time.perf_counter()
-        
+        timings = {}
+
         try:
             # Expand entities with aliases and relationships
+            expand_start = time.perf_counter()
             expanded_entities = self._expand_query_entities(entities, query)
+            timings['expand_ms'] = (time.perf_counter() - expand_start) * 1000
             logger.debug(f"[MemoryRetriever] Retrieval context: query='{query[:5]}...', entities={entities}, total_edges={sum(len(triples) for triples in self.entity_index.values())}")
-            
+
             # Get candidate triples through multiple strategies
+            gather_start = time.perf_counter()
             candidate_triples = self._gather_candidate_triples(query, expanded_entities, intent)
+            timings['gather_ms'] = (time.perf_counter() - gather_start) * 1000
             if self.debug:
                 self._debug_log_candidates(candidate_triples)
-            
+
             # Apply MMR algorithm for diverse selection
+            mmr_start = time.perf_counter()
             bullets = self._apply_mmr_selection(query, candidate_triples, turn_id)
+            timings['mmr_ms'] = (time.perf_counter() - mmr_start) * 1000
             if self.debug:
                 logger.info(f"[Retrieval DEBUG] bullets_selected={len(bullets)}")
                 for i, b in enumerate(bullets):
                     logger.info(f"[Retrieval DEBUG] bullet[{i}]: {b}")
-            
+
             # Track performance
             elapsed_ms = (time.perf_counter() - start) * 1000
             self.metrics['retrieval_ms'].append(elapsed_ms)
+
+            # Log timing breakdown if slow
+            if elapsed_ms > 500:
+                logger.warning(f"⏱️ SLOW RETRIEVAL: {elapsed_ms:.0f}ms total | expand={timings['expand_ms']:.0f}ms, gather={timings['gather_ms']:.0f}ms, mmr={timings['mmr_ms']:.0f}ms | entities={len(entities)}→{len(expanded_entities)}, candidates={len(candidate_triples)}")
+                # Find bottleneck
+                bottleneck = max(timings.items(), key=lambda x: x[1])
+                logger.warning(f"🔴 BOTTLENECK: {bottleneck[0]} took {bottleneck[1]:.0f}ms ({bottleneck[1]/elapsed_ms*100:.0f}% of total)")
             
             stats = {
                 'elapsed_ms': elapsed_ms,
@@ -222,23 +236,47 @@ class MemoryRetriever:
         candidates = []
         now_ms = int(time.time() * 1000)
         recency_T_ms = 7 * 24 * 60 * 60 * 1000  # 7 days
-        
+
         # Strategy 1: Entity-based retrieval (gated)
+        entity_start = time.perf_counter()
+        entity_count = 0
         if self.graph_enabled:
             for entity in entities:
                 if entity in self.entity_index:
-                    candidates.extend(self._score_entity_triples(entity, query, now_ms, recency_T_ms))
-        
+                    entity_triples = self._score_entity_triples(entity, query, now_ms, recency_T_ms)
+                    candidates.extend(entity_triples)
+                    entity_count += len(entity_triples)
+        entity_ms = (time.perf_counter() - entity_start) * 1000
+        if entity_ms > 100:
+            logger.info(f"[Retriever] Entity scoring: {entity_ms:.0f}ms for {len(entities)} entities → {entity_count} candidates")
+
         # Strategy 2: LEANN semantic enhancement (if enabled)
+        leann_start = time.perf_counter()
+        leann_count = 0
         if self.use_leann and self.retrieval_fusion:
             leann_enhanced = self._retrieve_with_leann_enhancement(query, entities)
             candidates.extend(leann_enhanced)
-        
+            leann_count = len(leann_enhanced)
+        leann_ms = (time.perf_counter() - leann_start) * 1000
+        if leann_ms > 100:
+            logger.info(f"[Retriever] LEANN: {leann_ms:.0f}ms → {leann_count} candidates")
+
         # Strategy 3: FTS summary search (if fusion enabled)
+        fts_start = time.perf_counter()
+        fts_count = 0
         if self.retrieval_fusion and query:
             fts_results = self._search_fts_summaries(query)
             candidates.extend(fts_results)
-        
+            fts_count = len(fts_results)
+        fts_ms = (time.perf_counter() - fts_start) * 1000
+        if fts_ms > 100:
+            logger.info(f"[Retriever] FTS: {fts_ms:.0f}ms → {fts_count} candidates")
+
+        # Log total if any strategy was slow
+        total_gather_ms = entity_ms + leann_ms + fts_ms
+        if total_gather_ms > 500:
+            logger.warning(f"📊 Gather breakdown: entity={entity_ms:.0f}ms, LEANN={leann_ms:.0f}ms, FTS={fts_ms:.0f}ms | Total={len(candidates)} candidates")
+
         return candidates
     
     def _score_entity_triples(self, entity: str, query: str, now_ms: int, recency_T_ms: int) -> List[Tuple[float, int, str, Any]]:

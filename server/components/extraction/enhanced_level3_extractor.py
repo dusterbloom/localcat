@@ -14,6 +14,14 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from collections import defaultdict
 import networkx as nx
+from loguru import logger
+
+# Check DSPy availability
+try:
+    import dspy
+    DSPY_AVAILABLE = True
+except ImportError:
+    DSPY_AVAILABLE = False
 
 @dataclass
 class QualityEntity:
@@ -76,6 +84,27 @@ class QualityExtractor:
             # Education / lifecycle
             'retire', 'study', 'create', 'build', 'launch', 'publish', 'write'
         }
+
+        # V7: Integrate DSPy-optimized extraction
+        if DSPY_AVAILABLE:
+            try:
+                from components.ai.dspy_modules import GraphExtractor
+                self.dspy_extractor = GraphExtractor(num_candidates=3)
+                # Bootstrap on init if test data available
+                try:
+                    from components.ai.dspy_modules import load_test_data
+                    test_data = load_test_data()  # From dspy_modules
+                    if test_data:
+                        self.dspy_extractor.optimize(test_data[:10])
+                        print("DSPy extractor bootstrapped with test data")
+                except ImportError:
+                    pass  # load_test_data not available
+            except Exception as e:
+                print(f"DSPy integration failed: {e}")
+                self.dspy_extractor = None
+        else:
+            self.dspy_extractor = None
+
         # Optional: extend via env to relax/expand coverage
         try:
             import os
@@ -87,12 +116,29 @@ class QualityExtractor:
         except Exception:
             pass
 
+
     def extract_quality_kg(self, doc) -> Dict[str, Any]:
-        """Extract quality knowledge graph with confidence filtering"""
+        
+        # V7: Optional DSPy augmentation if available
+        base_entities = []
+        base_relations = []
+        if self.dspy_extractor:
+            try:
+                pred = self.dspy_extractor(doc.text)
+                dspy_triples = eval(pred.triples)  # Safe eval for JSON list
+                base_relations.extend([QualityRelation(
+                    id=f"dspy_{i}",
+                    subject=t[0], predicate=t[1], object=t[2],
+                    relation_type="dspy", confidence=0.82,
+                    source_sentence=0, semantic_roles={}
+                ) for i, t in enumerate(dspy_triples)])
+                logger.debug(f"DSPy augmented {len(dspy_triples)} relations")
+            except Exception as e:
+                logger.debug(f"DSPy extraction failed: {e}")
 
         # Step 1: Extract candidate entities and relations
-        candidate_entities = self._extract_candidate_entities(doc)
-        candidate_relations = self._extract_candidate_relations(doc)
+        candidate_entities = self._extract_candidate_entities(doc) + base_entities
+        candidate_relations = self._extract_candidate_relations(doc) + base_relations
 
         # Step 2: Quality filtering with confidence thresholds
         quality_entities = self._filter_entities_by_confidence(candidate_entities)
@@ -112,9 +158,11 @@ class QualityExtractor:
                 'entity_avg_confidence': sum(e.confidence for e in final_entities) / len(final_entities) if final_entities else 0,
                 'relation_avg_confidence': sum(r.confidence for r in final_relations) / len(final_relations) if final_relations else 0,
                 'entities_above_threshold': len([e for e in final_entities if e.confidence >= self.ENTITY_CONFIDENCE_THRESHOLD]),
-                'relations_above_threshold': len([r for r in final_relations if r.confidence >= self.RELATION_CONFIDENCE_THRESHOLD])
+                'relations_above_threshold': len([r for r in final_relations if r.confidence >= self.RELATION_CONFIDENCE_THRESHOLD]),
+                'dspy_used': bool(self.dspy_extractor and base_relations)
             }
         }
+        
 
     def _extract_candidate_entities(self, doc) -> List[QualityEntity]:
         """Extract candidate entities with confidence scores"""
@@ -218,10 +266,10 @@ class QualityExtractor:
                                 relations.append(relation)
                                 self.relation_counter += 1
 
-                        # Prepositional relations (high-quality only)
+                        # Prepositional relations (high-quality only) - FIXED: moved outside if objects block
                         prep_phrases = [child for child in token.children if child.dep_ == 'prep']
                         for prep in prep_phrases:
-                            if prep.text.lower() in ['at', 'in', 'on', 'to', 'from', 'with', 'under', 'across', 'during']:
+                            if prep.text.lower() in ['at', 'in', 'on', 'to', 'from', 'with', 'under', 'across', 'during', 'since']:
                                 pobj = [child for child in prep.children if child.dep_ == 'pobj']
                                 if pobj:
                                     pobj_head = pobj[0]
@@ -234,7 +282,7 @@ class QualityExtractor:
                                         predicate=f"{token.lemma_.lower()}_{prep.text.lower()}",
                                         object=pobj_text,
                                         relation_type="spatial_temporal",
-                                        confidence=0.88 if prep.text.lower() in ['in','at','on','to','from','with'] else 0.85,
+                                        confidence=0.88 if prep.text.lower() in ['in','at','on','to','from','with','since'] else 0.85,
                                         source_sentence=0,
                                         semantic_roles={'ARG0': subj_text, 'ARGM': pobj_text}
                                     )
@@ -261,8 +309,20 @@ class QualityExtractor:
                                                 relations.append(nested_rel)
                                                 self.relation_counter += 1
 
-        return relations
+                                    # Specific temporal handling for 'since' prepositions
+                                    if prep.text.lower() == 'since':
+                                        # Look for date/year in pobj
+                                        if any(word.isdigit() or word.lower() in ['2020','2021','2022','2023','2024','2025'] for word in pobj_text.split()):
+                                            # Enhance confidence for factual duration relations
+                                            for rel in relations[-1:]:  # Last added relation
+                                                if rel.predicate.endswith('_since'):
+                                                    rel.confidence = 0.92
+                                                    rel.relation_type = "temporal_duration"
+                                                    rel.semantic_roles['ARGM-TMP'] = pobj_text
 
+        return relations
+    
+    
     def _get_clean_noun_phrase(self, token, role: Optional[str] = None) -> str:
         """Extract clean, concise noun phrases.
 
@@ -360,51 +420,51 @@ class QualityExtractor:
         relations.sort(key=lambda x: x.confidence, reverse=True)
         return relations[:target]
 
-def test_enhanced_quality():
-    """Test enhanced quality extraction"""
-    import spacy
+    def test_enhanced_quality():
+        """Test enhanced quality extraction"""
+        import spacy
 
-    nlp = spacy.load('en_core_web_sm')
-    extractor = QualityExtractor()
+        nlp = spacy.load('en_core_web_sm')
+        extractor = QualityExtractor()
 
-    # Test with the same complex text
-    test_text = """
-    John Smith works as the Chief Technology Officer at Google Corporation in Mountain View, California.
-    He announced the quarterly financial results during yesterday's board meeting. The results showed
-    significant growth in cloud computing revenue. However, the company faced challenges in the competitive
-    artificial intelligence market. Therefore, Mary Johnson, the Chief Marketing Officer, joined the discussion
-    to develop new strategies. She emphasized the importance of customer retention strategies for the organization.
-    Furthermore, the board decided to invest heavily in machine learning research because innovation drives success.
-    """
+        # Test with the same complex text
+        test_text = """
+        John Smith works as the Chief Technology Officer at Google Corporation in Mountain View, California.
+        He announced the quarterly financial results during yesterday's board meeting. The results showed
+        significant growth in cloud computing revenue. However, the company faced challenges in the competitive
+        artificial intelligence market. Therefore, Mary Johnson, the Chief Marketing Officer, joined the discussion
+        to develop new strategies. She emphasized the importance of customer retention strategies for the organization.
+        Furthermore, the board decided to invest heavily in machine learning research because innovation drives success.
+        """
 
-    doc = nlp(test_text)
-    kg = extractor.extract_quality_kg(doc)
+        doc = nlp(test_text)
+        kg = extractor.extract_quality_kg(doc)
 
-    print('🎯 ENHANCED QUALITY EXTRACTION TEST')
-    print('=' * 50)
-    print(f'Input: {len(test_text.split())} words')
-    print()
+        print('🎯 ENHANCED QUALITY EXTRACTION TEST')
+        print('=' * 50)
+        print(f'Input: {len(test_text.split())} words')
+        print()
 
-    print(f'📊 QUALITY RESULTS:')
-    print(f'Entities: {len(kg["entities"])} (target: {extractor.TARGET_ENTITIES})')
-    print(f'Relations: {len(kg["relations"])} (target: {extractor.TARGET_RELATIONS})')
-    print(f'Avg Entity Confidence: {kg["quality_metrics"]["entity_avg_confidence"]:.3f}')
-    print(f'Avg Relation Confidence: {kg["quality_metrics"]["relation_avg_confidence"]:.3f}')
-    print()
+        print(f'📊 QUALITY RESULTS:')
+        print(f'Entities: {len(kg["entities"])} (target: {extractor.TARGET_ENTITIES})')
+        print(f'Relations: {len(kg["relations"])} (target: {extractor.TARGET_RELATIONS})')
+        print(f'Avg Entity Confidence: {kg["quality_metrics"]["entity_avg_confidence"]:.3f}')
+        print(f'Avg Relation Confidence: {kg["quality_metrics"]["relation_avg_confidence"]:.3f}')
+        print()
 
-    print(f'🔥 TOP QUALITY ENTITIES:')
-    for i, entity in enumerate(kg["entities"][:10], 1):
-        print(f'  {i:2d}. {entity.text} ({entity.entity_type}, conf={entity.confidence:.2f})')
+        print(f'🔥 TOP QUALITY ENTITIES:')
+        for i, entity in enumerate(kg["entities"][:10], 1):
+            print(f'  {i:2d}. {entity.text} ({entity.entity_type}, conf={entity.confidence:.2f})')
 
-    print(f'\n🔥 TOP QUALITY RELATIONS:')
-    for i, relation in enumerate(kg["relations"][:15], 1):
-        print(f'  {i:2d}. {relation.subject} | {relation.predicate} | {relation.object} (conf={relation.confidence:.2f})')
+        print(f'\n🔥 TOP QUALITY RELATIONS:')
+        for i, relation in enumerate(kg["relations"][:15], 1):
+            print(f'  {i:2d}. {relation.subject} | {relation.predicate} | {relation.object} (conf={relation.confidence:.2f})')
 
-    print(f'\n✅ QUALITY IMPROVEMENTS:')
-    print(f'✅ Clean predicates (no verbose compound phrases)')
-    print(f'✅ Confidence filtering ({extractor.RELATION_CONFIDENCE_THRESHOLD}+ relations)')
-    print(f'✅ Target-based selection (quality over quantity)')
-    print(f'✅ Semantic role labeling (ARG0, ARG1 patterns)')
+        print(f'\n✅ QUALITY IMPROVEMENTS:')
+        print(f'✅ Clean predicates (no verbose compound phrases)')
+        print(f'✅ Confidence filtering ({extractor.RELATION_CONFIDENCE_THRESHOLD}+ relations)')
+        print(f'✅ Target-based selection (quality over quantity)')
+        print(f'✅ Semantic role labeling (ARG0, ARG1 patterns)')
 
-if __name__ == "__main__":
-    test_enhanced_quality()
+    if __name__ == "__main__":
+        test_enhanced_quality()

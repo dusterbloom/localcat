@@ -1,5 +1,6 @@
 import os
 from typing import List, Dict, Any, Optional, Tuple
+from loguru import logger
 from .token_counter import get_global_counter
 from .budget_manager import get_global_budget
 from .memory_config import get_global_config
@@ -66,6 +67,23 @@ def _build_summary_message(summary_text: Optional[str], role: str) -> Optional[D
     return {"role": role, "content": f"{header}\n{text}"}
 
 
+def _extract_session_info(memory_bullets: List[str]) -> Tuple[Optional[str], List[str]]:
+    """Extract session context from memory bullets and return clean bullets."""
+    if not memory_bullets:
+        return None, []
+
+    session_info = None
+    clean_bullets = []
+
+    for bullet in memory_bullets:
+        if bullet.startswith("Session Context:"):
+            session_info = bullet
+        else:
+            clean_bullets.append(bullet)
+
+    return session_info, clean_bullets
+
+
 def pack_context(
     messages: List[Dict[str, Any]],
     memory_bullets: List[str],
@@ -75,20 +93,22 @@ def pack_context(
     inject_header: str = "Use the following factual context if helpful.",
     system_hint: Optional[str] = None,
     progressive_mode: bool = True,
+    max_memory_tokens: int = 300,  # New: Pre-retrieval token cap for memory
 ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """Pack context with strict token budget and clear section order.
-
+    
     Order:
       1) System instruction (keep first system message)
       2) Memory Context (bullets) - only if memory_bullets is not empty and progressive_mode is True
       3) Summary Context (latest snippet) - only if summary_text exists and progressive_mode is True
       4) Conversation tail (last N messages within remainder)
-
+    
     Args:
         progressive_mode: If True, only inject memory/summary headers when content exists
-
+        max_memory_tokens: Hard cap on memory section tokens (prevents retrieval bloat)
+    
     Returns: (messages, stats)
-
+    
     Raises:
         PackingError: If context packing fails
         ValidationError: If inputs are invalid
@@ -109,6 +129,9 @@ def pack_context(
 
         if budget_tokens is None or budget_tokens <= 0:
             raise ValidationError("Budget tokens must be a positive integer")
+
+        if max_memory_tokens < 0:
+            raise ValidationError("Max memory tokens cannot be negative")
 
         if not inject_role or inject_role not in ("system", "user", "assistant"):
             raise ValidationError("Inject role must be one of: system, user, assistant")
@@ -144,57 +167,104 @@ def pack_context(
     allocations = budget_manager.get_allocations()
 
     target_system = allocations.system
-    target_memory = allocations.memory
+    target_memory = min(allocations.memory, max_memory_tokens)  # Enforce pre-retrieval cap
     target_summary = allocations.summary
     target_dialogue = allocations.dialogue
 
-    # Build memory and summary blocks conditionally
+    # Extract session info from memory bullets first
+    session_info, clean_memory_bullets = _extract_session_info(memory_bullets or [])
+
+    # Build memory and summary blocks conditionally using clean bullets
     if progressive_mode:
-        # Only build memory message if we have bullets and use conditional header
-        mem_msg = _build_memory_message(memory_bullets, f"{inject_header}\nMemory Context:", inject_role, progressive_mode) if memory_bullets else None
+        # Only build memory message if we have clean bullets and use conditional header
+        mem_msg = _build_memory_message(clean_memory_bullets, f"{inject_header}\nMemory Context:", inject_role, progressive_mode) if clean_memory_bullets else None
         # Only build summary message if we have summary text
         sum_msg = _build_summary_message(summary_text, inject_role) if summary_text and summary_text.strip() else None
     else:
-        # Legacy behavior: always build even if empty
-        mem_msg = _build_memory_message(memory_bullets, f"{inject_header}\nMemory Context:", inject_role, progressive_mode)
+        # Legacy behavior: always build even if empty (using clean bullets)
+        mem_msg = _build_memory_message(clean_memory_bullets, f"{inject_header}\nMemory Context:", inject_role, progressive_mode)
         sum_msg = _build_summary_message(summary_text, inject_role)
 
     packed: List[Dict[str, Any]] = []
-    # 1) System (as-is) + optional reasoning hint
-    packed.extend(before)
-    if system_hint and system_hint.strip():
-        hint_msg = {"role": "system", "content": f"Reasoning Guidance:\n{system_hint.strip()}"}
-        packed.append(hint_msg)
+
+    # Build unified system message with truly progressive context sections
+    if before:
+        # Start with original system content and inject session info at the top
+        base_content = before[0]["content"]
+
+        # Inject session info right after Agent/User ID but before persona
+        if session_info:
+            # Parse session context and format it compactly at the top
+            lines = base_content.split('\n')
+            header_lines = []
+            persona_lines = []
+
+            # Find where persona starts (after time/date line)
+            persona_started = False
+            for line in lines:
+                if not persona_started and ('Agent ID:' in line or 'User ID:' in line or 'It is' in line):
+                    header_lines.append(line)
+                else:
+                    persona_started = True
+                    persona_lines.append(line)
+
+            # Format session info compactly
+            session_lines = session_info.replace('Session Context:\n', '').replace('Session Context:', '').strip()
+            session_compact = session_lines.replace('- ', '').replace('\n', ', ').strip()
+
+            # Reconstruct with session info at the top
+            unified_content = '\n'.join(header_lines)
+            if session_compact:
+                unified_content += f"\nSession: {session_compact}"
+            unified_content += '\n' + '\n'.join(persona_lines)
+        else:
+            unified_content = base_content
+
+        # Only add memory context if clean bullets exist (progressive)
+        if mem_msg and clean_memory_bullets:
+            mem_tokens = _count_tokens_from_messages([mem_msg])
+            if mem_tokens > target_memory:
+                # Trim bullets aggressively to fit cap
+                kept: List[str] = []
+                for b in clean_memory_bullets:
+                    tmp_bullets = kept + [b]
+                    tmp_msg = _build_memory_message(tmp_bullets, f"{inject_header}\nMemory Context:", inject_role, progressive_mode)
+                    if _count_tokens_from_messages([tmp_msg]) > target_memory:
+                        break
+                    kept.append(b)
+                if kept != clean_memory_bullets:
+                    logger.warning(f"Memory capped: {len(kept)}/{len(clean_memory_bullets)} bullets to fit {target_memory} tokens")
+                    mem_msg = _build_memory_message(kept, f"{inject_header}\nMemory Context:", inject_role, progressive_mode)
+
+            # Append memory content to unified message
+            unified_content += "\n\n" + mem_msg["content"]
+
+        # Only add summary if conversation was actually truncated (check if dialogue < full conversation)
+        dialogue_count = len([m for m in dialogue if m.get('role') in ['user', 'assistant']])
+        original_count = len([m for m in messages if m.get('role') in ['user', 'assistant']])
+        conversation_truncated = dialogue_count < original_count
+
+        if sum_msg and summary_text and summary_text.strip() and conversation_truncated:
+            if _count_tokens_from_messages([sum_msg]) <= target_summary:
+                unified_content += "\n\n" + sum_msg["content"]
+
+        # Add system hint if available
+        if system_hint and system_hint.strip():
+            unified_content += f"\n\nReasoning Guidance:\n{system_hint.strip()}"
+
+        # Create single unified system message
+        unified_msg = {"role": "system", "content": unified_content}
+        packed.append(unified_msg)
 
     stats = {
         "tokens_total": 0,
         "tokens_system": _count_tokens_from_messages(packed),
-        "tokens_memory": 0,
-        "tokens_summary": 0,
+        "tokens_memory": _count_tokens_from_messages([mem_msg]) if mem_msg else 0,
+        "tokens_summary": _count_tokens_from_messages([sum_msg]) if sum_msg else 0,
         "tokens_dialogue": 0,
-        "bullets_injected": len(memory_bullets or []),
+        "bullets_injected": len(clean_memory_bullets or []),
+        "memory_capped": False,
     }
-
-    # 2) Memory within target slice
-    if mem_msg:
-        # Trim bullets to fit memory budget if needed
-        if memory_bullets:
-            # Recompute with incremental fitting
-            kept: List[str] = []
-            for b in memory_bullets:
-                tmp = _build_memory_message(kept + [b], f"{inject_header}\nMemory Context:", inject_role, progressive_mode)
-                if _count_tokens_from_messages([tmp]) > target_memory:
-                    break
-                kept.append(b)
-            mem_msg = _build_memory_message(kept, f"{inject_header}\nMemory Context:", inject_role, progressive_mode)
-        stats["tokens_memory"] = _count_tokens_from_messages([mem_msg])
-        packed.append(mem_msg)  # type: ignore[arg-type]
-
-    # 3) Summary within target
-    if sum_msg:
-        if _count_tokens_from_messages([sum_msg]) <= target_summary:
-            packed.append(sum_msg)
-            stats["tokens_summary"] = _count_tokens_from_messages([sum_msg])
 
     # 4) Dialogue tail within remainder
     rem = target_dialogue - (stats["tokens_system"] + stats["tokens_memory"] + stats.get("tokens_summary", 0) - allocations.system)

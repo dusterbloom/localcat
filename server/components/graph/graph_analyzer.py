@@ -55,21 +55,29 @@ class KnowledgeGraphAnalyzer:
     Advanced knowledge graph analysis using NetworkX.
     Handles community detection, centrality analysis, and graph statistics.
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         """Initialize graph analyzer with configuration"""
         self.enabled = config.get('graph_analysis_enabled', False) and NETWORKX_AVAILABLE
         self.use_louvain = config.get('use_louvain', True) and LOUVAIN_AVAILABLE
         self.min_community_size = config.get('min_community_size', 2)
         self.max_communities = config.get('max_communities', 20)
-        
+
+        # Dual graph integration
+        self.use_dual_graphs = config.get('use_dual_graphs', True)
+        if self.use_dual_graphs and NETWORKX_AVAILABLE:
+            from .dual_graph_manager import DualGraphManager
+            self.dual_manager = DualGraphManager(ttl_minutes=5, promotion_threshold=0.8)
+        else:
+            self.dual_manager = None
+
         # Analysis options
         self.calculate_centrality = config.get('calculate_centrality', True)
         self.detect_communities = config.get('detect_communities', True)
-        
+
         logger.info(f"[KnowledgeGraphAnalyzer] Initialized with enabled={'✓' if self.enabled else '✗'}, "
-                   f"louvain={'✓' if self.use_louvain else '✗'}")
-    
+                   f"louvain={'✓' if self.use_louvain else '✗'}, dual_graphs={'✓' if self.use_dual_graphs else '✗'}")
+
     def analyze_knowledge_graph(self, triples: List[Tuple[str, str, str]]) -> GraphAnalysisResult:
         """
         Main entry point for knowledge graph analysis
@@ -80,16 +88,51 @@ class KnowledgeGraphAnalyzer:
             if not triples or not self.enabled:
                 return GraphAnalysisResult([], {}, {'method': 'none'}, 0.0)
             
-            # Build NetworkX graph
-            G = self._build_graph(triples)
+            # Dual graph handling if enabled
+            if self.use_dual_graphs and self.dual_manager:
+                # Cleanup expired agent triples
+                decayed = self.dual_manager.cleanup_expired()
+                if decayed > 0:
+                    logger.info(f"Cleaned {decayed} expired agent triples")
+                
+                # Add triples to dual graphs (assume input triples have confidence/timestamp)
+                for s, p, o in triples:
+                    conf = 0.7  # Default; extract from metadata if available
+                    ts = int(time.time() * 1000)
+                    self.dual_manager.add_triple(s, p, o, conf, source='user' if conf > 0.8 else 'agent')
+                
+                # Export combined graph for analysis
+                agent_t, user_t = self.dual_manager.export_to_hotmem_facade()
+                combined_triples = agent_t + user_t
+                G = self._build_graph(combined_triples)
+                
+                # Get dual stats
+                dual_stats = self.dual_manager.get_stats().__dict__
+                logger.info(f"Dual graph stats: {dual_stats}")
+            else:
+                G = self._build_graph(triples)
+                dual_stats = {}
             
             if len(G.nodes()) == 0:
-                return GraphAnalysisResult([], {}, {'method': 'empty_graph'}, 0.0)
+                return GraphAnalysisResult([], {}, {'method': 'empty_graph', **dual_stats}, 0.0)
             
-            # Analyze communities
+            # Analyze communities with Louvain enabled
             communities = []
             if self.detect_communities:
                 communities = self._detect_communities(G)
+                if self.use_dual_graphs:
+                    # Detect on combined, but separate agent/user communities
+                    dual_comms = self.dual_manager.detect_communities('combined')
+                    for comm in dual_comms:
+                        # Map to CommunityInfo
+                        communities.append(CommunityInfo(
+                            community_id=comm['id'],
+                            nodes=comm['nodes'],
+                            size=comm['size'],
+                            modularity=comm.get('modularity', 0.0),
+                            key_entities=comm['key_entities'],
+                            description=comm['description']
+                        ))
             
             # Calculate centrality metrics
             centrality_metrics = {}
@@ -98,6 +141,7 @@ class KnowledgeGraphAnalyzer:
             
             # Calculate graph statistics
             graph_stats = self._calculate_graph_stats(G, communities)
+            graph_stats.update(dual_stats)  # Merge dual stats
             
             processing_time = (time.perf_counter() - start) * 1000
             

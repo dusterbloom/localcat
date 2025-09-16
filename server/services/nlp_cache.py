@@ -13,13 +13,13 @@ from loguru import logger
 _SPACY_CACHE: Dict[Tuple[str, Tuple[str, ...]], object] = {}
 
 
-# def resolve_model_alias(model_name: str) -> str:
-#     """Normalize common aliases (e.g., en_core_web_trf -> en_core_web_trf)."""
-#     if not model_name:
-#         return 'en_core_web_sm'
-#     if model_name.endswith('_rtf') or model_name == 'en_core_web_trf':
-#         return model_name.replace('_rtf', '_trf')
-#     return model_name
+def resolve_model_alias(model_name: str) -> str:
+    """Normalize common aliases (e.g., en_core_web_trf -> en_core_web_trf)."""
+    if not model_name:
+        return 'en_core_web_sm'
+    if model_name.endswith('_rtf') or model_name == 'en_core_web_trf':
+        return model_name.replace('_rtf', '_trf')
+    return model_name
 
 
 def get_spacy(model_name: str, disable: Optional[Iterable[str]] = None):
@@ -55,7 +55,29 @@ def get_en_model_from_env(default_model: str = 'en_core_web_sm'):
 
 
 def prewarm_from_env() -> None:
+    """Prewarm NLP models and extraction strategies to avoid first-use latency."""
     try:
-        _ = get_en_model_from_env()
-    except Exception:
+        # Prewarm the spaCy model
+        logger.info("[nlp_cache] Starting model prewarm...")
+        nlp = get_en_model_from_env()
+
+        # Do a dummy parse to fully load the model
+        if nlp:
+            _ = nlp("Test warmup sentence.")
+            logger.info("[nlp_cache] SpaCy model warmed up successfully")
+
+        # Also prewarm the extraction strategy to avoid first-use delay
+        try:
+            from components.extraction.extraction_registry import ExtractionRegistry
+            registry = ExtractionRegistry()
+            strategy = registry.get_strategy('enhanced_level3')
+            if strategy:
+                # Do a dummy extraction to warm up
+                _ = strategy.extract("Warmup extraction test.", "en")
+                logger.info("[nlp_cache] Extraction strategy warmed up successfully")
+        except Exception as e:
+            logger.debug(f"[nlp_cache] Could not prewarm extraction strategy: {e}")
+
+    except Exception as e:
+        logger.warning(f"[nlp_cache] Prewarm failed: {e}")
         pass

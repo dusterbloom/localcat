@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from loguru import logger
 
 from components.memory.memory_store import MemoryStore
-from components.memory.memory_intent import get_intent_classifier, get_quality_filter, IntentType
+from components.memory.memory_intent import get_intent_classifier, get_quality_filter, IntentType, IntentAnalysis
+from components.memory.memory_timing_tracer import get_memory_tracer
 from components.memory.memory_quality import MemoryQuality
 from components.memory.config import create_config
 from components.extraction.memory_extractor import MemoryExtractor, ExtractionResult
@@ -25,6 +26,16 @@ from components.retrieval.memory_retriever import MemoryRetriever, RetrievalResu
 from components.coreference.coreference_resolver import CoreferenceResolver, CoreferenceResult
 from components.extraction.assisted_extractor import AssistedExtractor, AssistedExtractionResult
 from components.session.session_store import get_session_store, SessionMessage
+
+# Result dataclass for process_turn
+@dataclass
+class ProcessTurnResult:
+    """Result of processing a conversation turn"""
+    bullets: List[str]
+    triples: List[Tuple[str, str, str]]
+    intent: IntentAnalysis
+    needs_retrieval: bool
+    needs_storage: bool
 
 # Preferred extraction path: strategy registry
 try:
@@ -125,11 +136,11 @@ class HotMemoryFacade:
         self.temporal_extractor = TemporalExtractor(temporal_config) if TemporalExtractor else None
 
         # Initialize Layer 4: Graph optimization
-        graph_config = {
+        config = {
             'graph_analysis_enabled': self.config.features.use_graph_analysis,
             'community_detection_enabled': True
         }
-        self.graph_analyzer = GraphAnalyzer(graph_config) if GraphAnalyzer else None
+        self.graph_analyzer = GraphAnalyzer(config) if GraphAnalyzer else None
         
         # Initialize session store for comprehensive session management
         self.session_store = get_session_store()
@@ -216,19 +227,37 @@ class HotMemoryFacade:
         # Pending edge properties
         self._pending_edge_props = {}
     
-    def process_turn(self, text: str, session_id: str, turn_id: int, user_id: str = None) -> Tuple[List[str], List[Tuple[str, str, str]]]:
+    def process_turn(self, text: str, session_id: str, turn_id: int, user_id: str = None) -> ProcessTurnResult:
+        """
+        Process a conversation turn - enhanced version with intent information
+        """
+        result = self._process_turn_internal(text, session_id, turn_id, user_id)
+        return result
+
+    def process_turn_legacy(self, text: str, session_id: str, turn_id: int, user_id: str = None) -> Tuple[List[str], List[Tuple[str, str, str]]]:
+        """
+        Legacy interface for backward compatibility
+        """
+        result = self._process_turn_internal(text, session_id, turn_id, user_id)
+        return result.bullets, result.triples
+
+    def _process_turn_internal(self, text: str, session_id: str, turn_id: int, user_id: str = None) -> ProcessTurnResult:
         """
         Process a conversation turn - same interface as original
         """
         start = time.perf_counter()
         
-        # Store user message verbatim
-        self.session_store.add_message(session_id, "user", text, turn_id)
+        # Store user message verbatim with timing
+        tracer = get_memory_tracer()
+        with tracer.time_operation("session_write", "session_store", session_id, turn_id, {"text_length": len(text)}):
+            self.session_store.add_message(session_id, "user", text, turn_id)
+
         # Index user text into FTS for retrieval fusion (session-scoped)
         try:
             now_ts = int(time.time() * 1000)
-            self.store.enqueue_mention(f"session:{session_id}", text[:500], now_ts, session_id, turn_id)
-            self.store.flush_if_needed()
+            with tracer.time_operation("fts_index", "store", session_id, turn_id, {"mention_length": len(text[:500])}):
+                self.store.enqueue_mention(f"session:{session_id}", text[:500], now_ts, session_id, turn_id)
+                self.store.flush_if_needed()
         except Exception:
             pass
         
@@ -251,10 +280,11 @@ class HotMemoryFacade:
             logger.debug(f"Skipping extraction for {intent.intent.value}: {text[:50]}...")
             # Only retrieve if SOTA classifier says we need to
             if needs_retrieval:
-                retrieve_start = time.perf_counter()
-                entities = self._extract_entities_light(text)
-                bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
-                self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
+                with tracer.time_operation("memory_retrieve", "retriever", session_id, turn_id, {"intent": intent.intent.value}):
+                    retrieve_start = time.perf_counter()
+                    entities = self._extract_entities_light(text)
+                    bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
+                    self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
             else:
                 bullets = []
                 logger.info(f"🎯 SOTA: Skipping retrieval for {intent.intent.value}")
@@ -266,7 +296,13 @@ class HotMemoryFacade:
             elapsed_ms = (time.perf_counter() - start) * 1000
             self.metrics['total_ms'].append(elapsed_ms)
             # Return no stored triples in this branch
-            return bullets, []
+            return ProcessTurnResult(
+                bullets=bullets,
+                triples=[],
+                intent=intent,
+                needs_retrieval=needs_retrieval,
+                needs_storage=needs_storage
+            )
         
         # Stage 1: Extract entities and relations using new extractor
         extract_start = time.perf_counter()
@@ -462,26 +498,31 @@ class HotMemoryFacade:
         
         # Store final triples and link to session (with per-triple confidence)
         if stored_triples:
-            for i, (s, r, d) in enumerate(stored_triples):
-                # Confidence from extractor props (fallback to 0.8)
-                props = self._pending_edge_props.get((s, r, d)) or {}
-                try:
-                    conf = float(props.get('confidence', 0.8) or 0.8)
-                except Exception:
-                    conf = 0.8
-                # Persist edge with observed confidence
-                self.store.observe_edge(s, r, d, conf, now_ts + i)
-                # Mentions for FTS
-                self.store.enqueue_mention(s, f"{s} {r} {d}", now_ts + i, session_id, i)
-                self.store.enqueue_mention(d, f"{s} {r} {d}", now_ts + i, session_id, i)
-                # Persist edge metadata with extractor props
-                if props:
-                    self.store.enqueue_edge_meta(s, r, d, prov=prov_tag, lang=lang, span=None, props=props, ts=now_ts + i)
-                # Link extracted knowledge to session
-                edge_id = self.store.edge_id(s, r, d)
-                self.session_store.link_knowledge_to_session(session_id, edge_id, "extracted", conf)
-            # Ensure persistence
-            self.store.flush()
+            # Store triples with detailed timing
+            with tracer.time_operation("memory_write_batch", "store", session_id, turn_id, {"triple_count": len(stored_triples)}):
+                for i, (s, r, d) in enumerate(stored_triples):
+                    # Confidence from extractor props (fallback to 0.8)
+                    props = self._pending_edge_props.get((s, r, d)) or {}
+                    try:
+                        conf = float(props.get('confidence', 0.8) or 0.8)
+                    except Exception:
+                        conf = 0.8
+
+                    # Persist edge with observed confidence
+                    self.store.observe_edge(s, r, d, conf, now_ts + i)
+                    # Mentions for FTS
+                    self.store.enqueue_mention(s, f"{s} {r} {d}", now_ts + i, session_id, i)
+                    self.store.enqueue_mention(d, f"{s} {r} {d}", now_ts + i, session_id, i)
+                    # Persist edge metadata with extractor props
+                    if props:
+                        self.store.enqueue_edge_meta(s, r, d, prov=prov_tag, lang=lang, span=None, props=props, ts=now_ts + i)
+                    # Link extracted knowledge to session
+                    edge_id = self.store.edge_id(s, r, d)
+                    self.session_store.link_knowledge_to_session(session_id, edge_id, "extracted", conf)
+
+                # Ensure persistence - time the flush separately
+            with tracer.time_operation("memory_flush", "store", session_id, turn_id, {"operation": "batch_persist"}):
+                self.store.flush()
         
         # Track performance
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -489,8 +530,14 @@ class HotMemoryFacade:
         
         # Memory summary line
         logger.info(f"[HotMem] Summary: saved={len(stored_triples)}, pending_bullets={len(bullets)}, turn={turn_id}")
-        
-        return bullets, stored_triples
+
+        return ProcessTurnResult(
+            bullets=bullets,
+            triples=stored_triples,
+            intent=intent,
+            needs_retrieval=needs_retrieval,
+            needs_storage=needs_storage
+        )
 
     def _extract_with_registry(self, text: str, lang: str) -> ExtractionResult:
         """Extract via strategy registry using default/fallback strategies.
@@ -500,8 +547,8 @@ class HotMemoryFacade:
             if not self._extraction_registry:
                 return ExtractionResult([], [], 0, None)
 
-            default_name = os.getenv('DEFAULT_EXTRACTION_STRATEGY', 'asi1')
-            fallback_name = os.getenv('FALLBACK_EXTRACTION_STRATEGY', 'asi2')
+            default_name = os.getenv('DEFAULT_EXTRACTION_STRATEGY', 'enhanced_level3')
+            fallback_name = os.getenv('FALLBACK_EXTRACTION_STRATEGY', '')
 
             def run(name: str):
                 try:
@@ -584,8 +631,10 @@ class HotMemoryFacade:
     
     def store_assistant_response(self, session_id: str, response: str, turn_id: int):
         """Store assistant response and generate session summary if needed"""
-        # Store assistant message verbatim
-        self.session_store.add_message(session_id, "assistant", response, turn_id)
+        # Store assistant message verbatim with timing
+        tracer = get_memory_tracer()
+        with tracer.time_operation("assistant_write", "session_store", session_id, turn_id, {"response_length": len(response)}):
+            self.session_store.add_message(session_id, "assistant", response, turn_id)
 
         # Check if summarizer is enabled
         if not os.getenv("SUMMARIZER_ENABLED", "false").lower() in ("true", "1", "yes"):
