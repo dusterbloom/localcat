@@ -173,7 +173,7 @@ class MultilingualGraphExtractor:
         if lang not in self.nlp_cache:
             # Try transformer models first for better accuracy
             transformer_models = {
-                "en": "en_core_web_rtf",
+                "en": "en_core_web_trf",
                 "de": "de_dep_news_trf", 
                 "fr": "fr_dep_news_trf",
                 "es": "es_dep_news_trf",

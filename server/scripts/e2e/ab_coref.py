@@ -38,7 +38,7 @@ def preset_env(preset: str) -> None:
     os.environ.setdefault('DEFAULT_EXTRACTION_STRATEGY', 'enhanced_level3')
     os.environ.setdefault('HOTMEM_ROUTE_TO_REGISTRY', 'true')
     if preset == 'trf':
-        os.environ['ENHANCED_LEVEL3_SPACY_MODEL'] = 'en_core_web_rtf'
+        os.environ['ENHANCED_LEVEL3_SPACY_MODEL'] = 'en_core_web_trf'
         os.environ.setdefault('ENHANCED_LEVEL3_ENTITY_CONF', '0.65')
         os.environ.setdefault('ENHANCED_LEVEL3_RELATION_CONF', '0.55')
         os.environ.setdefault('ENHANCED_LEVEL3_TARGET_REL', '40')

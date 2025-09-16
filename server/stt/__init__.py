@@ -10,7 +10,6 @@ try:
     HAS_MLX_AUDIO = True
 except ImportError:
     HAS_MLX_AUDIO = False
-    logger.warning("MLX Audio not available, STT functionality will be limited")
 
 
 class STTProcessor:

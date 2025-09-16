@@ -116,9 +116,9 @@ class HotPathMemoryProcessor(BaseProcessor):
         # Store user ID for session management
         self.user_id = user_id
         
-        # Session tracking - unified approach using user_id as primary session identifier
+        # Session tracking - generate unique session ID with timestamp
         self._turn_id = 0
-        self._session_id = user_id  # Primary session identifier (user_id-based)
+        self._session_id = f"session_{int(time.time())}_{user_id}"  # Unique session ID
         self._session_start_time = int(time.time())  # Track session start time
         self._enable_metrics = enable_metrics
         self._pending_bullets: List[str] = []
@@ -220,10 +220,6 @@ class HotPathMemoryProcessor(BaseProcessor):
     def _ensure_session(self):
         """Ensure we have a session created in SessionStore"""
         try:
-            # If _session_id is same as user_id, generate a proper unique session_id
-            if self._session_id == self.user_id:
-                self._session_id = f"session_{int(time.time())}_{self.user_id}"
-
             # Create or get session with unique session_id
             self.session_store.create_session(self.user_id, self._session_id)
             logger.debug(f"📝 Session ensured: {self._session_id} for user: {self.user_id}")

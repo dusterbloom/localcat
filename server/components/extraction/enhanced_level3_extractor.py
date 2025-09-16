@@ -41,7 +41,7 @@ class QualityExtractor:
     """Enhanced extractor focused on quality over quantity.
 
     Thresholds and targets are configurable to allow tuning with different spaCy models
-    (e.g., en_core_web_sm vs en_core_web_rtf).
+    (e.g., en_core_web_sm vs en_core_web_trf).
     """
 
     def __init__(self,

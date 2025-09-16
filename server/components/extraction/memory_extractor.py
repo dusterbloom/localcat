@@ -420,7 +420,7 @@ def _load_nlp(lang: str = "en"):
     try:
         # Try to load the English model
         try:
-            nlp = spacy.load("en_core_web_rtf")
+            nlp = spacy.load("en_core_web_trf")
             _GLOBAL_MODEL_CACHE['spacy_models'][lang] = nlp
             return nlp
         except Exception:

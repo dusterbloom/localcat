@@ -10,7 +10,7 @@ try:
     HAS_MLX_AUDIO = True
 except ImportError:
     HAS_MLX_AUDIO = False
-    logger.warning("MLX Audio not available, TTS functionality will be limited")
+    # logger.warning("MLX Audio not available, TTS functionality will be limited")
 
 
 class TTSProcessor:

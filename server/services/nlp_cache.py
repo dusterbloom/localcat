@@ -13,19 +13,18 @@ from loguru import logger
 _SPACY_CACHE: Dict[Tuple[str, Tuple[str, ...]], object] = {}
 
 
-def resolve_model_alias(model_name: str) -> str:
-    """Normalize common aliases (e.g., en_core_web_rtf -> en_core_web_rtf)."""
-    if not model_name:
-        return 'en_core_web_sm'
-    if model_name.endswith('_rtf') or model_name == 'en_core_web_rtf':
-        logger.warning("Model alias detected: 'en_core_web_rtf' -> 'en_core_web_rtf'")
-        return model_name.replace('_rtf', '_trf')
-    return model_name
+# def resolve_model_alias(model_name: str) -> str:
+#     """Normalize common aliases (e.g., en_core_web_trf -> en_core_web_trf)."""
+#     if not model_name:
+#         return 'en_core_web_sm'
+#     if model_name.endswith('_rtf') or model_name == 'en_core_web_trf':
+#         return model_name.replace('_rtf', '_trf')
+#     return model_name
 
 
 def get_spacy(model_name: str, disable: Optional[Iterable[str]] = None):
     """Get a cached spaCy model instance for the given model name and disabled pipes."""
-    model_name = resolve_model_alias(model_name)
+    
     disable_tuple = tuple(disable or ())
     key = (model_name, disable_tuple)
     if key in _SPACY_CACHE:

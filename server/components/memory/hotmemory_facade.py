@@ -253,7 +253,7 @@ class HotMemoryFacade:
             if needs_retrieval:
                 retrieve_start = time.perf_counter()
                 entities = self._extract_entities_light(text)
-                bullets = self._retrieve_context(text, entities, turn_id, intent=intent, session_id=session_id, user_id=user_id)
+                bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
                 self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
             else:
                 bullets = []
@@ -458,7 +458,7 @@ class HotMemoryFacade:
             self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
         else:
             bullets = []
-            logger.info(f"🎯 SOTA: Skipping retrieval for {intent.intent.value} (saved {self.config.retrieval_limit} lookups)")
+            logger.info(f"🎯 SOTA: Skipping retrieval for {intent.intent.value}")
         
         # Store final triples and link to session (with per-triple confidence)
         if stored_triples:
@@ -586,10 +586,32 @@ class HotMemoryFacade:
         """Store assistant response and generate session summary if needed"""
         # Store assistant message verbatim
         self.session_store.add_message(session_id, "assistant", response, turn_id)
-        
-        # Generate session summary every few turns or at session end
+
+        # Check if summarizer is enabled
+        if not os.getenv("SUMMARIZER_ENABLED", "false").lower() in ("true", "1", "yes"):
+            return
+
+        # Use SUMMARIZER_INTERVAL_SECS for time-based summaries
+        # Since we're in a turn-based system, we can use SUMMARIZER_MAX_MESSAGES as a proxy
+        max_messages = int(os.getenv("SUMMARIZER_MAX_MESSAGES", "60"))
+
+        # Only check for summary generation if we have enough messages
         conversation = self.session_store.get_session_conversation(session_id)
-        if len(conversation) >= 4 or turn_id >= 10:  # Summary after 4 messages or 10 turns
+        if len(conversation) < 4:  # Too early for summaries
+            return
+
+        # Check window mode
+        window_mode = os.getenv("SUMMARIZER_WINDOW_MODE", "delta")
+
+        # For delta mode, only summarize when there are new messages since last summary
+        # For turn_pairs mode, use the SUMMARIZER_TURN_PAIRS setting
+        if window_mode == "turn_pairs":
+            turn_pairs = int(os.getenv("SUMMARIZER_TURN_PAIRS", "2"))
+            # Generate summary every N turn pairs (1 turn = user + assistant)
+            if turn_id > 0 and turn_id % (turn_pairs * 2) == 0:
+                self._generate_session_summary(session_id, conversation)
+        elif window_mode == "delta" and len(conversation) >= max_messages:
+            # Generate summary when we hit max messages threshold
             self._generate_session_summary(session_id, conversation)
     
     def _generate_session_summary(self, session_id: str, conversation: List[SessionMessage]):
@@ -792,9 +814,9 @@ class HotMemoryFacade:
         return triples
     
     # Legacy method for backward compatibility
-    def _retrieve_context(self, query: str, entities: List[str], turn_id: int, intent=None, session_id: str = None, user_id: str = None) -> List[str]:
+    def _retrieve_context(self, query: str, entities: List[str], turn_id: int, intent=None) -> List[str]:
         """Legacy method for backward compatibility"""
-        result = self.retriever.retrieve_context(query, entities, turn_id, intent=intent, session_id=session_id, user_id=user_id)
+        result = self.retriever.retrieve_context(query, entities, turn_id, intent=intent)
         return result.bullets
     
     # Legacy prewarm method

@@ -2399,7 +2399,7 @@ integration_guide:
         ultragrok_config = yaml.safe_load(f)
     
     # 2. Initialize spaCy (auto-detects language)
-    nlp = spacy.load("en_core_web_rtf")  # High accuracy for English
+    nlp = spacy.load("en_core_web_trf")  # High accuracy for English
     # For multilingual: nlp = spacy.load("xx_ent_wiki_sm")
     
     # 3. Process any text (Level 3: any complexity, any language)

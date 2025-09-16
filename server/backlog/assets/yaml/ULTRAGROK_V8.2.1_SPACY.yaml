@@ -1264,7 +1264,7 @@ validation:
     multi_language_support: true
 
 production_config:
-  spacy_model: "en_core_web_sm"  # Fast, or "en_core_web_rtf" for higher accuracy
+  spacy_model: "en_core_web_sm"  # Fast, or "en_core_web_trf" for higher accuracy
   yaml_file: "ULTRAGROK_V8.2.1_SPACY.yaml"
   processing:
     batch_size: 50

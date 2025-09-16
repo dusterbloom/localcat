@@ -134,7 +134,7 @@ class _AsiYamlAdapter:
 
         # Pick defaults if not provided
         self.yaml_path = yaml_path or str(base_dir / 'ULTRAGROK_V8.2.1_SPACY.yaml')
-        self.spacy_model = spacy_model or os.getenv('ASI_SPACY_MODEL', 'en_core_web_rtf')
+        self.spacy_model = spacy_model or os.getenv('ASI_SPACY_MODEL', 'en_core_web_trf')
 
         # Ensure server directory is on sys.path for importing asi1_processor
         try:

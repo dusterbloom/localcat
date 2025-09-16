@@ -83,7 +83,7 @@ Output only the JSON array, no explanation:"""
     
     def _load_spacy_model(self) -> spacy.Language:
         """Load best available spaCy model."""
-        models = ["en_core_web_rtf", "en_core_web_lg", "en_core_web_md", "en_core_web_sm"]
+        models = ["en_core_web_trf", "en_core_web_lg", "en_core_web_md", "en_core_web_sm"]
         for model_name in models:
             try:
                 nlp = spacy.load(model_name)
