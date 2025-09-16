@@ -186,7 +186,21 @@ class EnhancedRuleClassifierV2:
             ('INTJ' in pos_tags or '!' in text)):
             return self._create_result(IntentType.REACTION, 0.85, retrieve=False, store=False)
 
-        # Correction: Negation at start or correction lemmas
+        # Correction: Negation at start or correction lemmas + temporal corrections
+        correction_patterns = [
+            r'\bno\b.*\bi?\s*(mean|meant|said)',
+            r'\bactually\b.*(not|wrong|different)',
+            r'\bwait\b.*(no|i?\s*(mean|meant))',
+            r'\bsorry\b.*(wrong|mistake)',
+            r'\bi\s*(think|believe)\s+(you|it)\s*(have|got)\s*(wrong|incorrect)',
+            r'\bcorrection\b', r'\bcorrect\s+(that|me)',
+            r'\bno(t\s+(really|actually))?\b.*\b(is|are|was|were)\b',  # Temporal corrections like "No, I was there since 2020"
+        ]
+
+        if any(re.search(pat, text_lower, re.IGNORECASE) for pat in correction_patterns):
+            return self._create_result(IntentType.CORRECTION, 0.9, retrieve=True, store=True)
+
+        # Legacy negation check as fallback
         if (first_token.lemma_ in self.correction_lemmas or
             (first_token.dep_ == 'neg' or first_token.pos_ == 'PART')):
             # Check for negation + assertion pattern
@@ -239,8 +253,17 @@ class EnhancedRuleClassifierV2:
 
         # === PRIORITY 4: Facts and Statements ===
 
-        # Temporal fact: Has DATE/TIME entities
+        # Temporal fact: Has DATE/TIME entities + explicit temporal queries
         has_temporal = bool(pos_tags & self.temporal_pos)
+
+        # Temporal queries: When/How long/Since patterns
+        temporal_query_patterns = [
+            r'\b(when|how long|since|until|before|after)\b.*\?(?:\s|$)',
+            r'\bwhat\s+(time|date|day|year)\b',
+            r'\b(is|are|was|were)\s+(it|he|she|they|this|that)\s+(since|from|starting|beginning)\b',
+        ]
+
+        is_temporal_query = any(re.search(pat, text_lower, re.IGNORECASE) for pat in temporal_query_patterns)
 
         # Factual statement: Has subject + verb/copula + object/complement
         has_subject = 'nsubj' in dep_labels or 'nsubjpass' in dep_labels
@@ -250,8 +273,15 @@ class EnhancedRuleClassifierV2:
         # Personal fact: Possessive pronouns
         has_possessive = 'PRON' in pos_tags and any(t.tag_ == 'PRP$' for t in tokens)
 
-        if has_temporal or (has_subject and has_verb) or has_possessive:
-            return self._create_result(IntentType.FACT, 0.75, retrieve=False, store=True)
+        # Enhanced fact detection with temporal
+        if (has_temporal and (has_subject and has_verb)) or is_temporal_query or has_possessive:
+            # Temporal facts need retrieval for context (e.g., "since 2020" links to employment)
+            requires_retrieve = is_temporal_query or has_temporal
+            return self._create_result(IntentType.FACT, 0.8 if has_temporal else 0.75, retrieve=requires_retrieve, store=True)
+
+        # Basic fact detection: Simple declarative sentence structure
+        if has_subject and has_verb and (has_object or len(tokens) > 3):
+            return self._create_result(IntentType.FACT, 0.7, retrieve=False, store=True)
 
         # === DEFAULT ===
         return self._create_result(IntentType.UNKNOWN, 0.3, retrieve=True, store=False)

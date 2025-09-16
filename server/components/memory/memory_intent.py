@@ -39,6 +39,8 @@ class IntentAnalysis:
     embedded_facts_likely: bool
     temporal_markers: List[str]
     correction_signals: List[str]
+    requires_memory: bool = False
+    requires_retrieval: bool = False
     
     
 class IntentClassifier:
@@ -333,12 +335,10 @@ def get_intent_classifier() -> IntentClassifier:
                             should_extract_facts=result.requires_memory,
                             embedded_facts_likely=result.requires_memory,
                             temporal_markers=[],
-                            correction_signals=["correction"] if old_intent == IntentType.CORRECTION else []
+                            correction_signals=["correction"] if old_intent == IntentType.CORRECTION else [],
+                            requires_memory=result.requires_memory,
+                            requires_retrieval=result.requires_retrieval
                         )
-
-                        # Add SOTA-specific attributes for new code paths
-                        analysis.requires_memory = result.requires_memory
-                        analysis.requires_retrieval = result.requires_retrieval
 
                         return analysis
 
@@ -390,12 +390,10 @@ def get_intent_classifier() -> IntentClassifier:
                             should_extract_facts=result.requires_memory,
                             embedded_facts_likely=result.requires_memory,
                             temporal_markers=[],
-                            correction_signals=["correction"] if old_intent == IntentType.CORRECTION else []
+                            correction_signals=["correction"] if old_intent == IntentType.CORRECTION else [],
+                            requires_memory=result.requires_memory,
+                            requires_retrieval=result.requires_retrieval
                         )
-
-                        # Add V2-specific attributes for new code paths
-                        analysis.requires_memory = result.requires_memory
-                        analysis.requires_retrieval = result.requires_retrieval
 
                         return analysis
 
