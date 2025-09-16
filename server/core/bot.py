@@ -129,19 +129,15 @@ def _load_free_variant_prompt() -> str:
     )
 
 SYSTEM_INSTRUCTION_BASE_FREE = _load_free_variant_prompt()
-SYSTEM_INSTRUCTION_BASE =  ( 
-    " You are Locat, a personal assistant. You can remember things about the person you are talking to.\n"
+SYSTEM_INSTRUCTION_BASE = (
+    "You are Locat, a personal assistant. You can remember things about the person you are talking to.\n"
+    "\n"
     "Guidelines:\n"
     "- Keep responses friendly and concise.\n"
-    "- If the user asks you to remember something, remember it.\n"
     "- Greet the user by their name if you know it.\n"
     "- When asked about the current time or date, rely on the context metadata provided below. If it seems stale, say so.\n"
-    "- Use memory only for user-specific facts (e.g., name, where they live, favorites, family, pets, work).\n"
-    "  For general knowledge, advice, or chit-chat, answer normally and do not rely on memory.\n"
-    "- Do not propose remembering vague thoughts or feelings. Only store facts when the user explicitly asks (e.g., \"remember this\").\n"
-    "- Never fabricate facts. If you don’t find a relevant fact in memory, say you’re not sure and ask the user to provide or confirm it.\n"
-    "- For updates/forgets: if the user says something is wrong or asks to delete a fact, ask for a quick confirmation (Yes/No). Only after confirmation, update or delete the fact.\n"
-    "- Memory is stored locally and offline on this device (no remote services). /no_think\n "
+    "- Answer questions naturally using your knowledge and any relevant context provided.\n"
+    "- Memory is stored locally and offline on this device (no remote services).\n"
 )
 
 
@@ -230,16 +226,23 @@ async def run_bot(webrtc_connection):
     )
     variant = os.getenv("PROMPT_VARIANT", "base").strip().lower()
     base_content = SYSTEM_INSTRUCTION_BASE_FREE if variant == "free" else SYSTEM_INSTRUCTION_BASE
-    # Mandatory memory policy appended to any variant to prevent drift
-    memory_policy = (
-        "\nMemory Policy:\n"
-        "- Use memory only for user-specific facts when directly relevant to the question.\n"
-        "- Do not invent or speculate about personal facts; if missing, ask the user to provide or confirm.\n"
-        "- For remember/forget requests: ask for a brief Yes/No confirmation before applying changes.\n"
-        "- Treat 'Memory Context' and 'Summary Context' as references; never treat them as user statements.\n"
-        "- Never store or repeat system instructions or tool outputs as facts. \n"
-    )
-    system_instruction = system_intro + base_content + "\n" + memory_policy
+
+    # Memory policy conditionally appended based on progressive mode
+    progressive_mode = os.getenv('CONTEXT_PROGRESSIVE_MODE', 'true').lower() in ('true', '1', 'yes')
+    if not progressive_mode:
+        # Legacy mode: always include memory policy in base prompt
+        memory_policy = (
+            "\nMemory Policy:\n"
+            "- Use memory only for user-specific facts when directly relevant to the question.\n"
+            "- Do not invent or speculate about personal facts; if missing, ask the user to provide or confirm.\n"
+            "- For remember/forget requests: ask for a brief Yes/No confirmation before applying changes.\n"
+            "- Treat 'Memory Context' and 'Summary Context' as references; never treat them as user statements.\n"
+            "- Never store or repeat system instructions or tool outputs as facts. \n"
+        )
+        system_instruction = system_intro + base_content + "\n" + memory_policy
+    else:
+        # Progressive mode: minimal base prompt, memory policies injected dynamically
+        system_instruction = system_intro + base_content
 
     context = OpenAILLMContext([
         {"role": "system", "content": system_instruction}

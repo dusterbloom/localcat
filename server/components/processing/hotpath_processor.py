@@ -623,6 +623,9 @@ class HotPathMemoryProcessor(BaseProcessor):
                 except Exception:
                     budget_tokens = 4096
 
+                # Progressive mode: only inject memory/summary instructions when content exists
+                progressive_mode = os.getenv('CONTEXT_PROGRESSIVE_MODE', 'true').lower() in ('true', '1', 'yes')
+
                 new_messages, stats = pack_context(
                     messages=messages,
                     memory_bullets=bullets_final,
@@ -631,6 +634,7 @@ class HotPathMemoryProcessor(BaseProcessor):
                     inject_role=self._inject_role,
                     inject_header=self._inject_header,
                     system_hint=self._reasoning_hint_text,
+                    progressive_mode=progressive_mode,
                 )
                 try:
                     logger.info(
