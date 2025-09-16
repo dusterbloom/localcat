@@ -8,13 +8,16 @@ import shutil
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from config.config import Config, EnvironmentType, get_config
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from core.config import Config, EnvironmentType, get_config
 from components.memory.memory_store import MemoryStore
-from processors.memory_processor import MemoryProcessor, MemoryProcessorConfig
-from processors.extraction_processor import ExtractionProcessor, ExtractionProcessorConfig
-from processors.quality_processor import QualityProcessor, QualityProcessorConfig
-from processors.context_processor import ContextProcessor, ContextProcessorConfig
-from core.pipeline_builder import PipelineBuilder, PipelineConfig
+from components.processing.hotpath_processor import HotPathMemoryProcessor as MemoryProcessor  # Renamed for compatibility
+from components.extraction.extraction_strategies import EnhancedLevel3ExtractionStrategy  # Direct import for registry
+from components.processing.quality_processor import QualityProcessor, QualityProcessorConfig
+from components.processing.context_processor import ContextProcessor, ContextProcessorConfig
+from components.core.pipeline_builder import PipelineBuilder, PipelineConfig
 
 
 @pytest.fixture

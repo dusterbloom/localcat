@@ -1,4 +1,93 @@
 
+# LocalCat Server Development Backlog - 2025 Bug Fix Summary
+
+## 🚨 CRITICAL BUG FIXES COMPLETED - September 2025
+
+This document summarizes all critical bug fixes and improvements implemented in September 2025 to address production issues and improve system reliability.
+
+---
+
+## 2025-09-16 23:45 - CRITICAL FIX: Test File Organization
+
+### 🔧 **HOUSEKEEPING: Clean Server Root Structure**
+
+**The Problem**: Server root directory was cluttered with test files, analysis scripts, and documentation:
+```
+❌ 15+ test_*.py files in server root
+❌ Debug scripts scattered throughout directory
+❌ Documentation files mixed with source code
+❌ Poor project structure affecting maintainability
+```
+
+**The Solution**: Comprehensive reorganization of server directory:
+```bash
+# Moved test files to organized structure
+mv test_*.py tests/
+mv analyze_*.py profile_*.py tests/
+mv clean_corrupted_fts.py tests/
+mv PROGRESSIVE_CONTEXT_SUMMARY.md docs/
+```
+
+**Results**:
+```
+✅ Clean server root with only essential files
+✅ All tests properly organized in tests/ folder
+✅ Analysis scripts available in tests/ for debugging
+✅ Documentation moved to docs/ folder
+✅ Better project structure and maintainability
+```
+
+**Files Moved**:
+- 15+ test_*.py files → tests/
+- analyze_*.py, profile_*.py → tests/
+- clean_corrupted_fts.py → tests/
+- PROGRESSIVE_CONTEXT_SUMMARY.md → docs/
+
+**Impact**: Improved project organization, easier navigation, and better separation of concerns.
+
+---
+
+## 2025-09-16 23:30 - CRITICAL FIX: Session Context Injection Logic
+
+### 🔧 **PRODUCTION BUG FIXED: Session Stats Not Included in System Prompt**
+
+**The Problem**: Session statistics were not being injected into the system prompt, causing the AI to lack awareness of conversation context:
+```
+❌ No session duration, turn count, or total sessions visible to AI
+❌ Session context only appeared when memory bullets existed
+❌ AI lacked context about conversation history and user engagement
+```
+
+**Root Cause**: Session context injection was tied to memory bullet availability. When no memory triples were extracted (common in simple conversations), session context was never added.
+
+**The Solution**: Separated session context injection from memory bullet injection:
+```python
+# OLD: Only inject when memory bullets exist
+if bullets and result.needs_retrieval:
+    # Add session context with memory bullets
+
+# NEW: Always inject session context independently
+include_session_context = os.getenv("HOTMEM_SESSION_CONTEXT", "true").lower() in ("1", "true", "yes")
+if include_session_context:
+    session_context = self.format_session_context()
+    # Inject regardless of memory bullets
+```
+
+**Results**:
+```
+✅ Session stats always visible: Current Session, Duration, Turns, Total Sessions
+✅ AI has context about conversation history and user engagement
+✅ Session context appears even when no memory is extracted
+✅ Compact formatting saves tokens while providing essential context
+```
+
+**Files Modified**:
+- `server/components/processing/hotpath_processor.py`: Separated session context injection (+25/-15 lines)
+
+**Testing**: Verified session context appears in system prompt regardless of memory extraction status.
+
+---
+
 ## 2025-09-16 10:50 - CRITICAL TTS FIX: Apostrophe Preservation in Emoji Removal
 
 ### 🔧 **PRODUCTION BUG FIXED: Broken Speech Pronunciation for Contractions**
