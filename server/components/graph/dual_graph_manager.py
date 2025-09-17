@@ -107,8 +107,9 @@ class DualGraphManager:
         
         for tid in expired_ids:
             triple = self.agent_triples.pop(tid)
-            self.agent_graph.remove_edge(triple.subject, triple.object_,
-                                         key=tuple(self.agent_graph[triple.subject][triple.object_].keys())[0])
+            # NetworkX DiGraph.remove_edge() only takes source and target nodes
+            if self.agent_graph.has_edge(triple.subject, triple.object_):
+                self.agent_graph.remove_edge(triple.subject, triple.object_)
             self.decayed_count += 1
             logger.debug(f"Decayed expired hypothesis: {triple.subject} {triple.predicate} {triple.object_}")
         
@@ -207,13 +208,19 @@ class DualGraphManager:
             G = nx.compose(self.agent_graph, self.user_graph)
         
         try:
-            partition = community_louvain.best_partition(G)
+            # Louvain requires undirected graphs, convert if directed
+            if G.is_directed():
+                G_undirected = G.to_undirected()
+            else:
+                G_undirected = G
+
+            partition = community_louvain.best_partition(G_undirected)
             community_groups = defaultdict(list)
             for node, comm_id in partition.items():
                 community_groups[comm_id].append(node)
-            
+
             communities = []
-            modularity = community_louvain.modularity(partition, G)
+            modularity = community_louvain.modularity(partition, G_undirected)
             for comm_id, nodes in community_groups.items():
                 if len(nodes) >= 2:  # Min size
                     subgraph = G.subgraph(nodes)
