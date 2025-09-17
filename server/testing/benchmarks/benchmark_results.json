@@ -1,0 +1,29 @@
+{
+  "timestamp": 1758114917.93389,
+  "configuration": "Loaded from .env",
+  "results": {
+    "Intent Classification": {
+      "success": true
+    },
+    "Memory Extraction": {
+      "success": true
+    },
+    "Context Building": {
+      "success": true
+    },
+    "Complex Retrieval": {
+      "success": false
+    },
+    "Full Pipeline": {
+      "success": false
+    }
+  },
+  "summary": {
+    "total_tests": 5,
+    "passed_tests": 3,
+    "success_rate": 0.6,
+    "recommendations": [
+      "All benchmarks within target thresholds!"
+    ]
+  }
+}
