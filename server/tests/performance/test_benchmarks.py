@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-\"\"\"V7 Performance Benchmarks: Target <150ms fused retrieval, <50ms dual traversal, <300ms E2E.\"\"\"
+"""V7 Performance Benchmarks: Target <150ms fused retrieval, <50ms dual traversal, <300ms E2E."""
 import pytest
 import time
 import asyncio
@@ -26,18 +26,18 @@ SAMPLE_TEXTS = [
 
 @pytest.fixture
 def mock_store(temp_dir):
-    \"\"\"Mock memory store for benchmarks.\"\"\"
+    """Mock memory store for benchmarks."""
     sqlite_path = str(temp_dir / "bench_memory.db")
     lmdb_dir = str(temp_dir / "bench_lmdb")
     return MemoryStore(sqlite_path=sqlite_path, lmdb_dir=lmdb_dir)
 
 @pytest.fixture
 def mock_facade(mock_store):
-    \"\"\"Mock HotMemoryFacade for benchmarks.\"\"\"
+    """Mock HotMemoryFacade for benchmarks."""
     return HotMemoryFacade(mock_store)
 
 def test_enhanced_level3_extraction():
-    \"\"\"Benchmark enhanced_level3 extraction speed (<150ms).\"\"\"
+    """Benchmark enhanced_level3 extraction speed (<150ms)."""
     extractor = QualityExtractor()
     nlp = spacy.load('en_core_web_sm')  # Fast model for benchmark
     
@@ -59,7 +59,7 @@ def test_enhanced_level3_extraction():
     assert avg_time < 150, f"Average extraction {avg_time:.1f}ms exceeds 150ms target"
 
 def test_dual_graph_traversal():
-    \"\"\"Benchmark 1-2 hop traversal (<50ms).\"\"\"
+    """Benchmark 1-2 hop traversal (<50ms)."""
     manager = DualGraphManager(max_hops=2)
     
     # Add sample triples
@@ -91,7 +91,7 @@ def test_dual_graph_traversal():
     assert traversal_time < 50, f"Traversal {traversal_time:.1f}ms > 50ms"
 
 def test_fused_retrieval():
-    \"\"\"Benchmark fused LEANN+FTS retrieval (<100ms).\"\"\"
+    """Benchmark fused LEANN+FTS retrieval (<100ms)."""
     from components.retrieval.memory_retriever import MemoryRetriever
     from components.memory.memory_store import MemoryStore
     import tempfile
@@ -129,7 +129,7 @@ def test_fused_retrieval():
     assert fused_time < 100, f"Fused retrieval {fused_time:.1f}ms > 100ms"
 
 def test_e2e_pipeline():
-    \"\"\"Benchmark full E2E pipeline (<300ms).\"\"\"
+    """Benchmark full E2E pipeline (<300ms)."""
     from core.pipeline_builder import PipelineBuilder
     from core.config import PipelineConfig
     
@@ -164,7 +164,7 @@ def test_e2e_pipeline():
     assert e2e_time < 300, f"E2E {e2e_time:.1f}ms > 300ms"
 
 def test_v7_vs_baseline():
-    \"\"\"Benchmark V7 vs baseline performance.\"\"\"
+    """Benchmark V7 vs baseline performance."""
     from components.extraction.enhanced_level3_extractor import QualityExtractor
     from components.extraction.extraction_strategies import Level3ExtractionStrategy  # Baseline
     

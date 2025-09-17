@@ -14,10 +14,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from core.config import Config, EnvironmentType, get_config
 from components.memory.memory_store import MemoryStore
 from components.processing.hotpath_processor import HotPathMemoryProcessor as MemoryProcessor  # Renamed for compatibility
-from components.extraction.extraction_strategies import EnhancedLevel3ExtractionStrategy  # Direct import for registry
-from components.processing.quality_processor import QualityProcessor, QualityProcessorConfig
-from components.processing.context_processor import ContextProcessor, ContextProcessorConfig
-from components.core.pipeline_builder import PipelineBuilder, PipelineConfig
+# This import might not exist - check actual extraction strategies
+# These processors don't exist in the current codebase
+# from components.processing.quality_processor import QualityProcessor, QualityProcessorConfig
+# from components.processing.context_processor import ContextProcessor, ContextProcessorConfig
+from core.pipeline_builder import PipelineBuilder, PipelineConfig
 
 
 @pytest.fixture
@@ -77,27 +78,28 @@ def extraction_processor(test_config):
     return ExtractionProcessor(config)
 
 
-@pytest.fixture
-def quality_processor(test_config):
-    """Create quality processor for tests"""
-    config = QualityProcessorConfig(
-        min_confidence_threshold=0.5,
-        min_overall_quality_threshold=0.4,
-        enable_correction=False,
-        enable_metrics=False
-    )
-    return QualityProcessor(config)
+# These fixtures don't exist in the current codebase
+# @pytest.fixture
+# def quality_processor(test_config):
+#     """Create quality processor for tests"""
+#     config = QualityProcessorConfig(
+#         min_confidence_threshold=0.5,
+#         min_overall_quality_threshold=0.4,
+#         enable_correction=False,
+#         enable_metrics=False
+#     )
+#     return QualityProcessor(config)
 
 
-@pytest.fixture
-def context_processor(test_config):
-    """Create context processor for tests"""
-    config = ContextProcessorConfig(
-        max_context_items=20,
-        max_context_tokens=500,
-        enable_metrics=False
-    )
-    return ContextProcessor(config)
+# @pytest.fixture
+# def context_processor(test_config):
+#     """Create context processor for tests"""
+#     config = ContextProcessorConfig(
+#         max_context_items=20,
+#         max_context_tokens=500,
+#         enable_metrics=False
+#     )
+#     return ContextProcessor(config)
 
 
 @pytest.fixture

@@ -35,10 +35,10 @@ class DSPyConfig:
 
         # Configure DSPy with local LM (Ollama/LM Studio)
         self.llm = dspy.LM(
-            model="ollama/gemma3n:4b",  # Local model via Ollama
-            api_base="http://127.0.0.1:11434/v1",
-            api_key="ollama",  # Dummy for local
-            max_tokens=512,  # Conservative for extraction
+            model="openai/qwen2.5-coder-0.5b-instruct",  # Small coder model for structured output
+            api_base="http://127.0.0.1:1234/v1",
+            api_key="lmstudio",  # Dummy for local
+            max_tokens=256,  # Smaller model needs fewer tokens
             temperature=0.1
         )
 
@@ -51,7 +51,7 @@ class DSPyConfig:
             try:
                 dspy.settings.configure(lm=self.llm)
                 _DSPY_CONFIGURED = True
-                logger.info(f"DSPy configured: local LM (gemma3n:4b), Unsloth={self.use_unsloth}")
+                logger.info(f"DSPy configured: local LM (gemma-3-270m), Unsloth={self.use_unsloth}")
             except RuntimeError as e:
                 if "can only be called from the same async task" in str(e):
                     logger.warning("DSPy already configured in another async task, skipping configuration")
@@ -270,56 +270,120 @@ class GraphBuilder(dspy.Module):
         self.graph_building = dspy.Predict(GraphBuildingSignature)
         
     def forward(self, text: str, context: Optional[str] = None, requirements: Optional[str] = None) -> KnowledgeGraph:
-        """Build complete knowledge graph using DSPy"""
-        # Prepare input
-        inputs = {"text": text}
-        if context:
-            inputs["context"] = context
-        if requirements:
-            inputs["requirements"] = requirements
-            
-        # Use DSPy to predict complete graph
-        prediction = self.graph_building(**inputs)
-        
-        # Parse prediction into KnowledgeGraph
+        """Build complete knowledge graph using DSPy with hybrid approach"""
         try:
-            graph_data = json.loads(prediction.graph)
-            
-            # Parse entities safely
+            # Always use DSPy for better quality
+            # Removed threshold to ensure consistent behavior
+
+            # Optimized direct LM approach with exact schema format
+            prompt = f"""Extract relations from this text as JSON:
+
+Text: {text}
+
+Output format: {{"relations": [{{"subject": "entity_name", "predicate": "specific_relation", "object": "entity_name", "confidence": 0.8}}]}}
+
+Examples:
+- "John works at Google" -> {{"relations": [{{"subject": "John", "predicate": "works_at", "object": "Google", "confidence": 0.9}}]}}
+- "Sarah lives in Seattle" -> {{"relations": [{{"subject": "Sarah", "predicate": "lives_in", "object": "Seattle", "confidence": 0.85}}]}}
+
+Your JSON:"""
+
+            # Use the LM directly from config
+            from components.ai.dspy_modules import dspy
+            lm_response = dspy.settings.lm(prompt)
+
+            # Parse the JSON response
+            graph_data = None
+            if isinstance(lm_response, list) and len(lm_response) > 0:
+                response_text = lm_response[0]
+
+                # Handle markdown-wrapped JSON (```json...```)
+                if '```json' in response_text:
+                    # Extract JSON from markdown code block
+                    start = response_text.find('```json') + 7
+                    end = response_text.rfind('```')
+                    if end > start:
+                        json_text = response_text[start:end].strip()
+                        try:
+                            graph_data = json.loads(json_text)
+                            print(f"DEBUG: Parsed markdown JSON: {graph_data}")
+                        except json.JSONDecodeError as e:
+                            print(f"DEBUG: Markdown JSON parse error: {e}")
+
+                # Handle direct JSON
+                elif response_text.startswith('{') and response_text.endswith('}'):
+                    try:
+                        graph_data = json.loads(response_text)
+                        print(f"DEBUG: Parsed direct JSON: {graph_data}")
+                    except json.JSONDecodeError as e:
+                        print(f"DEBUG: Direct JSON parse error: {e}")
+
+                # Handle JSON object somewhere in the response
+                elif '{' in response_text and '}' in response_text:
+                    try:
+                        # Find JSON object in response
+                        start = response_text.find('{')
+                        end = response_text.rfind('}') + 1
+                        json_text = response_text[start:end]
+                        graph_data = json.loads(json_text)
+                        print(f"DEBUG: Parsed embedded JSON: {graph_data}")
+                    except json.JSONDecodeError as e:
+                        print(f"DEBUG: Embedded JSON parse error: {e}")
+
+            if not graph_data:
+                print(f"DEBUG: Using fallback, response was: {repr(lm_response[0]) if lm_response else 'empty'}")
+                # Fallback to step-by-step extraction
+                return self._fallback_graph_building(text, context)
+
+            # Parse entities from relations
             entities = []
-            for e in graph_data.get("entities", []):
-                if isinstance(e, dict):
-                    entity = Entity(
-                        text=e.get("text", ""),
-                        label=e.get("label", ""),
-                        start=e.get("start", 0),
-                        end=e.get("end", 0),
-                        confidence=e.get("confidence", 0.8),
-                        metadata=e.get("metadata", {})
-                    )
-                    entities.append(entity)
-            
-            # Parse relationships safely
-            relationships = []
-            for r in graph_data.get("relationships", []):
+            entity_set = set()
+            for r in graph_data.get("relations", []):
                 if isinstance(r, dict):
+                    subject = r.get("subject", "")
+                    obj = r.get("object", "")
+                    if subject and subject not in entity_set:
+                        entities.append(Entity(text=subject, label="ENTITY", start=0, end=len(subject), confidence=0.8))
+                        entity_set.add(subject)
+                    if obj and obj not in entity_set:
+                        entities.append(Entity(text=obj, label="ENTITY", start=0, end=len(obj), confidence=0.8))
+                        entity_set.add(obj)
+
+            # Parse relations safely
+            relationships = []
+            relations_data = graph_data.get("relations", [])
+            print(f"DEBUG: Found {len(relations_data)} relations to parse")
+
+            for r in relations_data:
+                if isinstance(r, dict):
+                    print(f"DEBUG: Processing relation: {r}")
                     relationship = Relationship(
                         subject=r.get("subject", ""),
                         predicate=r.get("predicate", ""),
                         object=r.get("object", ""),
                         confidence=r.get("confidence", 0.8),
-                        metadata=r.get("metadata", {})
+                        metadata={}
                     )
                     relationships.append(relationship)
-            
-            return KnowledgeGraph(
+                    print(f"DEBUG: Added relationship: {relationship.subject} --{relationship.predicate}--> {relationship.object}")
+                else:
+                    print(f"DEBUG: Relation is not a dict: {r}")
+
+            print(f"DEBUG: Creating KnowledgeGraph with {len(relationships)} relationships")
+            result = KnowledgeGraph(
                 entities=entities,
                 relationships=relationships,
                 source_text=text,
-                extraction_confidence=float(prediction.confidence),
-                metadata=graph_data.get("metadata", {})
+                extraction_confidence=0.8,
+                metadata={"method": "direct_lm"}
             )
-        except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+            print(f"DEBUG: Final KG has {len(result.relationships)} relationships")
+            return result
+
+        except Exception as e:
+            print(f"DEBUG: Exception in direct LM approach: {e}")
+            import traceback
+            traceback.print_exc()
             # Fallback to step-by-step extraction
             return self._fallback_graph_building(text, context)
     

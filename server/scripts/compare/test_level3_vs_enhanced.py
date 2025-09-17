@@ -9,8 +9,8 @@ import sys
 # Ensure server root is importable
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from level3_universal_kg import UniversalKGExtractor
-from enhanced_level3_extractor import QualityExtractor
+from components.extraction.level3_universal_kg import UniversalKGExtractor
+from components.extraction.enhanced_level3_extractor import QualityExtractor
 
 def compare_extractors():
     # Test texts
