@@ -1,0 +1,528 @@
+{
+  "timestamp": 1758122354.62014,
+  "test_queries": [
+    {
+      "query": "Where does Michael work?",
+      "entities": [
+        "michael"
+      ],
+      "complexity": "low"
+    },
+    {
+      "query": "Tell me about Sarah",
+      "entities": [
+        "sarah"
+      ],
+      "complexity": "low"
+    },
+    {
+      "query": "Where do Michael and Sarah live?",
+      "entities": [
+        "michael",
+        "sarah"
+      ],
+      "complexity": "medium"
+    },
+    {
+      "query": "What do you know about Michael's job and where he lives?",
+      "entities": [
+        "michael"
+      ],
+      "complexity": "medium"
+    },
+    {
+      "query": "Tell me about people who work at Apple and where they live",
+      "entities": [
+        "apple"
+      ],
+      "complexity": "high"
+    },
+    {
+      "query": "What do you know about Michael's education and career history?",
+      "entities": [
+        "michael"
+      ],
+      "complexity": "high"
+    },
+    {
+      "query": "Where do people who studied computer science work?",
+      "entities": [
+        "computer science"
+      ],
+      "complexity": "high"
+    }
+  ],
+  "results": {
+    "original": [
+      {
+        "query": "Where does Michael work?",
+        "entities": [
+          "michael"
+        ],
+        "retriever_type": "original",
+        "timing_profile": {
+          "operation_name": "original_retrieval",
+          "total_time_ms": 7789.779332932085,
+          "expansion_time_ms": 0,
+          "gathering_time_ms": 0,
+          "mmr_time_ms": 0,
+          "query_length": 24,
+          "entity_count": 1,
+          "expanded_entity_count": 11,
+          "candidate_count": 36,
+          "bullet_count": 5,
+          "complexity_level": "low"
+        },
+        "bullet_count": 5,
+        "triple_count": 36
+      },
+      {
+        "query": "Tell me about Sarah",
+        "entities": [
+          "sarah"
+        ],
+        "retriever_type": "original",
+        "timing_profile": {
+          "operation_name": "original_retrieval",
+          "total_time_ms": 4.294292069971561,
+          "expansion_time_ms": 0,
+          "gathering_time_ms": 0,
+          "mmr_time_ms": 0,
+          "query_length": 19,
+          "entity_count": 1,
+          "expanded_entity_count": 12,
+          "candidate_count": 36,
+          "bullet_count": 5,
+          "complexity_level": "low"
+        },
+        "bullet_count": 5,
+        "triple_count": 36
+      },
+      {
+        "query": "Where do Michael and Sarah live?",
+        "entities": [
+          "michael",
+          "sarah"
+        ],
+        "retriever_type": "original",
+        "timing_profile": {
+          "operation_name": "original_retrieval",
+          "total_time_ms": 4.520624992437661,
+          "expansion_time_ms": 0,
+          "gathering_time_ms": 0,
+          "mmr_time_ms": 0,
+          "query_length": 32,
+          "entity_count": 2,
+          "expanded_entity_count": 12,
+          "candidate_count": 36,
+          "bullet_count": 5,
+          "complexity_level": "medium"
+        },
+        "bullet_count": 5,
+        "triple_count": 36
+      },
+      {
+        "query": "What do you know about Michael's job and where he lives?",
+        "entities": [
+          "michael"
+        ],
+        "retriever_type": "original",
+        "timing_profile": {
+          "operation_name": "original_retrieval",
+          "total_time_ms": 3.6845830036327243,
+          "expansion_time_ms": 0,
+          "gathering_time_ms": 0,
+          "mmr_time_ms": 0,
+          "query_length": 56,
+          "entity_count": 1,
+          "expanded_entity_count": 11,
+          "candidate_count": 36,
+          "bullet_count": 5,
+          "complexity_level": "medium"
+        },
+        "bullet_count": 5,
+        "triple_count": 36
+      },
+      {
+        "query": "Tell me about people who work at Apple and where they live",
+        "entities": [
+          "apple"
+        ],
+        "retriever_type": "original",
+        "timing_profile": {
+          "operation_name": "original_retrieval",
+          "total_time_ms": 2.9721249593421817,
+          "expansion_time_ms": 0,
+          "gathering_time_ms": 0,
+          "mmr_time_ms": 0,
+          "query_length": 58,
+          "entity_count": 1,
+          "expanded_entity_count": 8,
+          "candidate_count": 28,
+          "bullet_count": 5,
+          "complexity_level": "high"
+        },
+        "bullet_count": 5,
+        "triple_count": 28
+      },
+      {
+        "query": "What do you know about Michael's education and career history?",
+        "entities": [
+          "michael"
+        ],
+        "retriever_type": "original",
+        "timing_profile": {
+          "operation_name": "original_retrieval",
+          "total_time_ms": 3.740374930202961,
+          "expansion_time_ms": 0,
+          "gathering_time_ms": 0,
+          "mmr_time_ms": 0,
+          "query_length": 62,
+          "entity_count": 1,
+          "expanded_entity_count": 11,
+          "candidate_count": 36,
+          "bullet_count": 5,
+          "complexity_level": "high"
+        },
+        "bullet_count": 5,
+        "triple_count": 36
+      },
+      {
+        "query": "Where do people who studied computer science work?",
+        "entities": [
+          "computer science"
+        ],
+        "retriever_type": "original",
+        "timing_profile": {
+          "operation_name": "original_retrieval",
+          "total_time_ms": 0.13258308172225952,
+          "expansion_time_ms": 0,
+          "gathering_time_ms": 0,
+          "mmr_time_ms": 0,
+          "query_length": 50,
+          "entity_count": 1,
+          "expanded_entity_count": 1,
+          "candidate_count": 0,
+          "bullet_count": 0,
+          "complexity_level": "high"
+        },
+        "bullet_count": 0,
+        "triple_count": 0
+      }
+    ],
+    "optimized": [
+      {
+        "query": "Where does Michael work?",
+        "entities": [
+          "michael"
+        ],
+        "retriever_type": "optimized",
+        "timing_profile": {
+          "operation_name": "optimized_retrieval",
+          "total_time_ms": 0.7191670592874289,
+          "expansion_time_ms": 0.05625002086162567,
+          "gathering_time_ms": 0.48150005750358105,
+          "mmr_time_ms": 0.13554096221923828,
+          "query_length": 24,
+          "entity_count": 1,
+          "expanded_entity_count": 5,
+          "candidate_count": 0,
+          "bullet_count": 15,
+          "complexity_level": "low"
+        },
+        "bullet_count": 15,
+        "triple_count": 0
+      },
+      {
+        "query": "Tell me about Sarah",
+        "entities": [
+          "sarah"
+        ],
+        "retriever_type": "optimized",
+        "timing_profile": {
+          "operation_name": "optimized_retrieval",
+          "total_time_ms": 0.37712499033659697,
+          "expansion_time_ms": 0.03041699528694153,
+          "gathering_time_ms": 0.22095791064202785,
+          "mmr_time_ms": 0.0952079426497221,
+          "query_length": 19,
+          "entity_count": 1,
+          "expanded_entity_count": 5,
+          "candidate_count": 0,
+          "bullet_count": 15,
+          "complexity_level": "low"
+        },
+        "bullet_count": 15,
+        "triple_count": 0
+      },
+      {
+        "query": "Where do Michael and Sarah live?",
+        "entities": [
+          "michael",
+          "sarah"
+        ],
+        "retriever_type": "optimized",
+        "timing_profile": {
+          "operation_name": "optimized_retrieval",
+          "total_time_ms": 0.4172909539192915,
+          "expansion_time_ms": 0.043958891183137894,
+          "gathering_time_ms": 0.23666699416935444,
+          "mmr_time_ms": 0.10683294385671616,
+          "query_length": 32,
+          "entity_count": 2,
+          "expanded_entity_count": 7,
+          "candidate_count": 0,
+          "bullet_count": 15,
+          "complexity_level": "medium"
+        },
+        "bullet_count": 15,
+        "triple_count": 0
+      },
+      {
+        "query": "What do you know about Michael's job and where he lives?",
+        "entities": [
+          "michael"
+        ],
+        "retriever_type": "optimized",
+        "timing_profile": {
+          "operation_name": "optimized_retrieval",
+          "total_time_ms": 0.40054204873740673,
+          "expansion_time_ms": 0.027959002181887627,
+          "gathering_time_ms": 0.22858299780637026,
+          "mmr_time_ms": 0.11454103514552116,
+          "query_length": 56,
+          "entity_count": 1,
+          "expanded_entity_count": 5,
+          "candidate_count": 0,
+          "bullet_count": 15,
+          "complexity_level": "medium"
+        },
+        "bullet_count": 15,
+        "triple_count": 0
+      },
+      {
+        "query": "Tell me about people who work at Apple and where they live",
+        "entities": [
+          "apple"
+        ],
+        "retriever_type": "optimized",
+        "timing_profile": {
+          "operation_name": "optimized_retrieval",
+          "total_time_ms": 0.24516601115465164,
+          "expansion_time_ms": 0.022374908439815044,
+          "gathering_time_ms": 0.13512501027435064,
+          "mmr_time_ms": 0.06687501445412636,
+          "query_length": 58,
+          "entity_count": 1,
+          "expanded_entity_count": 3,
+          "candidate_count": 0,
+          "bullet_count": 8,
+          "complexity_level": "high"
+        },
+        "bullet_count": 8,
+        "triple_count": 0
+      },
+      {
+        "query": "What do you know about Michael's education and career history?",
+        "entities": [
+          "michael"
+        ],
+        "retriever_type": "optimized",
+        "timing_profile": {
+          "operation_name": "optimized_retrieval",
+          "total_time_ms": 0.3762500127777457,
+          "expansion_time_ms": 0.028791953809559345,
+          "gathering_time_ms": 0.219999928958714,
+          "mmr_time_ms": 0.0975829316303134,
+          "query_length": 62,
+          "entity_count": 1,
+          "expanded_entity_count": 5,
+          "candidate_count": 0,
+          "bullet_count": 15,
+          "complexity_level": "high"
+        },
+        "bullet_count": 15,
+        "triple_count": 0
+      },
+      {
+        "query": "Where do people who studied computer science work?",
+        "entities": [
+          "computer science"
+        ],
+        "retriever_type": "optimized",
+        "timing_profile": {
+          "operation_name": "optimized_retrieval",
+          "total_time_ms": 0.03825000021606684,
+          "expansion_time_ms": 0.009541981853544712,
+          "gathering_time_ms": 0.02054101787507534,
+          "mmr_time_ms": 0.0008749775588512421,
+          "query_length": 50,
+          "entity_count": 1,
+          "expanded_entity_count": 1,
+          "candidate_count": 0,
+          "bullet_count": 0,
+          "complexity_level": "high"
+        },
+        "bullet_count": 0,
+        "triple_count": 0
+      }
+    ]
+  },
+  "analysis": {
+    "original": {
+      "profiles": [
+        "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=7789.779332932085, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=24, entity_count=1, expanded_entity_count=11, candidate_count=36, bullet_count=5, complexity_level='low')",
+        "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=4.294292069971561, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=19, entity_count=1, expanded_entity_count=12, candidate_count=36, bullet_count=5, complexity_level='low')",
+        "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=4.520624992437661, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=32, entity_count=2, expanded_entity_count=12, candidate_count=36, bullet_count=5, complexity_level='medium')",
+        "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=3.6845830036327243, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=56, entity_count=1, expanded_entity_count=11, candidate_count=36, bullet_count=5, complexity_level='medium')",
+        "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=2.9721249593421817, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=58, entity_count=1, expanded_entity_count=8, candidate_count=28, bullet_count=5, complexity_level='high')",
+        "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=3.740374930202961, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=62, entity_count=1, expanded_entity_count=11, candidate_count=36, bullet_count=5, complexity_level='high')",
+        "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=0.13258308172225952, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=50, entity_count=1, expanded_entity_count=1, candidate_count=0, bullet_count=0, complexity_level='high')"
+      ],
+      "breakdown_percentages": {
+        "Entity Expansion": 0.0,
+        "Candidate Gathering": 0.0,
+        "MMR Selection": 0.0
+      },
+      "avg_total_time": 1115.5891308527705,
+      "p95_total_time": 12460.934557695873
+    },
+    "optimized": {
+      "profiles": [
+        "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.7191670592874289, expansion_time_ms=0.05625002086162567, gathering_time_ms=0.48150005750358105, mmr_time_ms=0.13554096221923828, query_length=24, entity_count=1, expanded_entity_count=5, candidate_count=0, bullet_count=15, complexity_level='low')",
+        "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.37712499033659697, expansion_time_ms=0.03041699528694153, gathering_time_ms=0.22095791064202785, mmr_time_ms=0.0952079426497221, query_length=19, entity_count=1, expanded_entity_count=5, candidate_count=0, bullet_count=15, complexity_level='low')",
+        "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.4172909539192915, expansion_time_ms=0.043958891183137894, gathering_time_ms=0.23666699416935444, mmr_time_ms=0.10683294385671616, query_length=32, entity_count=2, expanded_entity_count=7, candidate_count=0, bullet_count=15, complexity_level='medium')",
+        "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.40054204873740673, expansion_time_ms=0.027959002181887627, gathering_time_ms=0.22858299780637026, mmr_time_ms=0.11454103514552116, query_length=56, entity_count=1, expanded_entity_count=5, candidate_count=0, bullet_count=15, complexity_level='medium')",
+        "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.24516601115465164, expansion_time_ms=0.022374908439815044, gathering_time_ms=0.13512501027435064, mmr_time_ms=0.06687501445412636, query_length=58, entity_count=1, expanded_entity_count=3, candidate_count=0, bullet_count=8, complexity_level='high')",
+        "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.3762500127777457, expansion_time_ms=0.028791953809559345, gathering_time_ms=0.219999928958714, mmr_time_ms=0.0975829316303134, query_length=62, entity_count=1, expanded_entity_count=5, candidate_count=0, bullet_count=15, complexity_level='high')",
+        "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.03825000021606684, expansion_time_ms=0.009541981853544712, gathering_time_ms=0.02054101787507534, mmr_time_ms=0.0008749775588512421, query_length=50, entity_count=1, expanded_entity_count=1, candidate_count=0, bullet_count=0, complexity_level='high')"
+      ],
+      "breakdown_percentages": {
+        "Entity Expansion": 8.520262410760795,
+        "Candidate Gathering": 59.96500381727606,
+        "MMR Selection": 23.9901293142694
+      },
+      "avg_total_time": 0.36768443948988405,
+      "p95_total_time": 0.9002927225083113
+    }
+  },
+  "opportunities": [
+    {
+      "component": "Candidate Gathering",
+      "issue": "Slow candidate gathering (60.0% of time)",
+      "severity": "medium",
+      "suggestions": [
+        "Pre-filter entities before scoring",
+        "Implement batch scoring operations",
+        "Use more efficient similarity calculations"
+      ]
+    },
+    {
+      "component": "Memory Access",
+      "issue": "Linear search through entity index",
+      "severity": "medium",
+      "suggestions": [
+        "Implement better indexing for entities",
+        "Use more efficient data structures",
+        "Consider caching frequently accessed entities"
+      ]
+    },
+    {
+      "component": "Algorithm Selection",
+      "issue": "One-size-fits-all approach",
+      "severity": "medium",
+      "suggestions": [
+        "Use different strategies based on query complexity",
+        "Implement fallback to simpler algorithms",
+        "Add query-specific optimization paths"
+      ]
+    }
+  ],
+  "report": {
+    "performance_summary": {
+      "original_avg_ms": 1115.5891308527705,
+      "optimized_avg_ms": 0.36768443948988405,
+      "improvement_percent": 99.96704123146046
+    },
+    "complexity_analysis": {
+      "original": {
+        "profiles": [
+          "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=7789.779332932085, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=24, entity_count=1, expanded_entity_count=11, candidate_count=36, bullet_count=5, complexity_level='low')",
+          "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=4.294292069971561, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=19, entity_count=1, expanded_entity_count=12, candidate_count=36, bullet_count=5, complexity_level='low')",
+          "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=4.520624992437661, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=32, entity_count=2, expanded_entity_count=12, candidate_count=36, bullet_count=5, complexity_level='medium')",
+          "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=3.6845830036327243, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=56, entity_count=1, expanded_entity_count=11, candidate_count=36, bullet_count=5, complexity_level='medium')",
+          "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=2.9721249593421817, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=58, entity_count=1, expanded_entity_count=8, candidate_count=28, bullet_count=5, complexity_level='high')",
+          "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=3.740374930202961, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=62, entity_count=1, expanded_entity_count=11, candidate_count=36, bullet_count=5, complexity_level='high')",
+          "RetrievalTimingProfile(operation_name='original_retrieval', total_time_ms=0.13258308172225952, expansion_time_ms=0, gathering_time_ms=0, mmr_time_ms=0, query_length=50, entity_count=1, expanded_entity_count=1, candidate_count=0, bullet_count=0, complexity_level='high')"
+        ],
+        "breakdown_percentages": {
+          "Entity Expansion": 0.0,
+          "Candidate Gathering": 0.0,
+          "MMR Selection": 0.0
+        },
+        "avg_total_time": 1115.5891308527705,
+        "p95_total_time": 12460.934557695873
+      },
+      "optimized": {
+        "profiles": [
+          "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.7191670592874289, expansion_time_ms=0.05625002086162567, gathering_time_ms=0.48150005750358105, mmr_time_ms=0.13554096221923828, query_length=24, entity_count=1, expanded_entity_count=5, candidate_count=0, bullet_count=15, complexity_level='low')",
+          "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.37712499033659697, expansion_time_ms=0.03041699528694153, gathering_time_ms=0.22095791064202785, mmr_time_ms=0.0952079426497221, query_length=19, entity_count=1, expanded_entity_count=5, candidate_count=0, bullet_count=15, complexity_level='low')",
+          "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.4172909539192915, expansion_time_ms=0.043958891183137894, gathering_time_ms=0.23666699416935444, mmr_time_ms=0.10683294385671616, query_length=32, entity_count=2, expanded_entity_count=7, candidate_count=0, bullet_count=15, complexity_level='medium')",
+          "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.40054204873740673, expansion_time_ms=0.027959002181887627, gathering_time_ms=0.22858299780637026, mmr_time_ms=0.11454103514552116, query_length=56, entity_count=1, expanded_entity_count=5, candidate_count=0, bullet_count=15, complexity_level='medium')",
+          "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.24516601115465164, expansion_time_ms=0.022374908439815044, gathering_time_ms=0.13512501027435064, mmr_time_ms=0.06687501445412636, query_length=58, entity_count=1, expanded_entity_count=3, candidate_count=0, bullet_count=8, complexity_level='high')",
+          "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.3762500127777457, expansion_time_ms=0.028791953809559345, gathering_time_ms=0.219999928958714, mmr_time_ms=0.0975829316303134, query_length=62, entity_count=1, expanded_entity_count=5, candidate_count=0, bullet_count=15, complexity_level='high')",
+          "RetrievalTimingProfile(operation_name='optimized_retrieval', total_time_ms=0.03825000021606684, expansion_time_ms=0.009541981853544712, gathering_time_ms=0.02054101787507534, mmr_time_ms=0.0008749775588512421, query_length=50, entity_count=1, expanded_entity_count=1, candidate_count=0, bullet_count=0, complexity_level='high')"
+        ],
+        "breakdown_percentages": {
+          "Entity Expansion": 8.520262410760795,
+          "Candidate Gathering": 59.96500381727606,
+          "MMR Selection": 23.9901293142694
+        },
+        "avg_total_time": 0.36768443948988405,
+        "p95_total_time": 0.9002927225083113
+      }
+    },
+    "bottlenecks": {
+      "original": [
+        "Entity Expansion",
+        0.0
+      ],
+      "optimized": [
+        "Candidate Gathering",
+        59.96500381727606
+      ]
+    },
+    "recommendations": [
+      {
+        "component": "Candidate Gathering",
+        "issue": "Slow candidate gathering (60.0% of time)",
+        "severity": "medium",
+        "suggestions": [
+          "Pre-filter entities before scoring",
+          "Implement batch scoring operations",
+          "Use more efficient similarity calculations"
+        ]
+      },
+      {
+        "component": "Memory Access",
+        "issue": "Linear search through entity index",
+        "severity": "medium",
+        "suggestions": [
+          "Implement better indexing for entities",
+          "Use more efficient data structures",
+          "Consider caching frequently accessed entities"
+        ]
+      },
+      {
+        "component": "Algorithm Selection",
+        "issue": "One-size-fits-all approach",
+        "severity": "medium",
+        "suggestions": [
+          "Use different strategies based on query complexity",
+          "Implement fallback to simpler algorithms",
+          "Add query-specific optimization paths"
+        ]
+      }
+    ]
+  }
+}

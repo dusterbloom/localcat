@@ -1,0 +1,911 @@
+{
+  "results": [
+    {
+      "test_case": {
+        "query": "Where does Michael work?",
+        "entities": [
+          "michael"
+        ],
+        "expected_bullets": 1,
+        "expected_entities": [
+          "michael",
+          "apple"
+        ],
+        "complexity": "low",
+        "category": "direct_lookup"
+      },
+      "original_result": {
+        "bullets": [
+          "\u2022 Michael lives in san francisco",
+          "\u2022 Michael parents lives in seattle",
+          "\u2022 Sarah works at google",
+          "\u2022 San francisco locateds in california",
+          "\u2022 Risd foundeds in 1877"
+        ],
+        "bullet_count": 5,
+        "entity_coverage": 0.5,
+        "relevance_score": 0.05,
+        "diversity_score": 0.8656746031746032,
+        "execution_time_ms": 3999.904541997239,
+        "timing_breakdown": {
+          "elapsed_ms": 3999.84870897606,
+          "candidates": 49,
+          "selected": 5,
+          "expanded_entities": 12
+        },
+        "candidate_count": 49,
+        "expansion_count": 12,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "optimized_result": {
+        "bullets": [
+          "michael lives_in san francisco",
+          "michael lives_in san francisco",
+          "michael works_at apple",
+          "michael works_at apple",
+          "sarah lives_in new york",
+          "michael graduated_in 2015",
+          "michael has_profession designer",
+          "michael also_known_as mike",
+          "michael also_known_as mike",
+          "michael studied_at risd",
+          "michael married_to sarah",
+          "michael has_parents michael parents",
+          "sarah works_at google",
+          "michael has_salary 120000",
+          "michael works_in_department design"
+        ],
+        "bullet_count": 15,
+        "entity_coverage": 1.0,
+        "relevance_score": 0.14126984126984127,
+        "diversity_score": 0.8239455782312926,
+        "execution_time_ms": 0.14512508641928434,
+        "timing_breakdown": {
+          "expand_ms": 0.010041985660791397,
+          "gather_ms": 0.10141590610146523,
+          "mmr_ms": 0.02575002145022154,
+          "total_ms": 0.14100002590566874
+        },
+        "candidate_count": 0,
+        "expansion_count": 5,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "performance_improvement": 99.99637178625402,
+      "quality_delta": 0.09126984126984126,
+      "winner": "optimized"
+    },
+    {
+      "test_case": {
+        "query": "Tell me about Sarah Chen",
+        "entities": [
+          "sarah chen"
+        ],
+        "expected_bullets": 2,
+        "expected_entities": [
+          "sarah",
+          "google",
+          "stanford"
+        ],
+        "complexity": "low",
+        "category": "direct_lookup"
+      },
+      "original_result": {
+        "bullets": [
+          "\u2022 Michael works at apple",
+          "\u2022 Sarah specializes in computer science",
+          "\u2022 Stanford locateds in palo alto",
+          "\u2022 Sarah parents have child sarah",
+          "\u2022 Parents lives in seattle"
+        ],
+        "bullet_count": 5,
+        "entity_coverage": 0.6666666666666666,
+        "relevance_score": 0.04722222222222222,
+        "diversity_score": 0.9371031746031746,
+        "execution_time_ms": 1.376542029902339,
+        "timing_breakdown": {
+          "elapsed_ms": 1.374834100715816,
+          "candidates": 59,
+          "selected": 5,
+          "expanded_entities": 12
+        },
+        "candidate_count": 59,
+        "expansion_count": 12,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "optimized_result": {
+        "bullets": [
+          "michael married_to sarah",
+          "sarah works_in_department engineering",
+          "sarah specializes_in computer science",
+          "sarah has_parents sarah parents",
+          "sarah also_known_as sarah chen",
+          "sarah also_known_as sarah chen",
+          "sarah married_to michael",
+          "sarah works_at google",
+          "sarah works_at google",
+          "sarah graduated_in 2017",
+          "sarah studied_at stanford",
+          "sarah parents have_child sarah",
+          "sarah has_profession software engineer",
+          "sarah lives_in new york",
+          "sarah lives_in new york"
+        ],
+        "bullet_count": 15,
+        "entity_coverage": 1.0,
+        "relevance_score": 0.16349206349206347,
+        "diversity_score": 0.7833560090702948,
+        "execution_time_ms": 0.06833299994468689,
+        "timing_breakdown": {
+          "expand_ms": 0.006749993190169334,
+          "gather_ms": 0.04166702274233103,
+          "mmr_ms": 0.014457968063652515,
+          "total_ms": 0.06579200271517038
+        },
+        "candidate_count": 0,
+        "expansion_count": 6,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "performance_improvement": 95.03589440349054,
+      "quality_delta": 0.11626984126984125,
+      "winner": "optimized"
+    },
+    {
+      "test_case": {
+        "query": "Where does Sarah live?",
+        "entities": [
+          "sarah"
+        ],
+        "expected_bullets": 1,
+        "expected_entities": [
+          "sarah",
+          "new york"
+        ],
+        "complexity": "low",
+        "category": "direct_lookup"
+      },
+      "original_result": {
+        "bullets": [
+          "\u2022 Michael lives in san francisco",
+          "\u2022 Parents lives in seattle",
+          "\u2022 Sarah specializes in computer science",
+          "\u2022 Stanford locateds in palo alto",
+          "\u2022 Sarah parents have child sarah"
+        ],
+        "bullet_count": 5,
+        "entity_coverage": 0.5,
+        "relevance_score": 0.05357142857142857,
+        "diversity_score": 0.8863095238095238,
+        "execution_time_ms": 1.3875829754397273,
+        "timing_breakdown": {
+          "elapsed_ms": 1.3863330241292715,
+          "candidates": 60,
+          "selected": 5,
+          "expanded_entities": 12
+        },
+        "candidate_count": 60,
+        "expansion_count": 12,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "optimized_result": {
+        "bullets": [
+          "michael lives_in san francisco",
+          "sarah lives_in new york",
+          "sarah lives_in new york",
+          "michael studied_at risd",
+          "michael works_at apple",
+          "michael married_to sarah",
+          "michael graduated_in 2015",
+          "michael has_profession designer",
+          "michael also_known_as mike",
+          "michael has_parents michael parents",
+          "michael married_to sarah",
+          "michael works_in_department design",
+          "sarah works_in_department engineering",
+          "sarah specializes_in computer science",
+          "sarah has_salary 150000"
+        ],
+        "bullet_count": 15,
+        "entity_coverage": 1.0,
+        "relevance_score": 0.073015873015873,
+        "diversity_score": 0.8640816326530613,
+        "execution_time_ms": 0.0865421025082469,
+        "timing_breakdown": {
+          "expand_ms": 0.006292015314102173,
+          "gather_ms": 0.054999953135848045,
+          "mmr_ms": 0.020165927708148956,
+          "total_ms": 0.08445803541690111
+        },
+        "candidate_count": 0,
+        "expansion_count": 5,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "performance_improvement": 93.76310433033228,
+      "quality_delta": 0.019444444444444438,
+      "winner": "optimized"
+    },
+    {
+      "test_case": {
+        "query": "Where do Michael and Sarah live?",
+        "entities": [
+          "michael",
+          "sarah"
+        ],
+        "expected_bullets": 2,
+        "expected_entities": [
+          "michael",
+          "sarah",
+          "san francisco",
+          "new york"
+        ],
+        "complexity": "medium",
+        "category": "multi_entity"
+      },
+      "original_result": {
+        "bullets": [
+          "\u2022 Sarah lives in new york",
+          "\u2022 Michael parents lives in seattle",
+          "\u2022 Michael is married to sarah",
+          "\u2022 Stanford locateds in palo alto",
+          "\u2022 Google specializes in internet services"
+        ],
+        "bullet_count": 5,
+        "entity_coverage": 0.75,
+        "relevance_score": 0.08444444444444445,
+        "diversity_score": 0.8972222222222223,
+        "execution_time_ms": 1.1505410075187683,
+        "timing_breakdown": {
+          "elapsed_ms": 1.149458927102387,
+          "candidates": 49,
+          "selected": 5,
+          "expanded_entities": 12
+        },
+        "candidate_count": 49,
+        "expansion_count": 12,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "optimized_result": {
+        "bullets": [
+          "michael works_at apple",
+          "sarah lives_in new york",
+          "michael married_to sarah",
+          "michael also_known_as mike",
+          "sarah specializes_in computer science",
+          "sarah works_in_department engineering",
+          "sarah has_salary 150000",
+          "sarah has_parents sarah parents",
+          "sarah works_at google",
+          "sarah works_at google",
+          "sarah graduated_in 2017",
+          "sarah studied_at stanford",
+          "sarah parents have_child sarah",
+          "sarah has_profession software engineer",
+          "sarah married_to michael"
+        ],
+        "bullet_count": 15,
+        "entity_coverage": 0.75,
+        "relevance_score": 0.14365079365079364,
+        "diversity_score": 0.8311564625850341,
+        "execution_time_ms": 0.07558299694210291,
+        "timing_breakdown": {
+          "expand_ms": 0.013750046491622925,
+          "gather_ms": 0.0399160198867321,
+          "mmr_ms": 0.016832957044243813,
+          "total_ms": 0.07358402945101261
+        },
+        "candidate_count": 0,
+        "expansion_count": 8,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "performance_improvement": 93.43065597417484,
+      "quality_delta": 0.05920634920634919,
+      "winner": "optimized"
+    },
+    {
+      "test_case": {
+        "query": "What do you know about Michael's job and education?",
+        "entities": [
+          "michael"
+        ],
+        "expected_bullets": 3,
+        "expected_entities": [
+          "michael",
+          "apple",
+          "designer",
+          "risd"
+        ],
+        "complexity": "medium",
+        "category": "multi_entity"
+      },
+      "original_result": {
+        "bullets": [
+          "\u2022 Michael works at apple",
+          "\u2022 Sarah specializes in computer science",
+          "\u2022 San francisco locateds in california",
+          "\u2022 Risd foundeds in 1877",
+          "\u2022 Michael parents lives in seattle"
+        ],
+        "bullet_count": 5,
+        "entity_coverage": 0.75,
+        "relevance_score": 0.02967032967032967,
+        "diversity_score": 0.9166666666666666,
+        "execution_time_ms": 1.2908750213682652,
+        "timing_breakdown": {
+          "elapsed_ms": 1.2897079577669501,
+          "candidates": 49,
+          "selected": 5,
+          "expanded_entities": 12
+        },
+        "candidate_count": 49,
+        "expansion_count": 12,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "optimized_result": {
+        "bullets": [
+          "michael works_at apple",
+          "michael works_at apple",
+          "michael lives_in san francisco",
+          "michael studied_at risd",
+          "michael graduated_in 2015",
+          "michael has_profession designer",
+          "michael lives_in san francisco",
+          "michael also_known_as mike",
+          "sarah works_at google",
+          "michael married_to sarah",
+          "michael married_to sarah",
+          "michael has_parents michael parents",
+          "michael has_salary 120000",
+          "michael works_in_department design",
+          "michael also_known_as mike"
+        ],
+        "bullet_count": 15,
+        "entity_coverage": 1.0,
+        "relevance_score": 0.07692307692307693,
+        "diversity_score": 0.7961904761904762,
+        "execution_time_ms": 0.08120806887745857,
+        "timing_breakdown": {
+          "expand_ms": 0.005624955520033836,
+          "gather_ms": 0.05312496796250343,
+          "mmr_ms": 0.017915968783199787,
+          "total_ms": 0.07924996316432953
+        },
+        "candidate_count": 0,
+        "expansion_count": 5,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "performance_improvement": 93.70906807140928,
+      "quality_delta": 0.04725274725274726,
+      "winner": "optimized"
+    },
+    {
+      "test_case": {
+        "query": "Tell me about people who work at tech companies",
+        "entities": [
+          "apple",
+          "google"
+        ],
+        "expected_bullets": 4,
+        "expected_entities": [
+          "michael",
+          "sarah",
+          "apple",
+          "google"
+        ],
+        "complexity": "medium",
+        "category": "multi_entity"
+      },
+      "original_result": {
+        "bullets": [
+          "\u2022 Michael works at apple",
+          "\u2022 Sarah specializes in computer science",
+          "\u2022 Google locateds in mountain view",
+          "\u2022 Sarah parents have child sarah",
+          "\u2022 Mountain view type city"
+        ],
+        "bullet_count": 5,
+        "entity_coverage": 1.0,
+        "relevance_score": 0.016666666666666666,
+        "diversity_score": 0.9478174603174603,
+        "execution_time_ms": 1.0891249403357506,
+        "timing_breakdown": {
+          "elapsed_ms": 1.0881670750677586,
+          "candidates": 43,
+          "selected": 5,
+          "expanded_entities": 12
+        },
+        "candidate_count": 43,
+        "expansion_count": 12,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "optimized_result": {
+        "bullets": [
+          "michael works_at apple",
+          "michael works_at apple",
+          "michael also_known_as mike",
+          "michael studied_at risd",
+          "michael graduated_in 2015",
+          "sarah works_at google",
+          "sarah works_at google",
+          "michael lives_in san francisco",
+          "michael married_to sarah",
+          "michael married_to sarah",
+          "michael has_parents michael parents",
+          "michael has_salary 120000",
+          "sarah also_known_as sarah chen",
+          "michael works_in_department design",
+          "michael has_profession designer"
+        ],
+        "bullet_count": 15,
+        "entity_coverage": 1.0,
+        "relevance_score": 0.0,
+        "diversity_score": 0.8282539682539682,
+        "execution_time_ms": 0.08579192217439413,
+        "timing_breakdown": {
+          "expand_ms": 0.005707959644496441,
+          "gather_ms": 0.054750009439885616,
+          "mmr_ms": 0.020707957446575165,
+          "total_ms": 0.08379202336072922
+        },
+        "candidate_count": 0,
+        "expansion_count": 5,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "performance_improvement": 92.12285762660558,
+      "quality_delta": -0.016666666666666666,
+      "winner": "optimized"
+    },
+    {
+      "test_case": {
+        "query": "Tell me about people who work at Apple and where they live",
+        "entities": [
+          "apple"
+        ],
+        "expected_bullets": 3,
+        "expected_entities": [
+          "apple",
+          "michael",
+          "san francisco"
+        ],
+        "complexity": "high",
+        "category": "semantic_inference"
+      },
+      "original_result": {
+        "bullets": [
+          "\u2022 Michael lives in san francisco",
+          "\u2022 Sarah works at google",
+          "\u2022 San francisco locateds in california",
+          "\u2022 Apple specializes in consumer electronics",
+          "\u2022 Sarah parents have child sarah"
+        ],
+        "bullet_count": 5,
+        "entity_coverage": 1.0,
+        "relevance_score": 0.02583333333333333,
+        "diversity_score": 0.9206349206349207,
+        "execution_time_ms": 1.3285829918459058,
+        "timing_breakdown": {
+          "elapsed_ms": 1.3275840319693089,
+          "candidates": 53,
+          "selected": 5,
+          "expanded_entities": 11
+        },
+        "candidate_count": 53,
+        "expansion_count": 11,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "optimized_result": {
+        "bullets": [
+          "michael lives_in san francisco",
+          "michael works_at apple",
+          "michael works_at apple",
+          "michael also_known_as mike",
+          "michael graduated_in 2015",
+          "michael has_profession designer",
+          "michael studied_at risd",
+          "michael has_parents michael parents",
+          "michael has_salary 120000",
+          "michael works_in_department design",
+          "michael married_to sarah",
+          "apple has_employees 150000",
+          "apple founded_by steve jobs",
+          "michael parents have_child michael",
+          "michael has_experience ui design"
+        ],
+        "bullet_count": 15,
+        "entity_coverage": 1.0,
+        "relevance_score": 0.01873015873015873,
+        "diversity_score": 0.837687074829932,
+        "execution_time_ms": 0.058542005717754364,
+        "timing_breakdown": {
+          "expand_ms": 0.0038750004023313522,
+          "gather_ms": 0.031542032957077026,
+          "mmr_ms": 0.018749968148767948,
+          "total_ms": 0.05712499842047691
+        },
+        "candidate_count": 0,
+        "expansion_count": 3,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "performance_improvement": 95.5936508236932,
+      "quality_delta": -0.007103174603174601,
+      "winner": "optimized"
+    },
+    {
+      "test_case": {
+        "query": "Where do people who studied computer science work?",
+        "entities": [
+          "computer science",
+          "stanford"
+        ],
+        "expected_bullets": 2,
+        "expected_entities": [
+          "sarah",
+          "google"
+        ],
+        "complexity": "high",
+        "category": "semantic_inference"
+      },
+      "original_result": {
+        "bullets": [
+          "\u2022 Michael lives in san francisco",
+          "\u2022 Sarah works at google",
+          "\u2022 Stanford locateds in palo alto",
+          "\u2022 Google specializes in internet services",
+          "\u2022 Sarah parents have child sarah"
+        ],
+        "bullet_count": 5,
+        "entity_coverage": 1.0,
+        "relevance_score": 0.0,
+        "diversity_score": 0.9398809523809524,
+        "execution_time_ms": 1.3477080501616001,
+        "timing_breakdown": {
+          "elapsed_ms": 1.346832956187427,
+          "candidates": 58,
+          "selected": 5,
+          "expanded_entities": 10
+        },
+        "candidate_count": 58,
+        "expansion_count": 10,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "optimized_result": {
+        "bullets": [
+          "sarah specializes_in computer science",
+          "stanford offers_program computer science",
+          "stanford offers_program computer science",
+          "stanford known_for computer science",
+          "stanford known_for computer science",
+          "sarah studied_at stanford",
+          "stanford located_in palo alto"
+        ],
+        "bullet_count": 7,
+        "entity_coverage": 0.5,
+        "relevance_score": 0.14285714285714285,
+        "diversity_score": 0.6521541950113379,
+        "execution_time_ms": 0.036125071346759796,
+        "timing_breakdown": {
+          "expand_ms": 0.004375004209578037,
+          "gather_ms": 0.020458013750612736,
+          "mmr_ms": 0.008500064723193645,
+          "total_ms": 0.03495905548334122
+        },
+        "candidate_count": 0,
+        "expansion_count": 2,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "performance_improvement": 97.31951802599768,
+      "quality_delta": 0.14285714285714285,
+      "winner": "optimized"
+    },
+    {
+      "test_case": {
+        "query": "What do you know about Michael's family background?",
+        "entities": [
+          "michael"
+        ],
+        "expected_bullets": 3,
+        "expected_entities": [
+          "michael",
+          "parents",
+          "seattle",
+          "sarah"
+        ],
+        "complexity": "high",
+        "category": "semantic_inference"
+      },
+      "original_result": {
+        "bullets": [
+          "\u2022 Michael works at apple",
+          "\u2022 Sarah specializes in computer science",
+          "\u2022 San francisco locateds in california",
+          "\u2022 Risd foundeds in 1877",
+          "\u2022 Michael parents lives in seattle"
+        ],
+        "bullet_count": 5,
+        "entity_coverage": 1.0,
+        "relevance_score": 0.03205128205128205,
+        "diversity_score": 0.9166666666666666,
+        "execution_time_ms": 1.3119160430505872,
+        "timing_breakdown": {
+          "elapsed_ms": 1.310999970883131,
+          "candidates": 49,
+          "selected": 5,
+          "expanded_entities": 12
+        },
+        "candidate_count": 49,
+        "expansion_count": 12,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "optimized_result": {
+        "bullets": [
+          "michael works_at apple",
+          "michael works_at apple",
+          "michael lives_in san francisco",
+          "michael studied_at risd",
+          "michael graduated_in 2015",
+          "michael has_profession designer",
+          "michael lives_in san francisco",
+          "michael also_known_as mike",
+          "michael married_to sarah",
+          "michael married_to sarah",
+          "michael has_parents michael parents",
+          "michael has_salary 120000",
+          "michael works_in_department design",
+          "michael also_known_as mike",
+          "sarah married_to michael"
+        ],
+        "bullet_count": 15,
+        "entity_coverage": 0.75,
+        "relevance_score": 0.0898989898989899,
+        "diversity_score": 0.7625396825396825,
+        "execution_time_ms": 0.07929198909550905,
+        "timing_breakdown": {
+          "expand_ms": 0.005875015631318092,
+          "gather_ms": 0.052916002459824085,
+          "mmr_ms": 0.016000005416572094,
+          "total_ms": 0.07741700392216444
+        },
+        "candidate_count": 0,
+        "expansion_count": 5,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "performance_improvement": 93.95601650612244,
+      "quality_delta": 0.05784770784770785,
+      "winner": "optimized"
+    },
+    {
+      "test_case": {
+        "query": "Tell me about someone who doesn't exist",
+        "entities": [
+          "nonexistent_person"
+        ],
+        "expected_bullets": 0,
+        "expected_entities": [],
+        "complexity": "low",
+        "category": "edge_case"
+      },
+      "original_result": {
+        "bullets": [],
+        "bullet_count": 0,
+        "entity_coverage": 0.0,
+        "relevance_score": 0.0,
+        "diversity_score": 1.0,
+        "execution_time_ms": 0.025916961021721363,
+        "timing_breakdown": {
+          "elapsed_ms": 0.02483394928276539,
+          "candidates": 0,
+          "selected": 0,
+          "expanded_entities": 2
+        },
+        "candidate_count": 0,
+        "expansion_count": 2,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "optimized_result": {
+        "bullets": [],
+        "bullet_count": 0,
+        "entity_coverage": 0.0,
+        "relevance_score": 0.0,
+        "diversity_score": 1.0,
+        "execution_time_ms": 0.00825000461190939,
+        "timing_breakdown": {
+          "expand_ms": 0.0022919848561286926,
+          "gather_ms": 0.00466697383671999,
+          "mmr_ms": 0.00016693957149982452,
+          "total_ms": 0.007416936568915844
+        },
+        "candidate_count": 0,
+        "expansion_count": 2,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "performance_improvement": 68.16754632229085,
+      "quality_delta": 0.0,
+      "winner": "optimized"
+    },
+    {
+      "test_case": {
+        "query": "What do you know about X?",
+        "entities": [
+          "x"
+        ],
+        "expected_bullets": 0,
+        "expected_entities": [],
+        "complexity": "low",
+        "category": "edge_case"
+      },
+      "original_result": {
+        "bullets": [],
+        "bullet_count": 0,
+        "entity_coverage": 0.0,
+        "relevance_score": 0.0,
+        "diversity_score": 1.0,
+        "execution_time_ms": 0.09883404709398746,
+        "timing_breakdown": {
+          "elapsed_ms": 0.09816593956202269,
+          "candidates": 0,
+          "selected": 0,
+          "expanded_entities": 1
+        },
+        "candidate_count": 0,
+        "expansion_count": 1,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "optimized_result": {
+        "bullets": [],
+        "bullet_count": 0,
+        "entity_coverage": 0.0,
+        "relevance_score": 0.0,
+        "diversity_score": 1.0,
+        "execution_time_ms": 0.005749985575675964,
+        "timing_breakdown": {
+          "expand_ms": 0.0014170072972774506,
+          "gather_ms": 0.003125052899122238,
+          "mmr_ms": 0.000125030055642128,
+          "total_ms": 0.00500003807246685
+        },
+        "candidate_count": 0,
+        "expansion_count": 1,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "performance_improvement": 94.18218139928243,
+      "quality_delta": 0.0,
+      "winner": "optimized"
+    },
+    {
+      "test_case": {
+        "query": "",
+        "entities": [],
+        "expected_bullets": 0,
+        "expected_entities": [],
+        "complexity": "low",
+        "category": "edge_case"
+      },
+      "original_result": {
+        "bullets": [],
+        "bullet_count": 0,
+        "entity_coverage": 0.0,
+        "relevance_score": 0.0,
+        "diversity_score": 1.0,
+        "execution_time_ms": 0.020666979253292084,
+        "timing_breakdown": {
+          "elapsed_ms": 0.01979200169444084,
+          "candidates": 0,
+          "selected": 0,
+          "expanded_entities": 0
+        },
+        "candidate_count": 0,
+        "expansion_count": 0,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "optimized_result": {
+        "bullets": [],
+        "bullet_count": 0,
+        "entity_coverage": 0.0,
+        "relevance_score": 0.0,
+        "diversity_score": 1.0,
+        "execution_time_ms": 0.004915986210107803,
+        "timing_breakdown": {
+          "expand_ms": 0.0012080417945981026,
+          "gather_ms": 0.002375105395913124,
+          "mmr_ms": 0.000125030055642128,
+          "total_ms": 0.004083034582436085
+        },
+        "candidate_count": 0,
+        "expansion_count": 0,
+        "error_occurred": false,
+        "error_message": ""
+      },
+      "performance_improvement": 76.21332972826822,
+      "quality_delta": 0.0,
+      "winner": "optimized"
+    }
+  ],
+  "analysis": {
+    "total_tests": 12,
+    "performance_comparison": {
+      "original_avg_ms": 334.1944027536859,
+      "original_p95_ms": 5399.385477654869,
+      "optimized_avg_ms": 0.06128818495199084,
+      "optimized_p95_ms": 0.16562913078814745,
+      "avg_improvement_percent": 91.12418291649345,
+      "tests_with_significant_improvement": 12
+    },
+    "quality_comparison": {
+      "original_avg_quality": 0.028288308913308913,
+      "optimized_avg_quality": 0.07081982831982832,
+      "quality_delta": 0.042531519406519405,
+      "tests_with_quality_improvement": 5,
+      "tests_with_quality_degradation": 0
+    },
+    "winner_distribution": {
+      "original": 0,
+      "optimized": 12,
+      "tie": 0
+    },
+    "category_analysis": {
+      "direct_lookup": {
+        "original": 0,
+        "optimized": 3,
+        "tie": 0
+      },
+      "multi_entity": {
+        "original": 0,
+        "optimized": 3,
+        "tie": 0
+      },
+      "semantic_inference": {
+        "original": 0,
+        "optimized": 3,
+        "tie": 0
+      },
+      "edge_case": {
+        "original": 0,
+        "optimized": 3,
+        "tie": 0
+      }
+    },
+    "complexity_analysis": {
+      "low": {
+        "original": 0,
+        "optimized": 6,
+        "tie": 0
+      },
+      "medium": {
+        "original": 0,
+        "optimized": 3,
+        "tie": 0
+      },
+      "high": {
+        "original": 0,
+        "optimized": 3,
+        "tie": 0
+      }
+    },
+    "error_analysis": {
+      "original_errors": 0,
+      "optimized_errors": 0
+    }
+  },
+  "report": "\ud83d\udd0d RETRIEVAL A/B TEST REPORT\n============================================================\n\n\ud83d\udcca PERFORMANCE SUMMARY:\n   Original:  334.19ms avg, 5399.39ms p95\n   Optimized: 0.06ms avg, 0.17ms p95\n   Improvement: 91.1% average\n\n\ud83c\udfaf QUALITY SUMMARY:\n   Original:  0.03 avg relevance\n   Optimized: 0.07 avg relevance\n   Quality \u0394: +0.043\n\n\ud83c\udfc6 WINNER DISTRIBUTION:\n   ORIGINAL: 0/12 (0.0%)\n   OPTIMIZED: 12/12 (100.0%)\n   TIE: 0/12 (0.0%)\n\n\ud83d\udcc8 CATEGORY BREAKDOWN:\n   direct_lookup:\n     original: 0/3 (0.0%)\n     optimized: 3/3 (100.0%)\n     tie: 0/3 (0.0%)\n   multi_entity:\n     original: 0/3 (0.0%)\n     optimized: 3/3 (100.0%)\n     tie: 0/3 (0.0%)\n   semantic_inference:\n     original: 0/3 (0.0%)\n     optimized: 3/3 (100.0%)\n     tie: 0/3 (0.0%)\n   edge_case:\n     original: 0/3 (0.0%)\n     optimized: 3/3 (100.0%)\n     tie: 0/3 (0.0%)\n\n\ud83d\udca1 RECOMMENDATION:\n   \u2705 SWITCH TO OPTIMIZED - Clear performance win with maintained quality"
+}
