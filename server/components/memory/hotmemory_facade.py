@@ -22,6 +22,7 @@ from components.memory.memory_timing_tracer import get_memory_tracer
 from components.memory.memory_quality import MemoryQuality
 from components.memory.config import create_config
 from components.extraction.memory_extractor import MemoryExtractor, ExtractionResult
+from components.retrieval.memory_retriever_optimized import MemoryRetrieverOptimized
 from components.retrieval.memory_retriever import MemoryRetriever, RetrievalResult
 from components.coreference.coreference_resolver import CoreferenceResolver, CoreferenceResult
 from components.extraction.assisted_extractor import AssistedExtractor, AssistedExtractionResult
@@ -111,7 +112,7 @@ class HotMemoryFacade:
         
         # Initialize extracted services
         self.extractor = MemoryExtractor(self.config.get_extractor_config())
-        self.retriever = MemoryRetriever(store, defaultdict(set), self.config.get_retriever_config())
+        self.retriever = MemoryRetrieverOptimized(store, defaultdict(set), self.config.get_retriever_config())
         self.coreference_resolver = CoreferenceResolver(self.config.get_coreference_config())
         self.assisted_extractor = AssistedExtractor(self.config.get_assisted_config())
 
@@ -282,6 +283,7 @@ class HotMemoryFacade:
             if needs_retrieval:
                 with tracer.time_operation("memory_retrieve", "retriever", session_id, turn_id, {"intent": intent.intent.value}):
                     retrieve_start = time.perf_counter()
+                    # Extract entities for graph-based retrieval (nouns, not NER)
                     entities = self._extract_entities_light(text)
                     bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
                     self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)

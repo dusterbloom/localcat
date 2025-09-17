@@ -14,6 +14,7 @@ import os
 import time
 import math
 import re
+import difflib
 from typing import List, Tuple, Set, Dict, Optional, Any
 from collections import defaultdict
 from dataclasses import dataclass
@@ -256,25 +257,45 @@ class MemoryRetrieverOptimized:
         qtok = self._tokenize_query(query)
         query_intent = self._parse_query_intent(qtok)
 
-        # Strategy 1: Entity-based retrieval with pre-filtering
-        if self.graph_enabled:
-            entity_candidates = self._score_entities_optimized(
-                entities, query, qtok, query_intent, now_ms, recency_T_ms
-            )
-            candidates.extend(entity_candidates)
+        # CRITICAL: Check for session continuity queries
+        query_lower = query.lower()
+        is_continuity_query = any(phrase in query_lower for phrase in [
+            'continue from', 'where we were', 'where we left',
+            'last session', 'previous session', 'last time',
+            'previous conversation', 'earlier conversation',
+            'what we discussed', 'what did we talk'
+        ])
 
-            if self.debug and entity_candidates:
-                logger.debug(f"[Optimized] Entity scoring: {len(entity_candidates)} candidates")
+        # CRITICAL: For continuity queries, ONLY return summaries, not facts
+        if is_continuity_query:
+            # For continuity queries, search for recent summaries directly
+            # Don't mix with entity-based or LEANN results
+            summary_results = self._get_recent_session_summaries()
+            candidates.extend(summary_results)
 
-        # Strategy 2: LEANN (unchanged for now)
-        if self.use_leann and self.retrieval_fusion:
-            leann_enhanced = self._retrieve_with_leann_enhancement(query, entities)
-            candidates.extend(leann_enhanced)
+            if self.debug:
+                logger.debug(f"[Optimized] Session continuity query detected - returning {len(summary_results)} summaries")
+        else:
+            # Strategy 1: Entity-based retrieval with pre-filtering
+            if self.graph_enabled:
+                entity_candidates = self._score_entities_optimized(
+                    entities, query, qtok, query_intent, now_ms, recency_T_ms
+                )
+                candidates.extend(entity_candidates)
 
-        # Strategy 3: FTS (unchanged for now)
-        if self.retrieval_fusion and query:
-            fts_results = self._search_fts_summaries(query)
-            candidates.extend(fts_results)
+                if self.debug and entity_candidates:
+                    logger.debug(f"[Optimized] Entity scoring: {len(entity_candidates)} candidates")
+
+            # Strategy 2: LEANN (unchanged for now)
+            if self.use_leann and self.retrieval_fusion:
+                leann_enhanced = self._retrieve_with_leann_enhancement(query, entities)
+                candidates.extend(leann_enhanced)
+
+            # Strategy 3: FTS for normal queries
+            if self.retrieval_fusion and query:
+                # Normal FTS search
+                fts_results = self._search_fts_summaries(query)
+                candidates.extend(fts_results)
 
         return candidates
 
@@ -306,43 +327,71 @@ class MemoryRetrieverOptimized:
             relevant_relations = self.HIGH_VALUE_RELATIONS
 
         for entity in entities[:5]:  # Process top 5 entities only
-            if entity not in self.entity_index:
+            # Find matching keys using both exact and fuzzy matching
+            matching_keys = []
+
+            # Exact match first
+            if entity in self.entity_index:
+                matching_keys.append(entity)
+
+            # Lightweight fuzzy matching using difflib (stdlib, no extra deps)
+            # This finds close matches like "dog" → "dog Potola"
+            if not matching_keys:  # Only if no exact match
+                all_keys = list(self.entity_index.keys())
+                # get_close_matches returns best matches sorted by similarity
+                # cutoff=0.6 means 60% similarity required
+                close_matches = difflib.get_close_matches(
+                    entity, all_keys, n=3, cutoff=0.6
+                )
+                matching_keys.extend(close_matches)
+
+                # Also check substring matching as fallback
+                if not matching_keys:
+                    entity_lower = entity.lower()
+                    for key in all_keys:
+                        if entity_lower in key.lower() or key.lower() in entity_lower:
+                            matching_keys.append(key)
+                            if len(matching_keys) >= 3:
+                                break
+
+            if not matching_keys:
                 continue
 
             entity_candidates = []
 
-            for item in self.entity_index[entity]:
-                # Early termination if we have enough candidates
-                if len(entity_candidates) >= self.max_candidates_per_entity:
-                    break
+            for matched_key in matching_keys:
+                for item in self.entity_index[matched_key]:
+                    # Early termination if we have enough candidates
+                    if len(entity_candidates) >= self.max_candidates_per_entity:
+                        break
 
-                if not isinstance(item, (tuple, list)) or len(item) < 3:
-                    continue
-
-                s, r, d = item[:3]
-
-                # OPTIMIZATION: Skip if relation not relevant
-                if relevant_relations and r not in relevant_relations and r not in self.LOW_VALUE_RELATIONS:
-                    # Check if it's a verb_prep relation that might be relevant
-                    if '_' not in r:
+                    if not isinstance(item, (tuple, list)) or len(item) < 3:
                         continue
 
-                # Skip pronouns
-                if s in {"he", "she", "it", "they", "we", "who", "what", "when", "where", "how", "why", "that"}:
-                    continue
+                    s, r, d = item[:3]
 
-                # Fast scoring
-                score = self._fast_score_triple(s, r, d, entity, qtok, query_intent, now_ms, recency_T_ms)
+                    # OPTIMIZATION: Skip if relation not relevant
+                    if relevant_relations and r not in relevant_relations and r not in self.LOW_VALUE_RELATIONS:
+                        # Check if it's a verb_prep relation that might be relevant
+                        if '_' not in r:
+                            continue
 
-                # OPTIMIZATION: Skip low-score candidates
-                if score < self.min_score_threshold:
-                    continue
+                    # Skip pronouns
+                    if s in {"he", "she", "it", "they", "we", "who", "what", "when", "where", "how", "why", "that"}:
+                        continue
 
-                # Get metadata
-                meta = self.edge_meta.get((s, r, d), {})
-                ts = int(meta.get('ts', 0))
+                    # Fast scoring - use matched_key instead of entity for better scoring
+                    score = self._fast_score_triple(s, r, d, matched_key, qtok, query_intent, now_ms, recency_T_ms)
 
-                entity_candidates.append((score, ts, 'kg', (s, r, d)))
+                    # OPTIMIZATION: Skip low-score candidates
+                    if score < self.min_score_threshold:
+                        continue
+
+                    # Get metadata
+                    meta = self.edge_meta.get((s, r, d), {})
+                    ts = int(meta.get('ts', 0))
+
+                    entity_candidates.append((score, ts, 'kg', (s, r, d)))
 
             # Sort and take top candidates from this entity
             entity_candidates.sort(key=lambda x: x[0], reverse=True)
@@ -498,13 +547,54 @@ class MemoryRetrieverOptimized:
         return []
 
     def _search_fts_summaries(self, query: str, limit: int = 12) -> List[Tuple[float, int, str, str]]:
-        """FTS search - placeholder for now"""
+        """FTS search for summaries and mentions"""
         if not hasattr(self.store, 'search_fts_detailed'):
             return []
         try:
-            results = self.store.search_fts_detailed(query, limit)
-            return [(0.5, 0, 'fts', text) for text in results]
-        except:
+            # Clean query for FTS (remove special characters that cause syntax errors)
+            clean_query = query.replace('?', '').replace('!', '').replace('"', '').replace("'", '')
+            if not clean_query.strip():
+                return []
+
+            results = self.store.search_fts_detailed(clean_query, limit)
+            candidates = []
+            for text, eid, ts in results:
+                # Boost score for summaries vs regular mentions
+                is_summary = eid.startswith('summary:') or eid.startswith('session:')
+                score = 0.7 if is_summary else 0.5
+                candidates.append((score, ts, 'fts', text))
+            return candidates
+        except Exception as e:
+            logger.debug(f"FTS search error: {e}")
+            return []
+
+    def _get_recent_session_summaries(self, limit: int = 5) -> List[Tuple[float, int, str, str]]:
+        """Get recent session summaries for continuity queries"""
+        if not hasattr(self.store, 'sql'):
+            return []
+
+        try:
+            cur = self.store.sql.cursor()
+            # Get recent summaries ordered by timestamp
+            rows = cur.execute("""
+                SELECT text, eid, ts FROM mention
+                WHERE eid LIKE 'summary:%' OR eid LIKE 'session:%'
+                ORDER BY ts DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+
+            candidates = []
+            for text, eid, ts in rows:
+                # High score for recent summaries
+                score = 0.9  # High relevance for session continuity
+                candidates.append((score, ts, 'fts', text))
+
+            if self.debug and candidates:
+                logger.debug(f"[Optimized] Found {len(candidates)} recent summaries for continuity query")
+
+            return candidates
+        except Exception as e:
+            logger.debug(f"Failed to get recent summaries: {e}")
             return []
 
     def get_metrics(self) -> Dict[str, Any]:
