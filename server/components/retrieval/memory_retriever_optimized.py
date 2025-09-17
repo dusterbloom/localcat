@@ -506,3 +506,10 @@ class MemoryRetrieverOptimized:
             return [(0.5, 0, 'fts', text) for text in results]
         except:
             return []
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get retrieval performance metrics"""
+        return dict(self.metrics)
+
+
+logger.info("🚀 MemoryRetrieverOptimized initialized - performance optimized version")
