@@ -209,11 +209,46 @@ class MemoryExtractor:
             return self._extract_entities_light_fallback(text)
     
     def _extract_entities_light_fallback(self, text: str) -> List[str]:
-        """Fallback entity extraction using simple patterns"""
+        """Fallback entity extraction using noun extraction for graph search"""
         import re
-        
-        # Simple pattern-based extraction
+
+        # Extract nouns and important words for graph search
+        # This is specifically for retrieval, not NER
         entities = []
+
+        # Try to use spaCy for noun extraction (not NER)
+        try:
+            nlp = _load_nlp("en")
+            if nlp:
+                doc = nlp(text)
+
+                # Extract nouns and proper nouns for graph search
+                for token in doc:
+                    # Get proper nouns (names, places)
+                    if token.pos_ == "PROPN" and not token.is_stop:
+                        entities.append(token.text.lower())
+                    # Get common nouns (dog, number, car, etc.)
+                    elif token.pos_ == "NOUN" and not token.is_stop:
+                        entities.append(token.text.lower())
+
+                # Add "you" if user is referring to themselves
+                if any(t.text.lower() in ['my', 'i', 'me', "i'm", "i've", "i'll"] for t in doc):
+                    entities.append('you')
+
+                # Deduplicate while preserving order
+                seen = set()
+                unique = []
+                for e in entities:
+                    if e not in seen and e:
+                        seen.add(e)
+                        unique.append(e)
+
+                return unique[:10]  # Return top 10 entities for graph search
+        except:
+            pass
+
+        # Ultimate fallback: regex-based extraction
+        # Remove common question words and extract remaining significant words
         
         # Look for capitalized words (potential proper nouns)
         words = text.split()

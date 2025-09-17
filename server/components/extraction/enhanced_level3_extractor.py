@@ -223,7 +223,11 @@ class QualityExtractor:
                             if attr.pos_ in ['NOUN', 'PROPN']:
                                 attr_text = self._get_clean_noun_phrase(attr)
                             else:
-                                attr_text = attr.text
+                                # For adjectives/complements, include the full phrase (e.g., "5 years old")
+                                # Collect all tokens in the attribute's subtree
+                                attr_tokens = list(attr.subtree)
+                                attr_tokens.sort(key=lambda t: t.i)
+                                attr_text = ' '.join([t.text for t in attr_tokens])
 
                             # Create copula relation
                             relation = QualityRelation(
