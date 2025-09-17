@@ -165,23 +165,30 @@ class EnhancedRuleClassifierV2:
 
         # === PRIORITY 1: Check strong patterns using UD ===
 
-        # Greeting: Check lemmas and common greeting patterns
-        if (first_token.lemma_ in self.greeting_lemmas or
-            lemmas & self.greeting_lemmas):
-            return self._create_result(IntentType.GREETING, 0.9, retrieve=False, store=False)
+        # CRITICAL FIX: Skip ALL greeting/farewell/ack checks if there's a question mark
+        # This handles cases like "Good evening. Can we continue from where we left off?"
+        has_question = '?' in text
 
-        # Farewell: Check lemmas
-        if lemmas & self.farewell_lemmas:
-            return self._create_result(IntentType.FAREWELL, 0.9, retrieve=False, store=False)
+        if not has_question:
+            # Only check greetings/farewells if NOT a question
 
-        # Acknowledgment: Short utterance with ack lemmas
-        if len(tokens) <= 4 and lemmas & self.ack_lemmas:
-            return self._create_result(IntentType.ACKNOWLEDGMENT, 0.85, retrieve=False, store=False)
+            # Greeting: Check lemmas and common greeting patterns
+            if (first_token.lemma_ in self.greeting_lemmas or
+                lemmas & self.greeting_lemmas):
+                return self._create_result(IntentType.GREETING, 0.9, retrieve=False, store=False)
 
-        # Additional greeting patterns: time-based greetings
-        if (lemmas & {'good', 'morning', 'afternoon', 'evening', 'night', 'day'} and
-            len(tokens) <= 3):
-            return self._create_result(IntentType.GREETING, 0.9, retrieve=False, store=False)
+            # Farewell: Check lemmas
+            if lemmas & self.farewell_lemmas:
+                return self._create_result(IntentType.FAREWELL, 0.9, retrieve=False, store=False)
+
+            # Acknowledgment: Short utterance with ack lemmas
+            if len(tokens) <= 4 and lemmas & self.ack_lemmas:
+                return self._create_result(IntentType.ACKNOWLEDGMENT, 0.85, retrieve=False, store=False)
+
+            # Additional greeting patterns: time-based greetings
+            if (lemmas & {'good', 'morning', 'afternoon', 'evening', 'night', 'day'} and
+                len(tokens) <= 3):
+                return self._create_result(IntentType.GREETING, 0.9, retrieve=False, store=False)
 
         # Reaction: Short utterance with emotion/reaction lemmas + exclamation
         if (len(tokens) <= 5 and lemmas & self.reaction_lemmas and
@@ -297,8 +304,11 @@ class EnhancedRuleClassifierV2:
 
         # Quick pattern checks (similar to original V2 but simplified)
 
-        # Greetings
-        if (first_word in {'hello', 'hi', 'hey', 'greetings'} or
+        # CRITICAL FIX: Skip greeting checks if there's a question mark
+        has_question = '?' in text
+
+        # Greetings (only if NOT a question)
+        if not has_question and (first_word in {'hello', 'hi', 'hey', 'greetings'} or
             'how are you' in text_lower or
             any(greeting in text_lower for greeting in ['good morning', 'good afternoon', 'good evening'])):
             return self._create_result(IntentType.GREETING, 0.9, retrieve=False, store=False)

@@ -21,16 +21,16 @@ class RuleV2Adapter(IntentClassifier):
 
         # Map V2 intent types to memory system intent types
         self.intent_mapping = {
-            V2IntentType.QUESTION: IntentType.QUESTION,
+            V2IntentType.QUESTION: IntentType.PURE_QUESTION,  # Questions need retrieval
             V2IntentType.FACT: IntentType.FACT_STATEMENT,
-            V2IntentType.GREETING: IntentType.GREETING,
-            V2IntentType.ACKNOWLEDGMENT: IntentType.ACKNOWLEDGMENT,
+            V2IntentType.GREETING: IntentType.REACTION,
+            V2IntentType.ACKNOWLEDGMENT: IntentType.REACTION,
             V2IntentType.REACTION: IntentType.REACTION,
             V2IntentType.CORRECTION: IntentType.CORRECTION,
-            V2IntentType.COMMAND: IntentType.COMMAND,
-            V2IntentType.REQUEST: IntentType.REQUEST,
-            V2IntentType.FAREWELL: IntentType.FAREWELL,
-            V2IntentType.UNKNOWN: IntentType.UNKNOWN,
+            V2IntentType.COMMAND: IntentType.PURE_QUESTION,  # Commands often need retrieval
+            V2IntentType.REQUEST: IntentType.PURE_QUESTION,  # Requests need retrieval
+            V2IntentType.FAREWELL: IntentType.REACTION,
+            V2IntentType.UNKNOWN: IntentType.REACTION,  # Safe default
         }
 
     def classify(self, text: str, context: Optional[List[str]] = None) -> IntentAnalysis:
@@ -38,23 +38,22 @@ class RuleV2Adapter(IntentClassifier):
         # Get V2 classification
         v2_result = self.classifier.classify(text, context)
 
-        # Map to memory system intent type
+        # Map to memory system intent type, default to REACTION if not found
         mapped_intent = self.intent_mapping.get(
             v2_result.primary_intent,
-            IntentType.UNKNOWN
+            IntentType.REACTION  # Safe fallback
         )
 
         # Create IntentAnalysis result
         return IntentAnalysis(
-            primary_intent=mapped_intent,
+            intent=mapped_intent,  # Fixed: field is 'intent' not 'primary_intent'
             confidence=v2_result.confidence,
+            should_extract_facts=v2_result.requires_memory,
+            embedded_facts_likely=v2_result.requires_memory,
+            temporal_markers=[],
+            correction_signals=[],
             requires_memory=v2_result.requires_memory,
-            requires_retrieval=v2_result.requires_retrieval,
-            metadata={
-                'method': 'enhanced_rules_v2',
-                'version': '2.0',
-                'inference_ms': 0.02  # Measured average
-            }
+            requires_retrieval=v2_result.requires_retrieval
         )
 
     def should_retrieve_memory(self, intent: IntentAnalysis) -> bool:
