@@ -507,16 +507,24 @@ class HotPathMemoryProcessor(BaseProcessor):
                     logger.warning(f"[HotMem] Recap injection failed: {e}")
                 logger.info(f"[HotMem] Processing transcription (is_final={is_final}): '{text}'")
                 await self._process_transcription(frame, direction)
-                
-                # Inject memory bullets directly into context before the aggregator processes the frame
+
+                # CRITICAL: Inject memory BEFORE forwarding the transcription frame
+                # This ensures memory context is available when LLM processes the user message
                 if self._pending_bullets and self._context_aggregator:
                     await self._inject_memory_context(direction)
+
+                # Now forward the transcription frame - aggregator will include our injected memory
+                await self.push_frame(frame, direction)
+                return  # Don't forward twice
             else:
                 logger.info(f"[HotMem] Skipping non-final transcription")
+                # Forward non-final frames immediately
+                await self.push_frame(frame, direction)
+                return
 
         # Legacy LLMMessagesFrame handling removed - now using direct context injection
 
-        # REQUIRED: always forward the original frame
+        # Forward all other frames immediately
         await self.push_frame(frame, direction)
     
     async def _process_transcription(self, frame: TranscriptionFrame, direction: FrameDirection):
@@ -560,14 +568,14 @@ class HotPathMemoryProcessor(BaseProcessor):
                 correction_bullet = f"• ✅ Correction applied: {correction_result.get('explanation', 'Memory updated')}"
                 bullets = [correction_bullet] + bullets[:4]  # Keep within 5 bullet limit
             
+            # Reset pending bullets for each turn to prevent accumulation
+            self._pending_bullets = []
+
             # Always add session context as the first bullet if enabled
             include_session_context = os.getenv("HOTMEM_SESSION_CONTEXT", "true").lower() in ("1", "true", "yes")
             if include_session_context:
                 session_context = self.format_session_context()
                 if session_context and session_context != "Session Context: Available":
-                    # Create pending bullets if it doesn't exist
-                    if not hasattr(self, '_pending_bullets'):
-                        self._pending_bullets = []
                     self._pending_bullets.insert(0, session_context)
                     logger.info(f"[HotMem] Added session context: {len(session_context.split(chr(10)))} lines")
 
@@ -580,8 +588,6 @@ class HotPathMemoryProcessor(BaseProcessor):
                 memory_bullets = bullets[: self._bullets_max]
 
                 # Add memory bullets to existing pending bullets (which may already contain session context)
-                if not hasattr(self, '_pending_bullets'):
-                    self._pending_bullets = []
                 self._pending_bullets.extend(memory_bullets)
             else:
                 if bullets:

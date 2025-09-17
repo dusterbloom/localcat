@@ -37,6 +37,46 @@ def _filter_old_injections(messages: List[Dict[str, Any]], headers: List[str]) -
     return out
 
 
+def _clean_memory_context_from_content(content: str, inject_header: str) -> str:
+    """Remove old memory context sections from system message content to prevent duplication."""
+    import re
+
+    # More comprehensive pattern to match memory context sections with variations
+    # This handles both the exact format and variations with different endings
+    memory_section_pattern = re.compile(
+        f'({re.escape(inject_header)}.*?(?:Memory Guidance:.*?(?:as references|as user statements)[^\\n]*(?:\\n|$)|$))',
+        re.DOTALL | re.IGNORECASE
+    )
+
+    # Find all memory context sections
+    sections = list(memory_section_pattern.finditer(content))
+
+    if len(sections) <= 1:
+        # No duplicates found, return original content
+        return content
+
+    # Keep only the last (most recent) memory context section
+    last_match = sections[-1]
+    last_section = last_match.group(0)
+
+    # Remove all memory context sections
+    cleaned_content = memory_section_pattern.sub('', content).strip()
+
+    # Find where to insert the last section (before Reasoning Guidance or at the end)
+    reasoning_guidance_match = re.search(r'Reasoning Guidance:', cleaned_content)
+    if reasoning_guidance_match:
+        insert_pos = reasoning_guidance_match.start()
+        # Insert two newlines before the section for proper spacing
+        cleaned_content = (cleaned_content[:insert_pos].rstrip() + '\n\n' +
+                          last_section + '\n\n' +
+                          cleaned_content[insert_pos:])
+    else:
+        # Add at the end
+        cleaned_content = cleaned_content.rstrip() + '\n\n' + last_section
+
+    return cleaned_content
+
+
 def _build_memory_message(bullets: List[str], header: str, role: str, progressive_mode: bool = True) -> Optional[Dict[str, str]]:
     if not bullets:
         return None
@@ -191,6 +231,9 @@ def pack_context(
     if before:
         # Start with original system content and inject session info at the top
         base_content = before[0]["content"]
+
+        # Remove old memory context sections from base_content to prevent duplication
+        base_content = _clean_memory_context_from_content(base_content, inject_header)
 
         # Inject session info right after Agent/User ID but before persona
         if session_info:
