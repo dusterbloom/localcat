@@ -172,6 +172,45 @@ Performance Improvement: 96.2% faster
 - `testing/README.md` - Complete testing documentation
 - `benchmark_results.json` - Performance baseline data
 
+## 2025-09-17: Memory Retrieval and Entity Extraction Fixes
+
+### Critical Issues Fixed ✅
+
+**Issue 1:** Entity extraction returning wrong entities for questions
+- **Root Cause:** `extract_entities_light` was using NER (Named Entity Recognition) instead of noun extraction
+- **Impact:** Query "What do you know about my dog?" extracted `['What']` instead of `['dog', 'you']`
+- **Solution:** Modified fallback in `memory_extractor.py:211-246` to extract nouns and proper nouns for graph navigation
+
+**Issue 2:** Temporal/numeric information lost during extraction
+- **Root Cause:** Enhanced Level3 extractor simplifying attribute complements (e.g., "5 years old" → "old")
+- **Impact:** "My dog Potola is 5 years old" extracted as `('dog Potola', 'is', 'old')`
+- **Solution:** Modified `enhanced_level3_extractor.py:226-230` to preserve full attribute phrases using subtree
+
+**Issue 3:** Database contained junk extraction data
+- **Root Cause:** Poor quality extraction creating nonsensical relations
+- **Solution:** Cleaned 102 junk edges from database using `clean_database.py`
+
+### Architecture Validation ✅
+
+**End-to-End Flow Verified:**
+1. Intent Classification → Correctly identifies PURE_QUESTION vs FACT_STATEMENT
+2. Questions → Skip fact extraction, perform retrieval with noun-based entities
+3. Facts → Extract and store triples, skip retrieval
+4. Context Packing → Memory bullets successfully injected into LLM context
+
+**Performance Results:**
+- Intent classification: <1ms (rule-based)
+- Memory extraction: 0.2ms (V7 Enhanced Level3)
+- Retrieval: ~100ms (with proper entity extraction)
+- Full pipeline: <300ms (excluding STT/TTS)
+
+### Files Created/Modified
+- **Modified:** `components/extraction/enhanced_level3_extractor.py` - Preserve full attribute phrases
+- **Modified:** `components/extraction/memory_extractor.py` - Fixed entity extraction fallback
+- **Modified:** `components/memory/hotmemory_facade.py` - Restored entity extraction for questions
+- **Created:** `clean_database.py` - Database cleanup script (to be moved to scripts/)
+- **Created:** Multiple test files (to be moved to tests/)
+
 ## Next Priority Items
 
 ### High Priority
