@@ -75,4 +75,3 @@ if __name__ == "__main__":
         print("Feasibility test passed: High retrieval accuracy")
     else:
         print("Feasibility test: Room for optimization")
-</content>
