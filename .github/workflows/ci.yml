@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies (server)
+      run: |
+        cd server
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        # Install test deps
+        pip install pytest pytest-cov
+    
+    - name: Lint Python (server)
+      run: |
+        cd server
+        # Ruff for linting (if installed) or flake8
+        pip install ruff
+        ruff check . --fix  # Auto-fix where possible
+    
+    - name: Run Python tests (server)
+      run: |
+        cd server
+        pytest tests/ -v --cov=components --cov-report=xml --cov-report=term-missing
+        # Specific V7 tests
+        pytest tests/test_enhanced_level3_quality.py::test_copula_extraction -v
+        pytest tests/test_enhanced_level3_quality.py::test_temporal_copula_integration -v
+    
+    - name: Install dependencies (client)
+      run: |
+        cd client
+        npm ci
+    
+    - name: Lint TypeScript (client)
+      run: |
+        cd client
+        npm run lint
+    
+    - name: Run client tests
+      run: |
+        cd client
+        npm test -- --coverage
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./server/coverage.xml  # Python coverage
+        fail_ci_if_error: true
+
+  benchmark:
+    runs-on: ubuntu-latest
+    needs: test  # Only run benchmarks after tests pass
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.12
+    
+    - name: Install dependencies
+      run: |
+        cd server
+        pip install -r requirements.txt
+        pip install pytest-benchmark
+    
+    - name: Run V7 benchmarks
+      run: |
+        cd server
+        # Benchmark enhanced_level3 vs baseline
+        python tests/performance/test_benchmarks.py --benchmark-only
+        # Target: <150ms fused retrieval
+        python -c "
+        import pytest
+        from components.extraction.enhanced_level3_extractor import QualityExtractor
+        import time
+        ext = QualityExtractor()
+        nlp = spacy.load('en_core_web_sm')
+        doc = nlp('My wife is at Google since 2020')
+        t0 = time.time()
+        kg = ext.extract_quality_kg(doc)
+        ms = (time.time() - t0) * 1000
+        print(f'Extraction: {ms:.1f}ms')
+        assert ms < 150, f'Extraction too slow: {ms:.1f}ms > 150ms'
+        "
+    
+    - name: Upload benchmark results
+      uses: benchmark-action/github-action-benchmark@v1
+      with:
+        name: V7 Benchmarks
+        tool: python
+        output-file-path: server/benchmark_results.json
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        auto-push: true
+
+  deploy-preview:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: test
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy preview (client)
+      run: |
+        cd client
+        npm run build
+        # Simulate preview deployment (e.g., Vercel/Netlify)
+        echo "Client build successful - ready for preview"
