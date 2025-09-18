@@ -6,6 +6,7 @@ server/.logs/
 **/.logs/
 server/*.log
 server/*_test_results.json
+server/tests/results/**
 
 # Node and Python artifacts
 node_modules/
