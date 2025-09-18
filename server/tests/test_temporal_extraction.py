@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Test temporal/date extraction capabilities"""
 
-from level3_universal_kg import UniversalKGExtractor
+from components.extraction.level3_universal_kg import UniversalKGExtractor
 import time
 
 def test_temporal_extraction():

@@ -21,8 +21,8 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from loguru import logger
-from test_feature_impact import FeatureActivationTester
-from baseline_performance import BaselinePerformanceMeasurer
+from .test_feature_impact import FeatureActivationTester
+from .baseline_performance import BaselinePerformanceMeasurer
 
 @dataclass
 class ValidationReport:

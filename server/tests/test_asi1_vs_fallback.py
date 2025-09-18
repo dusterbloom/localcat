@@ -15,8 +15,8 @@ from dataclasses import dataclass
 sys.path.insert(0, str(Path(__file__).parent))
 
 # Import extraction components
-from processors.extraction_processor import ExtractionProcessor
-from components.extraction.extraction_strategies import ExtractorRegistry
+from processors.extraction_processor import ExtractionProcessor, ExtractionProcessorConfig
+from components.extraction.extraction_registry import ExtractionRegistry as ExtractorRegistry
 
 @dataclass
 class ExtractionComparison:

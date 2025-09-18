@@ -10,8 +10,8 @@ from processors.memory_processor import MemoryProcessor, MemoryProcessorConfig
 from processors.extraction_processor import ExtractionProcessor, ExtractionProcessorConfig
 from processors.quality_processor import QualityProcessor, QualityProcessorConfig
 from processors.context_processor import ContextProcessor, ContextProcessorConfig
-from pipeline_builder import PipelineBuilder, PipelineConfig
-from config import Config, EnvironmentType
+from core.pipeline_builder import PipelineBuilder, PipelineConfig
+from core.config import Config, EnvironmentType
 
 
 class TestPipelineIntegration:

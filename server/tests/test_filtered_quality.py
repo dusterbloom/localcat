@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Test filtered quality extraction on news example"""
 
-from level3_universal_kg import UniversalKGExtractor
+from components.extraction.level3_universal_kg import UniversalKGExtractor
 
 def test_news_quality():
     extractor = UniversalKGExtractor()

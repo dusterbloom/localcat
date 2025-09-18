@@ -22,8 +22,8 @@ class SuppressDebug:
         sys.stderr = self._original_stderr
 
 def test_comparison():
-    from asi1_processor import ULTRAGROKSpacyV821Processor
-    from level3_universal_kg import UniversalKGExtractor
+    from components.extraction.asi1_processor import ULTRAGROKSpacyV821Processor
+    from components.extraction.level3_universal_kg import UniversalKGExtractor
 
     # Test text
     text = "John Smith works at Google in San Francisco. He manages the AI team and develops new products."

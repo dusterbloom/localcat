@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 def test_asi1():
     """Test ASI1 extraction"""
-    from asi1_processor import ULTRAGROKSpacyV821Processor
+    from components.extraction.asi1_processor import ULTRAGROKSpacyV821Processor
 
     processor = ULTRAGROKSpacyV821Processor(
         yaml_file="ULTRAGROK_V8.2.1_SPACY.yaml",
@@ -25,15 +25,18 @@ def test_asi1():
 
 def test_level3():
     """Test Level3 Universal KG extraction"""
-    from level3_universal_kg import UniversalKGExtractor
+    from components.extraction.level3_universal_kg import UniversalKGExtractor
 
     extractor = UniversalKGExtractor()
     return extractor
 
 def test_enhanced_level3():
     """Test Enhanced Level3 extraction"""
-    from enhanced_level3_extractor import EnhancedLevel3Extractor
-
+    # Use strategy wrapper with extract(text) API
+    from components.extraction.extraction_strategies import (
+        EnhancedLevel3ExtractionStrategy as EnhancedLevel3Extractor,
+    )
+    
     extractor = EnhancedLevel3Extractor()
     return extractor
 

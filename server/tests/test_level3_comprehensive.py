@@ -7,8 +7,8 @@ Testing all phases with ASI1's test collection and performance benchmarks
 """
 
 import time
-from level3_universal_kg import UniversalKGExtractor
-from enhanced_level3_extractor import QualityExtractor
+from components.extraction.level3_universal_kg import UniversalKGExtractor
+from components.extraction.enhanced_level3_extractor import QualityExtractor
 import spacy
 
 def test_comprehensive_level3():

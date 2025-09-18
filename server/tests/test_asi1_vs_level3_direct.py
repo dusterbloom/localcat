@@ -4,8 +4,8 @@ Direct comparison of ASI1 and Level3 extraction systems
 """
 import os
 import time
-from asi1_processor import ULTRAGROKSpacyV821Processor
-from level3_universal_kg import UniversalKGExtractor
+from components.extraction.asi1_processor import ULTRAGROKSpacyV821Processor
+from components.extraction.level3_universal_kg import UniversalKGExtractor
 
 def test_comparison():
     # Test text
