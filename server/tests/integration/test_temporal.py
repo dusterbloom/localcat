@@ -59,9 +59,9 @@ for phrase in test_phrases:
     print()
 
 # Check feature flags
-from components.context.memory_config import MemoryConfig
-config = MemoryConfig.from_env()
+from components.memory.config import HotMemoryConfig
+config = HotMemoryConfig()
 print(f"\nFeature Flags:")
-print(f"  use_temporal_extraction: {config.feature_flags.use_temporal_extraction}")
-print(f"  use_semantic_filter: {config.feature_flags.use_semantic_filter}")
-print(f"  use_coref: {config.feature_flags.use_coref}")
+print(f"  use_temporal_extraction: {config.features.use_temporal_extraction}")
+print(f"  use_semantic_filter: {config.features.use_semantic_filter}")
+print(f"  use_coref: {config.features.use_coref}")
