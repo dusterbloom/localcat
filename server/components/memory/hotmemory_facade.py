@@ -23,7 +23,6 @@ from components.memory.memory_quality import MemoryQuality
 from components.memory.config import create_config
 from components.extraction.memory_extractor import MemoryExtractor, ExtractionResult
 from components.retrieval.memory_retriever_optimized import MemoryRetrieverOptimized
-from components.retrieval.memory_retriever import MemoryRetriever, RetrievalResult
 from components.coreference.coreference_resolver import CoreferenceResolver, CoreferenceResult
 from components.extraction.assisted_extractor import AssistedExtractor, AssistedExtractionResult
 from components.session.session_store import get_session_store, SessionMessage

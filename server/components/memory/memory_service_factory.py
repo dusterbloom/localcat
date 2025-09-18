@@ -10,6 +10,7 @@ Author: SOLID Refactoring
 import os
 import time
 from typing import Dict, Any, Optional, Type, List, Callable
+from collections import defaultdict
 from dataclasses import dataclass
 import threading
 from loguru import logger
@@ -70,7 +71,6 @@ class MemoryServiceFactory:
         """Register default service configurations."""
         from components.memory.memory_extractor import MemoryExtractor
         from components.memory.memory_storage import MemoryStorage
-        from components.memory.memory_retriever import MemoryRetriever
         from components.memory.memory_quality import MemoryQuality
         from components.memory.memory_metrics import MemoryMetrics
         
@@ -80,8 +80,28 @@ class MemoryServiceFactory:
                             dependencies=['memory_store'], singleton=True)
         self.register_service('memory_storage', MemoryStorage, 
                             dependencies=['memory_store'], singleton=True)
-        self.register_service('memory_retriever', MemoryRetriever, 
-                            dependencies=['memory_store'], singleton=True)
+        # Prefer the optimized retriever by default; fallback remains available
+        use_optimized = os.getenv('HOTMEM_USE_OPTIMIZED_RETRIEVER', 'true').lower() in ("1", "true", "yes")
+        if use_optimized:
+            # Lazy factory to construct optimized retriever with in-memory indices
+            def _optimized_retriever_factory(deps: Dict[str, Any], cfg: Dict[str, Any]):
+                from components.retrieval.memory_retriever_optimized import MemoryRetrieverOptimized
+                store = deps['memory_store']
+                entity_index = defaultdict(set)
+                config = cfg or {}
+                return MemoryRetrieverOptimized(store, entity_index, config)
+
+            self.register_service(
+                'memory_retriever',
+                service_type=object,  # unused when factory_func is provided
+                dependencies=['memory_store'],
+                singleton=True,
+                factory_func=_optimized_retriever_factory,
+            )
+        else:
+            from components.memory.memory_retriever import MemoryRetriever
+            self.register_service('memory_retriever', MemoryRetriever, 
+                                dependencies=['memory_store'], singleton=True)
         self.register_service('memory_quality', MemoryQuality, singleton=True)
         self.register_service('memory_metrics', MemoryMetrics, singleton=True)
     

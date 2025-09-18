@@ -1,10 +1,8 @@
 """
-Memory Retriever Module
-
-Handles all query processing and retrieval operations for the HotMem system.
-Provides multiple retrieval strategies and result ranking.
-
-Author: SOLID Refactoring
+Memory Retriever Module (LEGACY)
+--------------------------------
+DEPRECATED: Kept temporarily for compatibility with older factory wiring.
+Prefer components.retrieval.memory_retriever_optimized.MemoryRetrieverOptimized.
 """
 
 import os
@@ -15,6 +13,8 @@ import math
 import heapq
 
 from loguru import logger
+logger.warning("Using legacy components.memory.memory_retriever."
+               " Switch to the optimized retriever when possible.")
 from components.memory.memory_store import MemoryStore
 
 class MemoryRetriever:

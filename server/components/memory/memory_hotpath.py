@@ -1,6 +1,9 @@
 """
-HotMem: Ultra-fast local memory for voice agents
-Full USGS Grammar-to-Graph 27 dependency pattern implementation
+HotMem (LEGACY): Monolithic memory pipeline
+-------------------------------------------------------------------------------
+DEPRECATED: This module is kept for historical reference and will be removed.
+Use HotMemoryFacade + components.retrieval.memory_retriever_optimized instead.
+
 Target: <200ms p95 extraction + retrieval
 """
 
@@ -17,6 +20,8 @@ import urllib.request
 import urllib.error
 
 from loguru import logger
+logger.warning("Importing legacy module components.memory.memory_hotpath (deprecated)."
+               " Prefer HotMemoryFacade with the optimized retriever.")
 import spacy
 from spacy.tokens import Token
 try:
