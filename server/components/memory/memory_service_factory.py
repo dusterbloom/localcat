@@ -75,7 +75,15 @@ class MemoryServiceFactory:
         from components.memory.memory_metrics import MemoryMetrics
         
         # Core services
-        self.register_service('memory_store', MemoryStore, singleton=True)
+        # Select backend for memory_store: sqlite (default) or surreal
+        backend = os.getenv('MEMORY_BACKEND', 'sqlite').lower()
+        if backend == 'surreal':
+            def _surreal_store_factory(deps, cfg):
+                from adapters.surreal_memory_store import SurrealMemoryStore
+                return SurrealMemoryStore.from_env()
+            self.register_service('memory_store', object, singleton=True, factory_func=_surreal_store_factory)
+        else:
+            self.register_service('memory_store', MemoryStore, singleton=True)
         self.register_service('memory_extractor', MemoryExtractor, 
                             dependencies=['memory_store'], singleton=True)
         self.register_service('memory_storage', MemoryStorage, 
