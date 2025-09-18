@@ -36,6 +36,9 @@ from pipecat.frames.frames import LLMRunFrame
 # Import HotMem processor
 from hotpath_processor import HotPathMemoryProcessor
 
+# Import streaming STT service
+from whisperlivekit_streaming_stt import WhisperLiveKitStreamingSTT
+
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
@@ -94,22 +97,62 @@ async def run_bot(webrtc_connection):
         ),
     )
 
-    stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
+    # Use streaming STT if enabled (default), otherwise fall back to batch mode
+    use_streaming_stt = os.getenv("USE_STREAMING_STT", "true").lower() == "true"
+
+    if use_streaming_stt:
+        try:
+            stt = WhisperLiveKitStreamingSTT(
+                model=os.getenv("WHISPER_MODEL", "base"),
+                language=os.getenv("WHISPER_LANGUAGE", "en"),
+                backend="simulstreaming",
+                chunk_size_ms=100,  # Process every 100ms for low latency
+                use_mlx_encoder=True  # Use MLX for Apple Silicon
+            )
+            logger.info("Using WhisperLiveKit streaming STT")
+        except Exception as e:
+            logger.warning(f"Failed to initialize streaming STT: {e}, falling back to batch mode")
+            stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
+    else:
+        stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
 
     tts = TTSMLXIsolated(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
     # tts = TTSMLXIsolated(model="Marvis-AI/marvis-tts-250m-v0.1", voice=None)
 
 
 
+    # Enable LLM streaming for lower perceived latency
+    use_llm_streaming = os.getenv("USE_LLM_STREAMING", "true").lower() == "true"
+
     llm = OpenAILLMService(
         api_key=os.getenv("OPENAI_API_KEY"),
         model=os.getenv("OPENAI_MODEL"),  # Small model. Uses ~4GB of RAM.
         # model="google/gemma-3-12b",  # Medium-sized model. Uses ~8.5GB of RAM.
         # model="mlx-community/Qwen3-235B-A22B-Instruct-2507-3bit-DWQ", # Large model. Uses ~110GB of RAM!
-        base_url=os.getenv("OPENAI_BASE_URL"), 
+        base_url=os.getenv("OPENAI_BASE_URL"),
         max_tokens=4096,
-        extra_body={"think": False},  # Disable thinking for main conversation model
+        stream=use_llm_streaming,  # Enable streaming for faster response
+        extra_body={
+            "think": False,  # Disable thinking for main conversation model
+            "stream": use_llm_streaming,  # Ensure streaming at API level
+            "options": {  # Ollama-specific optimizations
+                "num_predict": 4096,
+                "temperature": 0.7,
+                "top_k": 40,
+                "top_p": 0.9,
+                "repeat_penalty": 1.1,
+                "num_ctx": 4096,
+                "num_batch": 512,
+                "use_mlock": True,
+                "f16_kv": True
+            }
+        },
     )
+
+    if use_llm_streaming:
+        logger.info("LLM streaming enabled for lower latency")
+    else:
+        logger.info("LLM streaming disabled, using batch mode")
 
     context = OpenAILLMContext(
         [
@@ -122,11 +165,11 @@ async def run_bot(webrtc_connection):
     )
     context_aggregator = llm.create_context_aggregator(
         context,
-        # Whisper local service isn't streaming, so it delivers the full text all at
-        # once, after the UserStoppedSpeaking frame. Set aggregation_timeout to a
-        # a de minimus value since we don't expect any transcript aggregation to be
-        # necessary.
-        user_params=LLMUserAggregatorParams(aggregation_timeout=0.05),
+        # With streaming STT, we get incremental transcriptions, so use a small
+        # aggregation timeout to balance responsiveness with coherence
+        user_params=LLMUserAggregatorParams(
+            aggregation_timeout=0.1 if use_streaming_stt else 0.05
+        ),
     )
 
     # Initialize HotMem ultra-fast memory processor with context aggregator

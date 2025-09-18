@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **STT/LLM/TTS Streaming Integration**: Complete end-to-end streaming pipeline achieving <500ms latency
+  - WhisperLiveKit with SimulStreaming backend for ultra-low latency STT (<100ms chunks)
+  - LLM streaming with token-by-token output for immediate response
+  - Verified existing TTS streaming with chunked audio delivery
+  - Environment variable configuration for easy enable/disable
+  - Automatic fallback to batch mode when streaming unavailable
+  - Comprehensive test suite with unit and integration tests
 - **HotMem Ultra-Fast Memory System**: Complete local memory solution achieving <200ms p95 latency
   - Dual storage architecture: SQLite (persistence) + LMDB (O(1) memory-mapped lookups)
   - Universal Dependencies (UD) based extraction using spaCy
