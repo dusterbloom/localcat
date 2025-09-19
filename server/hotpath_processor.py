@@ -104,7 +104,16 @@ class HotPathMemoryProcessor(BaseProcessor):
         # Phase 0 state: track one-time interim pre-injection per turn
         self._turn_has_preinjected_bullets: bool = False
         self._last_injected_bullets: List[str] = []
-        self._interim_min_words: int = 6  # Phase 0 default; env wiring in Phase 0.5
+        # Env-driven controls (Phase 0.5)
+        self._enabled: bool = os.getenv("ENABLE_MEMORY", "true").lower() in ("1", "true", "yes")
+        try:
+            self._bullets_max: int = int(os.getenv("HOTMEM_BULLETS_MAX", "3"))
+        except Exception:
+            self._bullets_max = 3
+        try:
+            self._interim_min_words: int = int(os.getenv("HOTMEM_INTERIM_MIN_WORDS", "6"))
+        except Exception:
+            self._interim_min_words = 6
         self._inject_role = os.getenv("HOTMEM_INJECT_ROLE", "user").strip().lower()
         if self._inject_role not in ("user", "system"):
             self._inject_role = "user"
@@ -132,6 +141,11 @@ class HotPathMemoryProcessor(BaseProcessor):
         """
         # REQUIRED: call parent to set initialization state
         await super().process_frame(frame, direction)
+
+        # If memory is disabled, simply forward
+        if not self._enabled:
+            await self.push_frame(frame, direction)
+            return
 
         # REQUIRED: handle StartFrame immediately
         if isinstance(frame, StartFrame):
@@ -177,7 +191,7 @@ class HotPathMemoryProcessor(BaseProcessor):
                         logger.error(f"[HotMem] Interim retrieval failed: {e}")
                         preview = []
                     if preview:
-                        cap = 3  # Phase 0: fixed cap; env wiring in Phase 0.5
+                        cap = max(0, self._bullets_max)
                         inject_now = preview[:cap]
                         self._pending_bullets = list(inject_now)
                         try:
@@ -223,6 +237,8 @@ class HotPathMemoryProcessor(BaseProcessor):
     
     async def _process_transcription(self, frame: TranscriptionFrame, direction: FrameDirection):
         """Process final user transcription"""
+        if not getattr(self, "_enabled", True):
+            return
         self._turn_id += 1
         text = frame.text or ""
         
@@ -242,7 +258,7 @@ class HotPathMemoryProcessor(BaseProcessor):
             # Stash bullets to inject just before the aggregated user message
             if bullets:
                 logger.info(f"[HotMem] Prepared {len(bullets)} memory bullets for injection")
-                cap = 3  # Phase 0: fixed cap; env wiring in Phase 0.5
+                cap = max(0, self._bullets_max)
                 self._pending_bullets = bullets[:cap]
             
             # Track performance

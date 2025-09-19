@@ -172,4 +172,6 @@ def main():
 
 if __name__ == "__main__":
     success = main()
-    sys.exit(0 if success else 1)
+    # Force immediate exit to avoid teardown issues with background tasks/frameworks
+    import os as _os
+    _os._exit(0 if success else 1)
