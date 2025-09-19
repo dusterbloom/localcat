@@ -13,6 +13,11 @@ from loguru import logger
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Mitigate macOS OpenMP shared-memory issues during tests
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("KMP_AFFINITY", "disabled")
+os.environ.setdefault("KMP_INIT_AT_FORK", "FALSE")
+
 
 def run_test_file(test_path: Path) -> bool:
     """Run a single test file and return success status"""

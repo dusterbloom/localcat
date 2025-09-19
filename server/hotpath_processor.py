@@ -17,6 +17,7 @@ from pipecat.processors.frame_processor import FrameProcessor as BaseProcessor, 
 
 from memory_store import MemoryStore, Paths
 from memory_hotpath import HotMemory
+from memory.context import format_bullets as _fmt_bullets, build_message as _build_msg, MemoryContextFrame
 
 # Ensure we only add a file sink once per process
 _HOTMEM_LOG_SINK_ADDED = False
@@ -119,6 +120,7 @@ class HotPathMemoryProcessor(BaseProcessor):
             self._inject_role = "user"
         self._inject_header = os.getenv("HOTMEM_INJECT_HEADER", "[Memory context]")
         self._trace_frames = os.getenv("HOTMEM_TRACE_FRAMES", "false").lower() in ("1", "true", "yes")
+        self._handshake_enabled = os.getenv("HOTMEM_ENABLE_HANDSHAKE", "true").lower() in ("1", "true", "yes")
         
         # Store context aggregator reference for direct context injection
         self._context_aggregator = context_aggregator
@@ -199,6 +201,11 @@ class HotPathMemoryProcessor(BaseProcessor):
                             self._turn_has_preinjected_bullets = True
                             self._last_injected_bullets = list(inject_now)
                             logger.info(f"[HotMem] Interim pre-injection completed with {len(self._last_injected_bullets)} bullets")
+                            if self._handshake_enabled:
+                                try:
+                                    await self.push_frame(MemoryContextReadyFrame(), direction)
+                                except Exception:
+                                    pass
                         except Exception as e:
                             logger.error(f"[HotMem] Interim pre-injection error: {e}")
 
@@ -222,6 +229,11 @@ class HotPathMemoryProcessor(BaseProcessor):
                             await self._inject_memory_context()
                             self._last_injected_bullets = new_bullets
                             logger.info(f"[HotMem] Final injection {'refreshed' if self._turn_has_preinjected_bullets else 'inserted'} with {len(new_bullets)} bullets")
+                            if self._handshake_enabled:
+                                try:
+                                    await self.push_frame(MemoryContextReadyFrame(), direction)
+                                except Exception:
+                                    pass
                     except Exception as e:
                         logger.error(f"[HotMem] Final injection error: {e}")
                 # Reset pre-injection state for next turn
@@ -282,17 +294,20 @@ class HotPathMemoryProcessor(BaseProcessor):
                 
             # Get the context object from the user aggregator
             context = self._context_aggregator.user().context
-            memory_content = "\n".join(self._pending_bullets[:3])
-            memory_message = {
-                "role": self._inject_role, 
-                "content": f"{self._inject_header}\n{memory_content}"
-            }
+            # Normalize bullets with current cap
+            bullets = _fmt_bullets(self._pending_bullets, max_bullets=getattr(self, "_bullets_max", 3))
+            memory_message = _build_msg(self._inject_role, self._inject_header, bullets)
             
             logger.info(f"[HotMem] Injecting {len(self._pending_bullets)} memory bullets directly into context")
-            logger.info(f"[HotMem] Memory bullets: {self._pending_bullets[:2]}")
+            logger.info(f"[HotMem] Memory bullets: {bullets[:2]}")
             
             # Add memory message to context before the user message gets added
             context.add_message(memory_message)
+            # Also emit a typed frame for downstream processors (future-proof, non-breaking)
+            try:
+                await self.push_frame(MemoryContextFrame(self._inject_role, self._inject_header, bullets), None)
+            except Exception:
+                pass
             
             # Clear pending bullets after injection
             self._pending_bullets = []
@@ -363,3 +378,8 @@ class TestMemoryProcessor(HotPathMemoryProcessor):
         # Log current memory state
         stats = self.get_memory_stats()
         logger.info(f"Memory state: {stats['hot_metrics'].get('entities', 0)} entities tracked")
+
+
+# Optional handshake frame indicating memory context is ready for the turn
+class MemoryContextReadyFrame(Frame):
+    pass

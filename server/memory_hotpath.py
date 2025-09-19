@@ -17,6 +17,8 @@ import spacy
 from spacy.tokens import Token
 
 from memory_store import MemoryStore
+from memory.extractors.ud import UDExtractor
+from memory.retrieval import Retrieval
 
 # Try to import language detection
 try:
@@ -104,6 +106,9 @@ class HotMemory:
         # Performance tracking
         self.metrics = defaultdict(list)
         self.max_metric_size = 1000
+        # Extractor (Phase 1C): adapter to existing implementation
+        self.extractor = UDExtractor(self)
+        self.retriever = Retrieval(self)
 
     def prewarm(self, lang: str = "en") -> None:
         """Load NLP resources up-front to avoid first-turn latency."""
@@ -122,20 +127,20 @@ class HotMemory:
         # Language detection
         lang = self._detect_language(text) if PYCLD3_AVAILABLE else "en"
         
-        # Stage 1: Extract entities and relations
+        # Stage 1: Extract entities and relations (via extractor seam)
         extract_start = time.perf_counter()
-        entities, triples, neg_count, doc = self._extract(text, lang)
+        entities, triples, neg_count, doc = self.extractor.extract(text, lang)
         self.metrics['extraction_ms'].append((time.perf_counter() - extract_start) * 1000)
         
         # Stage 2: Refine triples and update memory with new facts (skip writes for questions)
         refine_start = time.perf_counter()
-        triples = self._refine_triples(text, triples, doc)
+        triples = self.extractor.refine(text, triples, doc)
         # Rebuild entities from refined triples + text context
         ent_from_triples: Set[str] = set()
         for s, r, d in triples:
             ent_from_triples.add(s)
             ent_from_triples.add(d)
-        entities = self._refine_entities_from_text(text, list(ent_from_triples))
+        entities = self.extractor.refine_entities(text, list(ent_from_triples))
 
         update_start = time.perf_counter()
         now_ts = int(time.time() * 1000)
@@ -587,83 +592,11 @@ class HotMemory:
                 break
     
     def _retrieve_context(self, query: str, entities: List[str], turn_id: int) -> List[str]:
-        """
-        Retrieve relevant memory bullets for context
-        Returns top 3 most relevant memories
-        """
-        bullets: List[str] = []
-        seen = set()
-
-        # 1) Prefer fact bullets based on query entities
-        #    Put non-'you' entities first; then 'you' if present.
-        ent_set = [e for e in entities if e]
-        non_you = [e for e in ent_set if e != "you"]
-        include_you = any(e == "you" for e in ent_set)
-        query_entities = non_you[:4]
-        if include_you:
-            query_entities.append("you")
-
-        # Predicate priority for better answerability
-        pred_pri = {
-            "lives_in": 100,
-            "works_at": 95,
-            "born_in": 90,
-            "moved_from": 85,
-            "participated_in": 80,
-            "friend_of": 78,
-            "name": 75,
-            "has": 60,
-        }
-
-        for entity in query_entities:
-            if entity in self.entity_index:
-                candidates = list(self.entity_index[entity])
-                scored = []
-                for s, r, d in candidates:
-                    # Try to recover recency from store
-                    ts = 0
-                    try:
-                        neigh = self.store.neighbors(s, r)
-                        for (dst, _w, nts, _p, _n, _st) in neigh:
-                            if dst == d:
-                                ts = int(nts)
-                                break
-                    except Exception:
-                        ts = 0
-                    pri = pred_pri.get(r, 50)
-                    scored.append((pri, ts, s, r, d))
-                # Sort by priority desc, then time desc
-                scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
-                for _pri, _ts, s, r, d in scored:
-                    fact = f"{s} {r} {d}"
-                    if fact not in seen:
-                        bullets.append(f"• {fact}")
-                        seen.add(fact)
-                        if len(bullets) >= 3:
-                            return bullets
-
-        # 2) Fallback to recent facts if we still need context
-        for item in reversed(list(self.recency_buffer)[-10:]):
-            fact = f"{item.s} {item.r} {item.d}"
-            if fact not in seen:
-                # Format fact nicely based on relation type
-                if item.r == "name":
-                    formatted = f"• {item.s}'s name is {item.d}"
-                elif item.r == "has":
-                    formatted = f"• {item.s} has {item.d}"
-                elif item.r == "is":
-                    formatted = f"• {item.s} is {item.d}"
-                elif item.r.startswith("v:"):
-                    formatted = f"• {item.s} {item.r[2:]} {item.d}"
-                else:
-                    formatted = f"• {item.s} {item.r.replace('_', ' ')} {item.d}"
-                
-                bullets.append(formatted)
-                seen.add(fact)
-                if len(bullets) >= 3:
-                    break
-
-        return bullets[:3]
+        """Compatibility shim: delegate to retriever (no behavior change)."""
+        try:
+            return self.retriever.retrieve(query, entities, turn_id)
+        except Exception:
+            return []
     
     def _detect_language(self, text: str) -> str:
         """Detect language using env override or pycld3"""
@@ -726,11 +659,11 @@ class HotMemory:
         Useful for validating retrieval independently of writes.
         """
         try:
-            entities, _, _, _ = self._extract(text, lang)
-            entities = self._refine_entities_from_text(text, entities)
+            entities, _, _, _ = self.extractor.extract(text, lang)
+            entities = self.extractor.refine_entities(text, entities)
         except Exception:
             entities = []
-        bullets = self._retrieve_context(text, entities, turn_id=-1)
+        bullets = self.retriever.retrieve(text, entities, turn_id=-1)
         return {"entities": entities, "bullets": bullets}
 
     # Phase 0: unified retrieval entry point (read-only or normal)
@@ -743,19 +676,19 @@ class HotMemory:
         """
         if read_only:
             try:
-                entities, _, _, _ = self._extract(text, lang)
-                entities = self._refine_entities_from_text(text, entities)
+                entities, _, _, _ = self.extractor.extract(text, lang)
+                entities = self.extractor.refine_entities(text, entities)
             except Exception:
                 entities = []
-            return self._retrieve_context(text, entities, turn_id=-1)
+            return self.retriever.retrieve(text, entities, turn_id=-1)
         else:
             # Non read-only: reuse preview path for now; callers may have called process_turn before this.
             try:
-                entities, _, _, _ = self._extract(text, lang)
-                entities = self._refine_entities_from_text(text, entities)
+                entities, _, _, _ = self.extractor.extract(text, lang)
+                entities = self.extractor.refine_entities(text, entities)
             except Exception:
                 entities = []
-            return self._retrieve_context(text, entities, turn_id=-1)
+            return self.retriever.retrieve(text, entities, turn_id=-1)
 
     # ---------- Refinement helpers (quality without large perf cost) ----------
     def _is_question(self, text: str) -> bool:

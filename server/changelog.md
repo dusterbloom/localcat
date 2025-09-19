@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Phase 0: Streaming memory pre-injection and final refresh
+  - Interim pre-injection (retrieval-only, once/turn) to ensure bullets exist before LLM starts
+  - Final refresh on TranscriptionFrame with extract+persist+retrieve
+  - Unified `retrieve_bullets(read_only=...)` API
+- Phase 0.5: Config parity and handshake
+  - Env controls: `ENABLE_MEMORY`, `HOTMEM_BULLETS_MAX`, `HOTMEM_INTERIM_MIN_WORDS`
+  - Optional handshake frame `MemoryContextReadyFrame` signaling memory readiness to downstream
+  - Unit tests: `test_hotmem_phase0.py`, `test_hotmem_env.py`
+- Phase 1 (scaffolding started)
+  - `server/memory/` package added
+  - `memory/store.py` (compat re-export), `memory/index.py` (HotIndex skeleton)
+  - `memory/context.py` (bullet formatting/dedup/cap) and MemoryContextFrame; HotMem emits both direct context message and typed frame
+  - `memory/extractors/` (Extractor interface, UDExtractor adapter); HotMemory delegates extraction/refinement via the adapter
+  - `memory/retrieval.py` (Retrieval) with identical routing logic; HotMemory delegates retrieval
+  - No behavior change yet (compatibility maintained)
 - **STT/LLM/TTS Streaming Integration**: Complete end-to-end streaming pipeline achieving <500ms latency
   - WhisperLiveKit with SimulStreaming backend for ultra-low latency STT (<100ms chunks)
   - LLM streaming with token-by-token output for immediate response
@@ -27,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive technical debt documentation and cleanup guidelines
 
 ### Changed
+- HotMem processor now injects memory before forwarding frames and (optionally) signals readiness
+- Test runner logs improved; tests hard-exit to avoid macOS framework teardown crashes
+- LMDB usage made optional in store operations to support in-memory testing
 - **Complete Memory Architecture Overhaul**: Replaced mem0 (2s latency) with HotMem (<200ms)
 - **Proper Pipecat Integration**: HotMem now uses context aggregator for memory injection
 - **Pipeline Optimization**: Moved memory processor before context aggregator for correct frame flow
@@ -36,6 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Performance Monitoring**: Real-time metrics tracking with p95 latency goals
 
 ### Fixed
+- Punctuation-induced question misclassification mitigated (prevents question gating from blocking writes)
+- LMDB None handling in `observe_edge`, `negate_edge`, and `flush` (no crashes on in-memory tests)
+- Intermittent teardown exceptions in tests by forcing process hard-exit in test scripts
 - **Critical Memory Extraction Bug**: Fixed retrieval returning query text instead of actual facts
 - **Frame Processing Issues**: Resolved `is_final=None` causing extraction to be skipped  
 - **Context Integration Failure**: Fixed memory bullets not appearing in LLM context
