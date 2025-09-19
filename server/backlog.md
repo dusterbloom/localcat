@@ -44,6 +44,20 @@
 - Handshake enabled by default (HOTMEM_ENABLE_HANDSHAKE=true) — no regressions observed
 - Integration tests fully recovered from consolidation changes
 
+- **Phase 1.6: DIET Intent Classification Discovery — COMPLETED (2025-09-19)**
+  - **Research Completed**: Comprehensive analysis of DIET (Dual Intent and Entity Transformer) for voice agent intent classification
+  - **Key Findings**:
+    - DIET provides 6x faster training than BERT with comparable accuracy
+    - Lightweight inference (~10-20ms) fits within <200ms latency budget
+    - Intent-aware processing could skip memory operations for casual chat (saves ~200ms)
+    - Perfect fit between STT and HotPathMemoryProcessor for smart routing
+  - **Deliverables Created**:
+    - Discovery report: `backlog/drafts/diet-intent-classification-discovery.md`
+    - Implementation guide: `docs/diet-intent-classification-guide.md`
+    - Training data generator: `docs/diet_training_data_generator.ipynb` (Google Colab)
+  - **Integration Strategy**: 10 voice-optimized intents (remember_fact, recall_query, general_chat, etc.)
+  - **Next**: Ready for implementation and training data generation
+
 ### Next Milestones
 - Phase 2 (Retrieval Quality; behind flags, no default cost)
   - Optional BM25 (SQLite FTS5) re‑rank for top‑K under strict budget
