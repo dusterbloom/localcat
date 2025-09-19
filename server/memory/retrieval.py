@@ -13,6 +13,9 @@ store exactly as the previous implementation did.
 from typing import List, Tuple, Any
 
 
+import os
+
+
 class Retrieval:
     def __init__(self, host: Any):
         """host must expose: entity_index, recency_buffer, store."""
@@ -22,7 +25,27 @@ class Retrieval:
         bullets: List[str] = []
         seen = set()
 
-        # 1) Prefer fact bullets based on query entities
+        # Source order control via env (defaults to graph only)
+        sources = [s.strip() for s in os.getenv("MEMORY_SOURCES", "graph").split(",") if s.strip()]
+
+        # 1) Graph retrieval
+        if "graph" in sources and len(bullets) < max_bullets:
+            bullets.extend(self._graph_retrieve(query, entities, turn_id, max_bullets, seen))
+
+        # 2) Summary retrieval (stubbed for now)
+        if "summary" in sources and len(bullets) < max_bullets:
+            # Placeholder: integrate summarizer-backed retrieval later.
+            pass
+
+        # 3) Conversation retrieval via FTS (if indexed)
+        if "convo" in sources and len(bullets) < max_bullets:
+            bullets.extend(self._convo_retrieve(query, max_bullets, seen))
+
+        return bullets[:max_bullets]
+
+    def _graph_retrieve(self, query: str, entities: List[str], turn_id: int, max_bullets: int, seen: set) -> List[str]:
+        out: List[str] = []
+        # Prefer fact bullets based on query entities
         ent_set = [e for e in entities if e]
         non_you = [e for e in ent_set if e != "you"]
         include_you = any(e == "you" for e in ent_set)
@@ -61,12 +84,12 @@ class Retrieval:
                 for _pri, _ts, s, r, d in scored:
                     fact = f"{s} {r} {d}"
                     if fact not in seen:
-                        bullets.append(f"• {fact}")
+                        out.append(f"• {fact}")
                         seen.add(fact)
-                        if len(bullets) >= max_bullets:
-                            return bullets
+                        if len(out) >= max_bullets:
+                            return out
 
-        # 2) Fallback to recent facts if we still need context
+        # Fallback to recent facts if we still need context
         for item in reversed(list(self.host.recency_buffer)[-10:]):
             fact = f"{item.s} {item.r} {item.d}"
             if fact not in seen:
@@ -81,10 +104,29 @@ class Retrieval:
                 else:
                     formatted = f"• {item.s} {item.r.replace('_', ' ')} {item.d}"
 
-                bullets.append(formatted)
+                out.append(formatted)
                 seen.add(fact)
-                if len(bullets) >= max_bullets:
+                if len(out) >= max_bullets:
                     break
 
-        return bullets[:max_bullets]
+        return out[:max_bullets]
 
+    def _convo_retrieve(self, query: str, max_bullets: int, seen: set) -> List[str]:
+        out: List[str] = []
+        try:
+            # Simple FTS search over prior mentions; limit small to keep latency predictable
+            hits = self.host.store.search_fts(query, limit=max_bullets * 2)
+        except Exception:
+            hits = []
+        for text, eid in hits:
+            s = text.strip().replace("\n", " ")
+            if not s:
+                continue
+            bullet = f"• recently: {s[:120]}"  # keep short
+            if bullet in seen:
+                continue
+            seen.add(bullet)
+            out.append(bullet)
+            if len(out) >= max_bullets:
+                break
+        return out

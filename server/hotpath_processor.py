@@ -121,6 +121,9 @@ class HotPathMemoryProcessor(BaseProcessor):
         self._inject_header = os.getenv("HOTMEM_INJECT_HEADER", "[Memory context]")
         self._trace_frames = os.getenv("HOTMEM_TRACE_FRAMES", "false").lower() in ("1", "true", "yes")
         self._handshake_enabled = os.getenv("HOTMEM_ENABLE_HANDSHAKE", "true").lower() in ("1", "true", "yes")
+        # Retrieval source controls (Phase 2-ready; used now for convo indexing)
+        self._memory_sources = [s.strip() for s in os.getenv("MEMORY_SOURCES", "graph").split(",") if s.strip()]
+        self._convo_index_enabled = os.getenv("MEMORY_CONVO_INDEX", "false").lower() in ("1", "true", "yes")
         
         # Store context aggregator reference for direct context injection
         self._context_aggregator = context_aggregator
@@ -272,6 +275,15 @@ class HotPathMemoryProcessor(BaseProcessor):
                 logger.info(f"[HotMem] Prepared {len(bullets)} memory bullets for injection")
                 cap = max(0, self._bullets_max)
                 self._pending_bullets = bullets[:cap]
+
+            # Optional: index conversation text into FTS for convo retrieval
+            try:
+                if self._convo_index_enabled and text.strip():
+                    now_ts = int(time.time() * 1000)
+                    self.store.enqueue_mention(self._session_id, text.strip(), now_ts, self._session_id, self._turn_id)
+                    self.store.flush_if_needed()
+            except Exception as e:
+                logger.warning(f"[HotMem] Convo index failed: {e}")
             
             # Track performance
             elapsed_ms = (time.perf_counter() - start) * 1000

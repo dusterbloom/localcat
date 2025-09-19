@@ -92,17 +92,39 @@ USER_ID=your_user_id
 AGENT_ID=locat
 ```
 
-## Memory System
+## Memory (HotMem)
 
-The assistant uses a three-model approach for optimal performance:
-- **Conversation Model** (Gemma3 4B via Ollama): Handles real-time chat responses
-- **Fact Extraction Model** (Qwen3 4B via LM Studio): Extracts facts from conversations with JSON schema compliance
-- **Memory Update Model** (Qwen3 4B Instruct via LM Studio): Manages ADD/UPDATE/DELETE operations with structured output
+Local, ultra-fast memory with UD-based extraction and LMDB/SQLite storage.
 
-Memory is automatically:
-- Extracted from conversations
-- Stored in FAISS vector database
-- Retrieved for contextual responses
+By default, HotMem runs in the pipeline before the user context aggregator and injects up to 3 short bullets per turn.
+
+### Configuration
+
+Environment variables (set in `server/.env`):
+
+- `ENABLE_MEMORY` (default: `true`)
+  - `true`: memory enabled; `false`: pass-through, no extraction or injection
+- `HOTMEM_BULLETS_MAX` (default: `3`)
+  - Max bullets injected per turn
+- `HOTMEM_INTERIM_MIN_WORDS` (default: `6`)
+  - Minimum interim words before pre-injection
+- `HOTMEM_ENABLE_HANDSHAKE` (default: `true`)
+  - Emit a readiness frame after injection to signal downstream before forwarding frames
+
+Retrieval sources and order:
+
+- `MEMORY_SOURCES` (default: `graph`)
+  - Comma-separated list of sources in priority order: `graph`, `convo`, `summary`
+  - Examples: `graph`, `graph,summary`, `graph,convo,summary`, `convo`
+- `MEMORY_CONVO_INDEX` (default: `false`)
+  - When `true`, final user transcriptions are indexed into SQLite FTS and available to `convo` retrieval
+- `MEMORY_SUMMARY_ENABLED` (default: `false`)
+  - Placeholder flag for periodic summarization-based retrieval (future)
+
+Notes:
+- Graph retrieval (default) uses entity-first routing with relation priority + recency.
+- Convo retrieval (when enabled) searches recent final utterances via SQLite FTS. Bullets are formatted as short “recently:” lines.
+- Summary retrieval is planned for condensed memory across long sessions.
 
 ## Troubleshooting
 
