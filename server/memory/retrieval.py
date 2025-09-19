@@ -85,7 +85,9 @@ class Retrieval:
                     fact = f"{s} {r} {d}"
                     if fact not in seen:
                         suffix = self._ago_suffix(_ts)
-                        out.append(f"• {fact}{suffix}")
+                    human = self._humanize_fact(s, r, d)
+                    if human:
+                        out.append(f"• [graph] {human}{suffix}")
                         seen.add(fact)
                         if len(out) >= max_bullets:
                             return out
@@ -95,21 +97,12 @@ class Retrieval:
             fact = f"{item.s} {item.r} {item.d}"
             if fact not in seen:
                 age = self._ago_suffix(item.timestamp if hasattr(item, 'timestamp') else 0)
-                if item.r == "name":
-                    formatted = f"• {item.s}'s name is {item.d}"
-                elif item.r == "has":
-                    formatted = f"• {item.s} has {item.d}"
-                elif item.r == "is":
-                    formatted = f"• {item.s} is {item.d}"
-                elif item.r.startswith("v:"):
-                    formatted = f"• {item.s} {item.r[2:]} {item.d}"
-                else:
-                    formatted = f"• {item.s} {item.r.replace('_', ' ')} {item.d}"
-
-                out.append(formatted + age)
-                seen.add(fact)
-                if len(out) >= max_bullets:
-                    break
+                human = self._humanize_fact(item.s, item.r, item.d)
+                if human:
+                    out.append(f"• [graph] {human}{age}")
+                    seen.add(fact)
+                    if len(out) >= max_bullets:
+                        break
 
         return out[:max_bullets]
 
@@ -124,7 +117,7 @@ class Retrieval:
             s = text.strip().replace("\n", " ")
             if not s:
                 continue
-            bullet = f"• recently: {s[:120]}{self._ago_suffix(ts)}"  # keep short
+            bullet = f"• [convo] {s[:120]}{self._ago_suffix(ts)}"  # keep short
             if bullet in seen:
                 continue
             seen.add(bullet)
@@ -143,7 +136,7 @@ class Retrieval:
             s = text.strip().replace("\n", " ")
             if not s:
                 continue
-            bullet = f"• summary: {s[:160]}{self._ago_suffix(ts)}"
+            bullet = f"• [summary] {s[:160]}{self._ago_suffix(ts)}"
             if bullet in seen:
                 continue
             seen.add(bullet)
@@ -175,3 +168,38 @@ class Retrieval:
             return f" ({days}d ago)"
         except Exception:
             return ""
+
+    def _humanize_fact(self, s: str, r: str, d: str) -> str:
+        meaningless_entities = {"it", "this", "that", "there", "here", "been"}
+        if s.lower() in meaningless_entities or d.lower() in meaningless_entities:
+            return ""
+
+        stop_relations = {
+            "and",
+            "know",
+            "remember",
+            "say",
+            "tell",
+            "think",
+            "ask",
+            "quality",
+            "tell_about",
+        }
+        if r in stop_relations:
+            return ""
+
+        if r == "name":
+            if s.lower() == "you":
+                return f"your name is {d}"
+            return f"{s}'s name is {d}"
+        if r == "has":
+            if s.lower() == "you":
+                return f"you have {d}"
+            return f"{s} has {d}"
+        if r == "is":
+            if s.lower() in meaningless_entities or d.lower().startswith("what "):
+                return ""
+            return f"{s} is {d}"
+        if r.startswith("v:"):
+            return f"{s} {r[2:]} {d}"
+        return f"{s} {r.replace('_', ' ')} {d}"

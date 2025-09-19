@@ -34,6 +34,7 @@ from pipecat.frames.frames import LLMRunFrame
 
 # Import HotMem processor
 from hotpath_processor import HotPathMemoryProcessor
+from session_tracker import SessionTracker
 
 # Import streaming STT service
 try:
@@ -85,17 +86,30 @@ SYSTEM_INSTRUCTION =  """You are Locat, a personal assistant. You can remember t
 
 
 async def run_bot(webrtc_connection):
+    vad_confidence = float(os.getenv("VAD_CONFIDENCE", "0.7"))
+    vad_start_secs = float(os.getenv("VAD_START_SECS", "0.2"))
+    # Use a more forgiving default stop window so brief pauses do not end the turn
+    vad_stop_secs = float(os.getenv("VAD_STOP_SECS", "1.6"))
+    vad_min_volume = float(os.getenv("VAD_MIN_VOLUME", "0.6"))
+
+    vad_params = VADParams(
+        confidence=vad_confidence,
+        start_secs=vad_start_secs,
+        stop_secs=max(vad_stop_secs, 0.8),
+        min_volume=vad_min_volume,
+    )
+
     transport = SmallWebRTCTransport(
         webrtc_connection=webrtc_connection,
         params=TransportParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
-            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
+            vad_analyzer=SileroVADAnalyzer(params=vad_params),
             turn_analyzer=LocalSmartTurnAnalyzerV3(
                 params=SmartTurnParams(
-                    stop_secs=3.0,  # Recommended stop time for Smart Turn v3
-                    pre_speech_ms=0.0,
-                    max_duration_secs=8.0  # Recommended max duration for Smart Turn v3
+                    stop_secs=float(os.getenv("SMART_TURN_STOP_SECS", "4.0")),
+                    pre_speech_ms=float(os.getenv("SMART_TURN_PRE_SPEECH_MS", "300")),
+                    max_duration_secs=float(os.getenv("SMART_TURN_MAX_DURATION_SECS", "16.0")),
                 )
             ),
         ),
@@ -110,7 +124,7 @@ async def run_bot(webrtc_connection):
             logger.info(f"Attempting to initialize Kyutai STT with repo: {hf_repo}")
             stt = KyutaiStreamingSTT(
                 hf_repo=hf_repo,
-                enable_vad=True,  # Re-enable VAD for proper speech detection
+                enable_vad=os.getenv("KYUTAI_ENABLE_VAD", "false").lower() in ("1", "true", "yes"),
                 max_steps=4096
             )
             logger.info(f"✅ Successfully initialized Kyutai streaming STT ({'MLX' if hf_repo.endswith('-mlx') else 'Candle'})")
@@ -125,7 +139,28 @@ async def run_bot(webrtc_connection):
         logger.info("Using batch STT mode")
         stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
 
-    tts = TTSMLXIsolated(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
+    # Choose TTS mode based on environment variable
+    use_ultra_low_latency = os.getenv("TTS_ULTRA_LOW_LATENCY", "true").lower() in ("1", "true", "yes")
+
+    if use_ultra_low_latency:
+        logger.info("Using ultra-low latency TTS mode (40-80ms TTFB)")
+        from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
+        tts = TTSMLXUltraLowLatency(
+            model="mlx-community/Kokoro-82M-bf16",
+            voice="af_heart",
+            sample_rate=24000,
+            speed=1.0,
+            buffer_ms=50,  # 50ms buffer for optimal latency
+            use_boundaries=True
+        )
+    else:
+        logger.info("Using standard TTS mode")
+        tts = TTSMLXIsolated(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
+
+    try:
+        await tts._initialize_if_needed()
+    except Exception as e:
+        logger.warning(f"TTS prewarm failed: {e}")
     # tts = TTSMLXIsolated(model="Marvis-AI/marvis-tts-250m-v0.1", voice=None)
 
 
@@ -172,14 +207,21 @@ async def run_bot(webrtc_connection):
         ]
 
     )
+    default_timeout = "0.3" if use_streaming_stt else "0.25"
+    agg_timeout = float(os.getenv("LLM_AGGREGATION_TIMEOUT", default_timeout))
+    turn_timeout = float(os.getenv("LLM_TURN_EMULATED_VAD_TIMEOUT", "0.7"))
+    agg_interruptions = os.getenv("LLM_ENABLE_EMULATED_VAD_INTERRUPTION", "true").lower() in ("1", "true", "yes")
+
     context_aggregator = llm.create_context_aggregator(
         context,
-        # With streaming STT, we get incremental transcriptions, so use a small
-        # aggregation timeout to balance responsiveness with coherence
         user_params=LLMUserAggregatorParams(
-            aggregation_timeout=0.1 if use_streaming_stt else 0.05
+            aggregation_timeout=agg_timeout,
+            turn_emulated_vad_timeout=turn_timeout,
+            enable_emulated_vad_interruptions=agg_interruptions,
         ),
     )
+
+    session_tracker = SessionTracker()
 
     # Initialize HotMem ultra-fast memory processor with context aggregator
     memory = HotPathMemoryProcessor(
@@ -187,7 +229,9 @@ async def run_bot(webrtc_connection):
         lmdb_dir=os.getenv("HOTMEM_LMDB_DIR", None),  # Disable LMDB temporarily
         user_id=os.getenv("USER_ID", "default-user"),
         enable_metrics=True,  # Log performance metrics
-        context_aggregator=context_aggregator  # Pass context aggregator for injection
+        context_aggregator=context_aggregator,  # Pass context aggregator for injection
+        session_tracker=session_tracker,
+        agent_id=os.getenv("AGENT_ID", "locat"),
     )
 
     #
@@ -198,7 +242,7 @@ async def run_bot(webrtc_connection):
     stages = [transport.input()]
 
     # Optional mic probe
-    if os.getenv("ENABLE_MIC_PROBE", "false").lower() in ("1", "true", "yes"): 
+    if os.getenv("ENABLE_MIC_PROBE", "false").lower() in ("1", "true", "yes"):
         logger.info("MicProbe enabled: logging mic input levels")
         stages.append(MicProbe())
 
@@ -237,6 +281,11 @@ async def run_bot(webrtc_connection):
         # Send greeting directly to TTS without triggering LLM
         from pipecat.frames.frames import TextFrame
         await task.queue_frames([TextFrame(greeting)])
+
+        try:
+            memory.refresh_session_header()
+        except Exception:
+            pass
 
     @transport.event_handler("on_first_participant_joined")
     async def on_first_participant_joined(transport, participant):
@@ -286,7 +335,18 @@ async def offer(request: dict, background_tasks: BackgroundTasks):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Pre-warm models on startup
+    try:
+        from model_manager import initialize_models
+        logger.info("Pre-warming ML models for ultra-low latency...")
+        await initialize_models()
+        logger.info("Model pre-warming complete")
+    except Exception as e:
+        logger.warning(f"Model pre-warming failed: {e}")
+
     yield  # Run app
+
+    # Cleanup on shutdown
     coros = [pc.disconnect() for pc in pcs_map.values()]
     await asyncio.gather(*coros)
     pcs_map.clear()

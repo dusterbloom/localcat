@@ -11,6 +11,7 @@ import os
 import queue
 import threading
 import time
+import re
 from typing import AsyncGenerator, Optional
 from loguru import logger
 
@@ -30,6 +31,7 @@ from pipecat.frames.frames import (
     UserStoppedSpeakingFrame
 )
 from pipecat.services.ai_services import STTService
+from pipecat.utils.tracing.service_decorators import traced_stt
 
 # Import fast punctuation restoration
 try:
@@ -75,6 +77,8 @@ class KyutaiStreamingSTT(STTService):
         # target sample rate for the Kyutai model.
         self._target_sample_rate = sample_rate
         self._block_size = 1920  # 80ms at 24kHz
+        # fallback delay (used only when EOS not observed)
+        self._finalize_delay = float(os.getenv("KYUTAI_FINALIZE_DELAY_SEC", "0.3"))
 
         # Audio processing
         self._audio_queue = queue.Queue()
@@ -108,6 +112,7 @@ class KyutaiStreamingSTT(STTService):
         self._text_tokenizer = None
         self._audio_tokenizer = None
         self._lm_config = None
+        self._last_finalized_time = 0.0
 
         # Initialize the model
         self._init_kyutai_model()
@@ -124,6 +129,13 @@ class KyutaiStreamingSTT(STTService):
             except Exception as e:
                 logger.warning(f"Punctuation restoration failed: {e}")
         return text
+
+    def _normalize_spacing(self, text: str) -> str:
+        if not text:
+            return text
+        normalized = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+        normalized = re.sub(r'\s+', ' ', normalized)
+        return normalized.strip()
 
     def _init_kyutai_model(self):
         """Initialize the Kyutai streaming model."""
@@ -286,6 +298,7 @@ class KyutaiStreamingSTT(STTService):
         indices = np.linspace(0, len(audio) - 1, length)
         return np.interp(indices, np.arange(len(audio)), audio)
 
+    @traced_stt
     async def run_stt(self, audio: bytes, sample_rate: Optional[int] = None) -> AsyncGenerator[Frame, None]:
         """
         Process audio in streaming chunks using Kyutai.
@@ -356,12 +369,12 @@ class KyutaiStreamingSTT(STTService):
                         if not hasattr(self, "_debug_block_count"):
                             self._debug_block_count = 0
                         self._debug_block_count += 1
-                        if self._debug_block_count <= 10 or self._debug_block_count % 50 == 0:
-                            logger.info(f"🎤 Audio block #{self._debug_block_count}: shape={block_final.shape}, max={audio_max:.4f}, mean={audio_mean:.4f}")
-                            if audio_max < 0.001:
-                                logger.warning(f"⚠️ Audio is silent or nearly silent!")
-                            elif audio_max > 0.01:
-                                logger.info(f"✅ Good audio level detected")
+                        # if self._debug_block_count <= 10 or self._debug_block_count % 50 == 0:
+                            # logger.info(f"🎤 Audio block #{self._debug_block_count}: shape={block_final.shape}, max={audio_max:.4f}, mean={audio_mean:.4f}")
+                            # if audio_max < 0.001:
+                                # logger.warning(f"⚠️ Audio is silent or nearly silent!")
+                            # elif audio_max > 0.01:
+                                # logger.info(f"✅ Good audio level detected")
 
                         # Encode audio depending on tokenizer backend
                         if isinstance(self._audio_tokenizer, rustymimi.Tokenizer):
@@ -394,11 +407,11 @@ class KyutaiStreamingSTT(STTService):
                             self._debug_token_count = 0
                         self._debug_token_count += 1
 
-                        if self._debug_token_count <= 20 or self._debug_token_count % 100 == 0:
-                            if hasattr(text_token, 'shape'):
-                                logger.info(f"🔤 Token #{self._debug_token_count}: shape={text_token.shape}, value={text_token}")
-                            else:
-                                logger.info(f"🔤 Token #{self._debug_token_count}: {text_token}")
+                        # if self._debug_token_count <= 20 or self._debug_token_count % 100 == 0:
+                            # if hasattr(text_token, 'shape'):
+                                # logger.info(f"🔤 Token #{self._debug_token_count}: shape={text_token.shape}, value={text_token}")
+                            # else:
+                                # logger.info(f"🔤 Token #{self._debug_token_count}: {text_token}")
 
                         # Convert token to text
                         text_token = text_token[0].item()
@@ -435,6 +448,8 @@ class KyutaiStreamingSTT(STTService):
                                 # Yield interim transcription with accumulated text every few tokens
                                 if len(self._text_buffer) % 3 == 0:  # Every 3 tokens
                                     accumulated_text = "".join(self._text_buffer).strip()
+                                    # Clean up spacing issues
+                                    accumulated_text = " ".join(accumulated_text.split())
                                     logger.info(f"📝 Yielding InterimTranscriptionFrame: '{accumulated_text}'")
                                     if accumulated_text:
                                         yield InterimTranscriptionFrame(
@@ -445,27 +460,15 @@ class KyutaiStreamingSTT(STTService):
                         elif is_pad_token:
                             # Track PAD tokens but do not reset; throttle logging
                             self._consecutive_pad_count += 1
-                            if self._consecutive_pad_count <= 5 or (self._consecutive_pad_count % 50 == 0):
-                                logger.debug(f"PAD token detected (count: {self._consecutive_pad_count})")
+                            # if self._consecutive_pad_count <= 5 or (self._consecutive_pad_count % 50 == 0):
+                                # logger.debug(f"PAD token detected (count: {self._consecutive_pad_count})")
 
                         elif is_eos_token:  # Any EOS token - end of speech
                             self._consecutive_eos_count += 1
 
                             # Only finalize if we have accumulated text and see an EOS
                             if self._text_buffer and self._consecutive_eos_count >= 1:
-                                logger.debug(f"EOS token detected with text in buffer - finalizing")
-                                # Emit final transcription with punctuation
-                                final_text = "".join(self._text_buffer).strip()
-                                if final_text:
-                                    # Add punctuation restoration
-                                    punctuated_text = self._add_punctuation(final_text)
-                                    yield TranscriptionFrame(
-                                        text=punctuated_text,
-                                        user_id=os.getenv("USER_ID", "user"),
-                                        timestamp=str(self._last_speech_time)  # Convert to string for RTVI
-                                    )
-                                # Clear buffer after sending
-                                self._text_buffer = []
+                                await self._finalize_transcription(None)
                                 self._consecutive_eos_count = 0
                         # Note: PAD token handling is already done above (lines 387-403)
                         elif is_bos_token:
@@ -497,7 +500,13 @@ class KyutaiStreamingSTT(STTService):
             self._consecutive_pad_count = 0
 
         if isinstance(frame, UserStoppedSpeakingFrame):
-            logger.info("🛑 VAD detected user stopped speaking - finalizing transcription")
+            now = time.time()
+            since_last = now - getattr(self, "_last_finalized_time", 0)
+            if since_last < 0.15:
+                logger.debug("🛑 VAD stop received but EOS recently finalized; skipping duplicate finalization")
+                return
+            logger.info("🛑 VAD detected user stopped speaking - finalizing transcription (fallback)")
+            await asyncio.sleep(self._finalize_delay)
             await self._finalize_transcription(direction)
 
     async def flush(self) -> AsyncGenerator[Frame, None]:
@@ -508,6 +517,8 @@ class KyutaiStreamingSTT(STTService):
             # Finalize any pending transcription
             if self._text_buffer:
                 final_text = "".join(self._text_buffer).strip()
+                # Clean up spacing issues
+                final_text = " ".join(final_text.split())
                 if final_text:
                     # Add punctuation restoration
                     punctuated_text = self._add_punctuation(final_text)
@@ -542,7 +553,7 @@ class KyutaiStreamingSTT(STTService):
             logger.error(f"Error flushing Kyutai buffer: {e}")
             yield ErrorFrame(error=str(e))
 
-    async def cancel(self):
+    async def cancel(self, direction=None):
         """Cancel any ongoing processing."""
         self._running = False
         self._audio_buffer = np.array([], dtype=np.float32)
@@ -569,8 +580,8 @@ class KyutaiStreamingSTT(STTService):
         if self._text_buffer:
             final_text = "".join(self._text_buffer).strip()
             if final_text:
-                # Add punctuation restoration
-                punctuated_text = self._add_punctuation(final_text)
+                normalized = self._normalize_spacing(final_text)
+                punctuated_text = self._add_punctuation(normalized)
                 logger.info(f"📝 Finalizing transcription: '{final_text}' -> '{punctuated_text}'")
                 final_frame = TranscriptionFrame(
                     text=punctuated_text,
@@ -578,6 +589,7 @@ class KyutaiStreamingSTT(STTService):
                     timestamp=str(self._last_speech_time) if hasattr(self, '_last_speech_time') else str(time.time())
                 )
                 await self.push_frame(final_frame, direction)
+                self._last_finalized_time = time.time()
             # Clear buffer for next utterance
             self._text_buffer = []
             logger.debug("Text buffer cleared after finalization")

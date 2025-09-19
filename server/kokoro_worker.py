@@ -35,7 +35,7 @@ class Worker:
     def __init__(self):
         self.model = None
         self.voice = None
-        
+
     def initialize(self, model_name, voice):
         if not MLX_AVAILABLE:
             return {"error": "MLX not available"}
@@ -47,42 +47,42 @@ class Worker:
             return {"success": True}
         except Exception as e:
             return {"error": str(e)}
-    
+
     def generate(self, text):
+        if not self.model:
+            print(json.dumps({"error": "Not initialized"}), flush=True)
+            return
+
         try:
-            if not self.model:
-                return {"error": "Not initialized"}
-            
-            segments = []
+            # Buffer multiple small chunks before sending to reduce overhead
+            audio_buffer = []
+            buffer_size = 4096  # 4KB chunks for balance between smoothness and responsiveness
+
             for result in self.model.generate(text=text, voice=self.voice, speed=1.0):
-                # Convert MLX array to numpy immediately
-                audio_data = np.array(result.audio, copy=True)
-                print(f"Generated segment shape: {audio_data.shape}, min: {audio_data.min():.4f}, max: {audio_data.max():.4f}", file=sys.stderr)
-                segments.append(audio_data)
-            
-            if not segments:
-                return {"error": "No audio"}
-                
-            # Concatenate all segments
-            if len(segments) == 1:
-                audio = segments[0]
-            else:
-                audio = np.concatenate(segments, axis=0)
-            
-            print(f"Final audio shape: {audio.shape}, min: {audio.min():.4f}, max: {audio.max():.4f}", file=sys.stderr)
-            
-            # Check if audio is silent
-            if np.max(np.abs(audio)) < 1e-6:
-                return {"error": "Generated audio is silent"}
-            
-            # Convert to 16-bit PCM
-            audio_int16 = (audio * 32767).astype(np.int16)
-            audio_b64 = base64.b64encode(audio_int16.tobytes()).decode()
-            
-            return {"success": True, "audio": audio_b64}
+                audio_data = np.array(result.audio, copy=False)
+                if audio_data.size == 0:
+                    continue
+                audio_int16 = (audio_data * 32767).astype(np.int16)
+                audio_buffer.append(audio_int16)
+
+                # Check if we have enough data to send
+                total_bytes = sum(a.nbytes for a in audio_buffer)
+                if total_bytes >= buffer_size:
+                    # Concatenate and send buffered audio
+                    combined = np.concatenate(audio_buffer)
+                    chunk_b64 = base64.b64encode(combined.tobytes()).decode()
+                    print(json.dumps({"chunk": chunk_b64}), flush=True)
+                    audio_buffer = []
+
+            # Send any remaining buffered audio
+            if audio_buffer:
+                combined = np.concatenate(audio_buffer)
+                chunk_b64 = base64.b64encode(combined.tobytes()).decode()
+                print(json.dumps({"chunk": chunk_b64}), flush=True)
+
+            print(json.dumps({"done": True}), flush=True)
         except Exception as e:
-            import traceback
-            return {"error": f"{str(e)}\n{traceback.format_exc()}"}
+            print(json.dumps({"error": str(e)}), flush=True)
 
 
 def main():
@@ -94,11 +94,13 @@ def main():
             req = json.loads(line.strip())
             if req["cmd"] == "init":
                 resp = worker.initialize(req["model"], req["voice"])
+                print(json.dumps(resp), flush=True)
             elif req["cmd"] == "generate":
-                resp = worker.generate(req["text"])
+                worker.generate(req["text"])
+                continue
             else:
                 resp = {"error": "Unknown command"}
-            print(json.dumps(resp), flush=True)
+                print(json.dumps(resp), flush=True)
         except Exception as e:
             print(json.dumps({"error": str(e)}), flush=True)
 

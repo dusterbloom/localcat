@@ -142,11 +142,40 @@ class HotMemory:
             ent_from_triples.add(d)
         entities = self.extractor.refine_entities(text, list(ent_from_triples))
 
+        # Filter noisy triples before storing/retrieving
+        triples = [t for t in triples if self._is_meaningful_fact(*t)]
+
         update_start = time.perf_counter()
         now_ts = int(time.time() * 1000)
         if not self._is_question(text):
             for s, r, d in triples:
-                self.store.observe_edge(s, r, d, 0.9, now_ts)
+                # Demote conflicting facts before observing new evidence
+                conflicting = [fact for fact in list(self.entity_index.get(s, set())) if fact[1] == r and fact[2] != d]
+                for _s, _r, old_d in conflicting:
+                    try:
+                        self.store.negate_edge(s, r, old_d, conf=0.6, now_ts=now_ts)
+                    except Exception as e:
+                        logger.warning(f"HotMem demotion failed for ({s}, {r}, {old_d}): {e}")
+                    self.entity_index[s].discard((_s, _r, old_d))
+                    if old_d in self.entity_index:
+                        self.entity_index[old_d].discard((_s, _r, old_d))
+                    self._prune_recency_item(s, r, old_d)
+
+                # Determine confidence weights based on relation type
+                if r == "name":
+                    conf = 0.95
+                elif r.startswith("v:"):
+                    conf = 0.85
+                else:
+                    conf = 0.9
+
+                if neg_count > 0 and r.startswith("v:"):
+                    try:
+                        self.store.negate_edge(s, r, d, conf=0.6, now_ts=now_ts)
+                    except Exception as e:
+                        logger.warning(f"HotMem negation failed for ({s}, {r}, {d}): {e}")
+                else:
+                    self.store.observe_edge(s, r, d, conf, now_ts)
                 # Update hot indices
                 self.entity_index[s].add((s, r, d))
                 self.entity_index[d].add((s, r, d))
@@ -616,6 +645,14 @@ class HotMemory:
         for key in self.metrics:
             if len(self.metrics[key]) > self.max_metric_size:
                 self.metrics[key] = self.metrics[key][-self.max_metric_size:]
+
+    def _prune_recency_item(self, s: str, r: str, d: str) -> None:
+        """Remove an existing triple from the recency buffer if present."""
+        try:
+            filtered = [item for item in self.recency_buffer if not (item.s == s and item.r == r and item.d == d)]
+            self.recency_buffer = deque(filtered, maxlen=self.recency_buffer.maxlen)
+        except Exception as e:
+            logger.warning(f"Failed pruning recency buffer for ({s}, {r}, {d}): {e}")
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get performance metrics"""
@@ -692,13 +729,56 @@ class HotMemory:
 
     # ---------- Refinement helpers (quality without large perf cost) ----------
     def _is_question(self, text: str) -> bool:
+        """Conservative question detector.
+
+        Treat as a question if the final punctuation is a question mark,
+        or if it starts with a wh-word. Allows facts in multi-sentence inputs
+        that contain a question earlier but end with a statement.
+        """
         t = (text or "").strip().lower()
         if not t:
             return False
-        if "?" in t:
+        # Ends with a question mark → question
+        if t.endswith("?"):
             return True
+        # Starts with wh-word → likely a question
         wh = ("who", "what", "when", "where", "why", "how")
         return any(t.startswith(w + " ") for w in wh)
+
+    def _is_meaningful_fact(self, s: str, r: str, d: str) -> bool:
+        """Filter out conversational junk so we only persist actionable facts."""
+        s_norm = (s or "").strip().lower()
+        r_norm = (r or "").strip().lower()
+        d_norm = (d or "").strip().lower()
+
+        if not s_norm or not d_norm or len(d_norm) < 2:
+            return False
+
+        # Ignore filler subjects/objects
+        stop_entities = {"it", "this", "that", "there", "here", "been"}
+        if s_norm in stop_entities or d_norm in stop_entities:
+            return False
+
+        # Ignore filler relations
+        stop_relations = {
+            "and",
+            "know",
+            "remember",
+            "say",
+            "tell",
+            "think",
+            "ask",
+            "quality",
+            "tell_about",
+        }
+        if r_norm in stop_relations:
+            return False
+
+        # Guard generic "is" facts unless subject is meaningful
+        if r_norm == "is" and (s_norm in stop_entities or d_norm.startswith("what ")):
+            return False
+
+        return True
 
     def _refine_entities_from_text(self, text: str, entities: List[str]) -> List[str]:
         # Canonicalize and drop noisy scaffolding like 'my name'

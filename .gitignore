@@ -11,3 +11,5 @@ __pycache__
 .env.test.local
 .env.production.local
 data
+server/.logs/
+server/server/.logs/

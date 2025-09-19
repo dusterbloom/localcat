@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `memory/extractors/` (Extractor interface, UDExtractor adapter); HotMemory delegates extraction/refinement via the adapter
   - `memory/retrieval.py` (Retrieval) with identical routing logic; HotMemory delegates retrieval
   - No behavior change yet (compatibility maintained)
+- Phase 2 (controls & UX)
+  - Flags: `MEMORY_SOURCES` and `MEMORY_CONVO_INDEX`; conversation FTS retrieval wired
+  - Human-readable recency suffixes on graph/convo/recency bullets (e.g., "(2d 3h ago)")
+  - Background LLM summarizer (async) via `SUMMARIZER_*`; summary retrieval from stored notes
+  - Turn-level observability: per-turn summary log with pre_injected/ready_signaled/source/bullets/total_ms
 - **STT/LLM/TTS Streaming Integration**: Complete end-to-end streaming pipeline achieving <500ms latency
   - WhisperLiveKit with SimulStreaming backend for ultra-low latency STT (<100ms chunks)
   - LLM streaming with token-by-token output for immediate response

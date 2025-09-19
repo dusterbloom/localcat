@@ -3,10 +3,11 @@ LocalCat: Pipecat processor that injects ultra-fast memory bullets
 Place between context_aggregator.user() and llm in your Pipeline
 """
 
+import asyncio
 import time
+from collections import deque
 from typing import List, Optional, Dict, Any
 from loguru import logger
-
 import sys
 import os
 # Add local pipecat to path if needed
@@ -18,6 +19,7 @@ from pipecat.processors.frame_processor import FrameProcessor as BaseProcessor, 
 from memory_store import MemoryStore, Paths
 from memory_hotpath import HotMemory
 from memory.context import format_bullets as _fmt_bullets, build_message as _build_msg, MemoryContextFrame
+from session_tracker import SessionTracker
 
 # Ensure we only add a file sink once per process
 _HOTMEM_LOG_SINK_ADDED = False
@@ -37,7 +39,10 @@ class HotPathMemoryProcessor(BaseProcessor):
                  lmdb_dir: Optional[str] = None, 
                  user_id: str = "default-user",
                  enable_metrics: bool = True,
-                 context_aggregator = None):
+                 context_aggregator = None,
+                 *,
+                 session_tracker: Optional[SessionTracker] = None,
+                 agent_id: Optional[str] = None):
         """
         Initialize HotMem processor
         
@@ -100,11 +105,13 @@ class HotPathMemoryProcessor(BaseProcessor):
         # Session tracking
         self._turn_id = 0
         self._session_id = user_id
+        self._session_start = time.time()
         self._enable_metrics = enable_metrics
         self._pending_bullets: List[str] = []
         # Phase 0 state: track one-time interim pre-injection per turn
         self._turn_has_preinjected_bullets: bool = False
         self._last_injected_bullets: List[str] = []
+        self._turn_ready_signaled: bool = False
         # Env-driven controls (Phase 0.5)
         self._enabled: bool = os.getenv("ENABLE_MEMORY", "true").lower() in ("1", "true", "yes")
         try:
@@ -124,13 +131,51 @@ class HotPathMemoryProcessor(BaseProcessor):
         # Retrieval source controls (Phase 2-ready; used now for convo indexing)
         self._memory_sources = [s.strip() for s in os.getenv("MEMORY_SOURCES", "graph").split(",") if s.strip()]
         self._convo_index_enabled = os.getenv("MEMORY_CONVO_INDEX", "false").lower() in ("1", "true", "yes")
+        # LLM Summarizer controls (background)
+        self._summary_enabled = (
+            os.getenv("MEMORY_SUMMARY_ENABLED", "false").lower() in ("1", "true", "yes") or
+            os.getenv("SUMMARIZER_ENABLED", "false").lower() in ("1", "true", "yes")
+        )
+        self._summary_base_url = os.getenv("SUMMARIZER_BASE_URL", "http://127.0.0.1:1234/v1").rstrip("/")
+        self._summary_api_key = os.getenv("SUMMARIZER_API_KEY", "")
+        self._summary_model = os.getenv("SUMMARIZER_MODEL", "qwen3:4b")
+        try:
+            self._summary_interval_secs = float(os.getenv("SUMMARIZER_INTERVAL_SECS", "60"))
+        except Exception:
+            self._summary_interval_secs = 60.0
+        try:
+            self._summary_max_tokens = int(os.getenv("SUMMARIZER_MAX_TOKENS", "160"))
+        except Exception:
+            self._summary_max_tokens = 160
+        try:
+            self._summary_max_messages = int(os.getenv("SUMMARIZER_MAX_MESSAGES", "10"))
+        except Exception:
+            self._summary_max_messages = 10
+        self._summary_task: Optional[asyncio.Task] = None
+        # Summary controls
+        self._summary_enabled = (
+            os.getenv("MEMORY_SUMMARY_ENABLED", "false").lower() in ("1", "true", "yes") or
+            os.getenv("SUMMARIZER_ENABLED", "false").lower() in ("1", "true", "yes")
+        )
+        try:
+            self._summary_interval_ms = int(float(os.getenv("SUMMARIZER_INTERVAL_SECS", "60")) * 1000)
+        except Exception:
+            self._summary_interval_ms = 60000
+        try:
+            self._summary_max_messages = int(os.getenv("SUMMARIZER_MAX_MESSAGES", "10"))
+        except Exception:
+            self._summary_max_messages = 10
+        self._last_summary_ms = 0
         
         # Store context aggregator reference for direct context injection
         self._context_aggregator = context_aggregator
-        
+        self._session_tracker = session_tracker
+        self._agent_id = agent_id or os.getenv("AGENT_ID", "locat")
+        self._session_header_tag = "[Session Context]"
+
         if self._trace_frames:
             logger.info(f"[HotMem] Frame tracing ENABLED - will log all frames flowing through processor")
-        
+
         # Performance tracking
         self._last_metrics_log = time.time()
         # Summary controls
@@ -141,6 +186,10 @@ class HotPathMemoryProcessor(BaseProcessor):
             self._summary_interval_ms = 60000
         self._last_summary_ms = 0
         
+        stats = None
+        if self._session_tracker:
+            stats = self._session_tracker.start_session(self._session_id)
+        self._ensure_session_header(stats=stats, initial=True)
         logger.info(f"HotPathMemoryProcessor initialized for user: {user_id}")
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):
@@ -161,6 +210,13 @@ class HotPathMemoryProcessor(BaseProcessor):
 
         # REQUIRED: handle StartFrame immediately
         if isinstance(frame, StartFrame):
+            # Start background summarizer (non-blocking)
+            if self._summary_enabled and self._summary_task is None:
+                try:
+                    self._summary_task = asyncio.create_task(self._summary_loop())
+                    logger.info("[HotMem] Background summarizer started")
+                except Exception as e:
+                    logger.warning(f"[HotMem] Could not start summarizer: {e}")
             await self.push_frame(frame, direction)
             return
 
@@ -214,6 +270,7 @@ class HotPathMemoryProcessor(BaseProcessor):
                             if self._handshake_enabled:
                                 try:
                                     await self.push_frame(MemoryContextReadyFrame(), direction)
+                                    self._turn_ready_signaled = True
                                 except Exception:
                                     pass
                         except Exception as e:
@@ -242,6 +299,7 @@ class HotPathMemoryProcessor(BaseProcessor):
                             if self._handshake_enabled:
                                 try:
                                     await self.push_frame(MemoryContextReadyFrame(), direction)
+                                    self._turn_ready_signaled = True
                                 except Exception:
                                     pass
                     except Exception as e:
@@ -249,6 +307,7 @@ class HotPathMemoryProcessor(BaseProcessor):
                 # Reset pre-injection state for next turn
                 self._turn_has_preinjected_bullets = False
                 self._last_injected_bullets = []
+                self._turn_ready_signaled = False
             else:
                 logger.info(f"[HotMem] Skipping non-final transcription")
 
@@ -282,6 +341,8 @@ class HotPathMemoryProcessor(BaseProcessor):
                 logger.info(f"[HotMem] Prepared {len(bullets)} memory bullets for injection")
                 cap = max(0, self._bullets_max)
                 self._pending_bullets = bullets[:cap]
+            else:
+                self._pending_bullets = []
 
             # Optional: index conversation text into FTS for convo retrieval
             try:
@@ -292,25 +353,24 @@ class HotPathMemoryProcessor(BaseProcessor):
             except Exception as e:
                 logger.warning(f"[HotMem] Convo index failed: {e}")
 
-            # Optional: store a simple summary note periodically (uses last user text)
-            try:
-                if self._summary_enabled and text.strip():
-                    now_ms = int(time.time() * 1000)
-                    if now_ms - self._last_summary_ms >= self._summary_interval_ms:
-                        note = f"User said: {text.strip()}"
-                        self.store.enqueue_mention("summary", note, now_ms, self._session_id, self._turn_id)
-                        self.store.flush_if_needed()
-                        self._last_summary_ms = now_ms
-            except Exception as e:
-                logger.warning(f"[HotMem] Summary note failed: {e}")
+            # LLM summarizer runs in background; no inline summary work here
             
             # Track performance
             elapsed_ms = (time.perf_counter() - start) * 1000
             
             if self._enable_metrics:
                 self._log_metrics(elapsed_ms)
-            # Memory summary line
+            # Memory summary lines (observability)
             logger.info(f"[HotMem] Summary: saved={len(triples)}, pending_bullets={len(self._pending_bullets)}, turn={self._turn_id}")
+            self._record_turn_metrics(elapsed_ms)
+            try:
+                src = "interim" if self._turn_has_preinjected_bullets else "final"
+                injected_count = len(self._last_injected_bullets) if self._last_injected_bullets else len(self._pending_bullets)
+                logger.info(
+                    f"[HotMem TurnSummary] pre_injected={self._turn_has_preinjected_bullets} ready_signaled={self._turn_ready_signaled} source={src} bullets={injected_count} total_ms={elapsed_ms:.1f}"
+                )
+            except Exception:
+                pass
                 
         except Exception as e:
             logger.error(f"Memory processing failed: {e}")
@@ -325,15 +385,25 @@ class HotPathMemoryProcessor(BaseProcessor):
                 
             # Get the context object from the user aggregator
             context = self._context_aggregator.user().context
-            # Normalize bullets with current cap
+            messages = list(context.get_messages())
             bullets = _fmt_bullets(self._pending_bullets, max_bullets=getattr(self, "_bullets_max", 3))
             memory_message = _build_msg(self._inject_role, self._inject_header, bullets)
-            
-            logger.info(f"[HotMem] Injecting {len(self._pending_bullets)} memory bullets directly into context")
+
+            logger.info(f"[HotMem] Injecting {len(bullets)} memory bullets directly into context")
             logger.info(f"[HotMem] Memory bullets: {bullets[:2]}")
-            
-            # Add memory message to context before the user message gets added
-            context.add_message(memory_message)
+
+            target_idx = self._find_context_message(messages, self._inject_header)
+            if bullets:
+                if target_idx is None:
+                    insert_idx = self._session_header_index(messages)
+                    messages.insert(insert_idx, memory_message)
+                else:
+                    messages[target_idx] = memory_message
+            else:
+                if target_idx is not None:
+                    messages.pop(target_idx)
+
+            context.set_messages(messages)
             # Also emit a typed frame for downstream processors (future-proof, non-breaking)
             try:
                 await self.push_frame(MemoryContextFrame(self._inject_role, self._inject_header, bullets), None)
@@ -372,6 +442,87 @@ class HotPathMemoryProcessor(BaseProcessor):
             # Warn if we're exceeding budget
             if 'total_ms' in metrics and metrics['total_ms'].get('p95', 0) > 200:
                 logger.warning(f"HotMem exceeding 200ms budget: p95={metrics['total_ms']['p95']:.1f}ms")
+
+    def _record_turn_metrics(self, elapsed_ms: float) -> None:
+        if not self._session_tracker:
+            return
+        stats = self._session_tracker.record_turn(self._session_id, elapsed_ms / 1000.0)
+        self._ensure_session_header(stats=stats)
+
+    def _ensure_session_header(self, *, stats: Optional[Dict[str, Any]] = None, initial: bool = False) -> None:
+        if not self._context_aggregator:
+            return
+        if self._session_tracker is None and stats is None:
+            return
+        context = self._context_aggregator.user().context
+        messages = list(context.get_messages())
+        stats = stats or (self._session_tracker.get_stats(self._session_id) if self._session_tracker else {})
+        header_message = self._build_session_header(stats)
+        if not header_message:
+            return
+        idx = self._find_context_message(messages, self._session_header_tag)
+        if idx is None:
+            messages.insert(0, header_message)
+        else:
+            messages[idx] = header_message
+        context.set_messages(messages)
+
+    def _build_session_header(self, stats: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        try:
+            current_turn = int(stats.get("session_turns", self._turn_id))
+            total_turns = int(stats.get("total_turns", current_turn))
+            total_sessions = int(stats.get("total_sessions", 1))
+            session_start = stats.get(
+                "session_start_iso",
+                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self._session_start)),
+            )
+            session_elapsed = float(stats.get("session_elapsed", time.time() - self._session_start))
+            total_time = float(stats.get("total_time_seconds", session_elapsed))
+            system_date = time.strftime("%Y-%m-%d %H:%M:%S")
+            context_obj = self._context_aggregator.user().context if self._context_aggregator else None
+            current_context = len(context_obj.get_messages()) if context_obj else 0
+            available_context = int(os.getenv("CONTEXT_MAX_MESSAGES", "50"))
+            lines = [
+                self._session_header_tag,
+                f"System date: {system_date}",
+                f"User ID: {self._session_id}",
+                f"Agent ID: {self._agent_id}",
+                f"Session #: {int(stats.get('current_session', total_sessions))}",
+                f"Session start: {session_start}",
+                f"Current turn: {current_turn}",
+                f"Total turns: {total_turns}",
+                f"Total sessions with user: {total_sessions}",
+                f"Session duration: {self._format_duration(session_elapsed)}",
+                f"Total time with user: {self._format_duration(total_time)}",
+                f"Context usage: {current_context}/{available_context}",
+            ]
+            return {"role": "system", "content": "\n".join(lines)}
+        except Exception as e:
+            logger.warning(f"[HotMem] Failed to build session header: {e}")
+            return None
+
+    def _find_context_message(self, messages: List[dict], prefix: str) -> Optional[int]:
+        for idx, msg in enumerate(messages):
+            content = msg.get("content", "") if isinstance(msg, dict) else ""
+            if msg.get("role") == "system" and isinstance(content, str) and content.startswith(prefix):
+                return idx
+        return None
+
+    def _session_header_index(self, messages: List[dict]) -> int:
+        idx = self._find_context_message(messages, self._session_header_tag)
+        if idx is not None:
+            return idx + 1
+        return 1 if len(messages) > 1 else len(messages)
+
+    def _format_duration(self, seconds: float) -> str:
+        seconds = max(float(seconds), 0.0)
+        mins, secs = divmod(int(seconds), 60)
+        hours, mins = divmod(mins, 60)
+        if hours:
+            return f"{hours}h {mins}m {secs}s"
+        if mins:
+            return f"{mins}m {secs}s"
+        return f"{secs}s"
     
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get current memory statistics"""
@@ -381,7 +532,11 @@ class HotPathMemoryProcessor(BaseProcessor):
             'hot_metrics': self.hot.get_metrics(),
             'store_metrics': self.store.get_metrics()
         }
-    
+
+    def refresh_session_header(self):
+        """Public helper to refresh session header on demand."""
+        self._ensure_session_header()
+
     async def cleanup(self):
         """Cleanup when processor is destroyed"""
         try:
@@ -390,6 +545,18 @@ class HotPathMemoryProcessor(BaseProcessor):
             logger.info("HotPathMemoryProcessor cleanup complete")
         except Exception as e:
             logger.error(f"Cleanup error: {e}")
+        # Stop summarizer task
+        try:
+            if self._summary_task is not None:
+                self._summary_task.cancel()
+                self._summary_task = None
+        except Exception:
+            pass
+        if self._session_tracker:
+            try:
+                self._session_tracker.end_session(self._session_id)
+            except Exception:
+                pass
 
 
 # For backward compatibility and testing
@@ -414,3 +581,62 @@ class TestMemoryProcessor(HotPathMemoryProcessor):
 # Optional handshake frame indicating memory context is ready for the turn
 class MemoryContextReadyFrame(Frame):
     pass
+
+    # ---------------------
+    # Background summarizer
+    # ---------------------
+    
+    async def _summary_loop(self):
+        """Periodic background task that generates LLM summaries and stores them as 'summary' notes."""
+        import json
+        import urllib.request
+        import urllib.error
+        
+        sys_prompt = "You are a concise summarizer. Summarize the user's recent utterances as helpful context bullets. Keep it short."
+        while True:
+            try:
+                await asyncio.sleep(self._summary_interval_secs)
+                # Collect recent user utterances
+                recent = self.store.get_recent_chunks_by_eid(self._session_id, limit=self._summary_max_messages)
+                if not recent:
+                    continue
+                text = "; ".join(t for (t, _ts) in recent if t)[:1200]
+                if not text.strip():
+                    continue
+                # Build OpenAI-compatible chat request
+                payload = {
+                    "model": self._summary_model,
+                    "messages": [
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": text},
+                    ],
+                    "max_tokens": self._summary_max_tokens,
+                    "temperature": 0.2,
+                    "stream": False,
+                }
+                url = f"{self._summary_base_url}/chat/completions"
+                req = urllib.request.Request(url, method="POST")
+                req.add_header("Content-Type", "application/json")
+                if self._summary_api_key:
+                    req.add_header("Authorization", f"Bearer {self._summary_api_key}")
+                data = json.dumps(payload).encode("utf-8")
+                try:
+                    with urllib.request.urlopen(req, data=data, timeout=self._summary_interval_secs) as resp:
+                        resp_data = resp.read().decode("utf-8")
+                    j = json.loads(resp_data)
+                    content = j.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    if not content:
+                        continue
+                    now_ms = int(time.time() * 1000)
+                    note = f"Summary: {content}"
+                    self.store.enqueue_mention("summary", note, now_ms, self._session_id, self._turn_id)
+                    self.store.flush_if_needed()
+                    logger.info("[HotMem] Stored LLM summary note")
+                except urllib.error.URLError as e:
+                    logger.warning(f"[HotMem] Summarizer call failed: {e}")
+                except Exception as e:
+                    logger.warning(f"[HotMem] Summarizer error: {e}")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning(f"[HotMem] Summary loop error: {e}")
