@@ -223,7 +223,7 @@ When addressing technical debt:
 3. Document the solution in changelog.md
 4. Consider if the fix creates new technical debt
 
-Last updated: 2025-09-19
+Last updated: 2025-09-19 (Updated with Ultra-Low Latency TTS Technical Debt Analysis)
 
 ---
 
@@ -243,7 +243,49 @@ This comprehensive review analyzes the entire LocalCat streaming project, includ
 
 ## 🔴 CRITICAL ISSUES (Immediate Attention Required)
 
-### 1. **KyutaiStreamingSTT Class Complexity & Maintainability**
+### 1. **TTS Implementation Duplication (Ultra-Low Latency Enhancement)**
+**Files**:
+- `/Users/peppi/Dev/localcat-streaming/server/tts_mlx_isolated.py` (418 lines)
+- `/Users/peppi/Dev/localcat-streaming/server/tts_mlx_ultra_low_latency.py` (new, 350+ lines)
+- `/Users/peppi/Dev/localcat-streaming/server/kokoro_worker.py` (125 lines)
+- `/Users/peppi/Dev/localcat-streaming/server/kokoro_worker_optimized.py` (new, 200+ lines)
+
+**Impact**: High - 60% code duplication across TTS implementations
+**Issues**:
+- Four separate TTS implementations with overlapping functionality
+- Duplicate model loading and audio processing logic
+- Inconsistent error handling and logging approaches
+- Configuration scattered across multiple environment variables
+- Maintenance burden: bugs need fixing in multiple places
+
+**Refactoring Plan**:
+```python
+# Phase 1: Consolidate Core TTS Logic
+class TTSEngine:
+    """Base class for all TTS implementations"""
+    def __init__(self, model_path: str, voice: str = "af_sarah")
+    def generate_audio(self, text: str) -> Iterator[bytes]
+    def _load_model(self) -> None
+    def _process_audio(self, audio_data: np.ndarray) -> bytes
+
+# Phase 2: Specialized Implementations
+class KokoroTTSEngine(TTSEngine):
+    """Kokoro-specific implementation with chunking"""
+
+class UltraLowLatencyTTS(TTSEngine):
+    """Ultra-low latency variant with optimized buffering"""
+
+# Phase 3: Unified TTS Service
+class TTSService:
+    """Factory and coordinator for TTS engines"""
+    def get_engine(self, engine_type: str, **config) -> TTSEngine
+```
+
+---
+
+## 🔴 CRITICAL ISSUES (Immediate Attention Required)
+
+### 2. **KyutaiStreamingSTT Class Complexity & Maintainability**
 **File**: `/Users/peppi/Dev/localcat-streaming/server/kyutai_streaming_stt.py`
 **Lines**: 597 lines (violates Single Responsibility Principle)
 **Impact**: High - Extremely difficult to debug, test, and maintain
