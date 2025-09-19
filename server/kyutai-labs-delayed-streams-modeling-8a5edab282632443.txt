@@ -1,0 +1,4074 @@
+Directory structure:
+└── kyutai-labs-delayed-streams-modeling/
+    ├── README.md
+    ├── CONTRIBUTING.md
+    ├── FAQ.md
+    ├── LICENSE-APACHE
+    ├── LICENSE-MIT
+    ├── stt_pytorch.ipynb
+    ├── tts_pytorch.ipynb
+    ├── .pre-commit-config.yaml
+    ├── configs/
+    │   ├── config-stt-en-hf.toml
+    │   ├── config-stt-en_fr-hf.toml
+    │   └── config-tts.toml
+    ├── scripts/
+    │   ├── stt_evaluate_on_dataset.py
+    │   ├── stt_from_file_mlx.py
+    │   ├── stt_from_file_pytorch.py
+    │   ├── stt_from_file_rust_server.py
+    │   ├── stt_from_file_with_prompt_pytorch.py
+    │   ├── stt_from_mic_mlx.py
+    │   ├── stt_from_mic_rust_server.py
+    │   ├── tts_mlx.py
+    │   ├── tts_mlx_streaming.py
+    │   ├── tts_pytorch.py
+    │   ├── tts_pytorch_streaming.py
+    │   └── tts_rust_server.py
+    ├── stt-rs/
+    │   ├── Cargo.toml
+    │   └── src/
+    │       └── main.rs
+    └── .github/
+        ├── PULL_REQUEST_TEMPLATE.md
+        ├── actions/
+        │   └── moshi_build/
+        │       └── action.yml
+        ├── ISSUE_TEMPLATE/
+        │   ├── bug.yml
+        │   └── question.yml
+        └── workflows/
+            └── precommit.yml
+
+================================================
+FILE: README.md
+================================================
+# Delayed Streams Modeling: Kyutai STT & TTS
+
+This repo contains instructions and examples of how to run
+[Kyutai Speech-To-Text](#kyutai-speech-to-text)
+and [Kyutai Text-To-Speech](#kyutai-text-to-speech) models.
+See also [Unmute](https://github.com/kyutai-labs/unmute), an voice AI system built using Kyutai STT and Kyutai TTS.
+
+But wait, what is "Delayed Streams Modeling"? It is a technique for solving many streaming X-to-Y tasks (with X, Y in `{speech, text}`)
+that formalize the approach we had with Moshi and Hibiki. See our [pre-print about DSM](https://arxiv.org/abs/2509.08753).
+
+## Kyutai Speech-To-Text
+
+<a href="https://huggingface.co/collections/kyutai/speech-to-text-685403682cf8a23ab9466886" target="_blank" style="margin: 2px;">
+    <img alt="Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-KyutaiSTT-blue" style="display: inline-block; vertical-align: middle;"/>
+</a>
+<a target="_blank" href="https://colab.research.google.com/github/kyutai-labs/delayed-streams-modeling/blob/main/stt_pytorch.ipynb">
+  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+</a>
+
+**More details can be found on the [project page](https://kyutai.org/next/stt).**
+
+Kyutai STT models are optimized for real-time usage, can be batched for efficiency, and return word level timestamps.
+We provide two models:
+- `kyutai/stt-1b-en_fr`, an English and French model with ~1B parameters, a 0.5 second delay, and a [semantic VAD](https://kyutai.org/next/stt#semantic-vad).
+- `kyutai/stt-2.6b-en`, an English-only model with ~2.6B parameters and a 2.5 second delay.
+
+These speech-to-text models have several advantages:
+- Streaming inference: the models can process audio in chunks, which allows
+  for real-time transcription, and is great for interactive applications.
+- Easy batching for maximum efficiency: a H100 can process 400 streams in
+  real-time.
+- They return word-level timestamps.
+- The 1B model has a semantic Voice Activity Detection (VAD) component that
+  can be used to detect when the user is speaking. This is especially useful
+  for building voice agents.
+
+### Implementations overview
+
+We provide different implementations of Kyutai STT for different use cases.
+Here is how to choose which one to use:
+
+- **PyTorch: for research and tinkering.**
+  If you want to call the model from Python for research or experimentation, use our PyTorch implementation.
+- **Rust: for production.**
+  If you want to serve Kyutai STT in a production setting, use our Rust server.
+  Our robust Rust server provides streaming access to the model over websockets.
+  We use this server to run [Unmute](https://unmute.sh/); on a L40S GPU, we can serve 64 simultaneous connections at a real-time factor of 3x.
+- **MLX: for on-device inference on iPhone and Mac.**
+  MLX is Apple's ML framework that allows you to use hardware acceleration on Apple silicon.
+  If you want to run the model on a Mac or an iPhone, choose the MLX implementation.
+
+<details>
+<summary>PyTorch implementation</summary>
+<a href="https://huggingface.co/kyutai/stt-2.6b-en" target="_blank" style="margin: 2px;">
+    <img alt="Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-blue" style="display: inline-block; vertical-align: middle;"/>
+</a>
+<a target="_blank" href="https://colab.research.google.com/github/kyutai-labs/delayed-streams-modeling/blob/main/stt_pytorch.ipynb">
+  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+</a>
+
+For an example of how to use the model in a way where you can directly stream in PyTorch tensors,
+[see our Colab notebook](https://colab.research.google.com/github/kyutai-labs/delayed-streams-modeling/blob/main/stt_pytorch.ipynb).
+
+This requires the [moshi package](https://pypi.org/project/moshi/)
+with version 0.2.6 or later, which can be installed via pip.
+
+If you just want to run the model on a file, you can use `moshi.run_inference`.
+
+```bash
+python -m moshi.run_inference --hf-repo kyutai/stt-2.6b-en audio/bria.mp3
+```
+
+If you have [uv](https://docs.astral.sh/uv/) installed, you can skip the installation step
+and just prefix the command above with `uvx --with moshi`.
+
+Additionally, we provide two scripts that highlight different usage scenarios. The first script illustrates how to extract word-level timestamps from the model's outputs:
+
+```bash
+uv run \
+  scripts/stt_from_file_pytorch.py \
+  --hf-repo kyutai/stt-2.6b-en \
+  audio/bria.mp3
+```
+
+The second script can be used to run a model on an existing Hugging Face dataset and calculate its performance metrics: 
+```bash
+uv run scripts/evaluate_on_dataset.py  \
+  --dataset meanwhile  \
+  --hf-repo kyutai/stt-2.6b-en
+```
+
+Another example shows how one can provide a text-, audio-, or text-audio prompt to our STT model:
+```bash
+uv run scripts/stt_from_file_pytorch_with_prompt.py \
+  --hf-repo kyutai/stt-2.6b-en \
+  --file bria.mp3 \
+  --prompt_file ./audio/loonah.mp3 \
+  --prompt_text "Loonah" \
+  --cut-prompt-transcript
+```
+Produces the transcript of `bria.mp3` using the `Loonah` spelling for the name, instead of the `Luna` used without any prompt:
+```
+In the heart of an ancient forest, where the trees whispered secrets of the past, there lived a peculiar rabbit named Loonah (...)
+```
+
+Apart from nudging the model for a specific spelling of a word, other potential use-cases include speaker adaptation and steering the model towards a specific formatting style or even a language.
+However, please bear in mind that is an experimental feature and its behavior is very sensitive to the prompt provided.
+</details>
+
+<details>
+<summary>Rust server</summary>
+
+<a href="https://huggingface.co/kyutai/stt-2.6b-en-candle" target="_blank" style="margin: 2px;">
+    <img alt="Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-blue" style="display: inline-block; vertical-align: middle;"/>
+</a>
+
+The Rust implementation provides a server that can process multiple streaming
+queries in parallel. Depending on the amount of memory on your GPU, you may
+have to adjust the batch size from the config file. For a L40S GPU, a batch size
+of 64 works well and requests can be processed at 3x real-time speed.
+
+In order to run the server, install the [moshi-server
+crate](https://crates.io/crates/moshi-server) via the following command. The
+server code can be found in the
+[kyutai-labs/moshi](https://github.com/kyutai-labs/moshi/tree/main/rust/moshi-server)
+repository.
+```bash
+cargo install --features cuda moshi-server
+```
+
+Then the server can be started via the following command using the config file
+from this repository.
+For `kyutai/stt-1b-en_fr`, use `configs/config-stt-en_fr.hf.toml`,
+and for `kyutai/stt-2.6b-en`, use `configs/config-stt-en-hf.toml`,
+
+```bash
+moshi-server worker --config configs/config-stt-en_fr-hf.toml
+```
+
+Once the server has started you can transcribe audio from your microphone with the following script.
+```bash
+uv run scripts/stt_from_mic_rust_server.py
+```
+
+We also provide a script for transcribing from an audio file.
+```bash
+uv run scripts/stt_from_file_rust_server.py audio/bria.mp3
+```
+
+The script limits the decoding speed to simulates real-time processing of the audio. 
+Faster processing can be triggered by setting 
+the real-time factor, e.g. `--rtf 1000` will process
+the data as fast as possible.
+</details>
+
+<details>
+<summary>Rust standalone</summary>
+<a href="https://huggingface.co/kyutai/stt-2.6b-en-candle" target="_blank" style="margin: 2px;">
+    <img alt="Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-blue" style="display: inline-block; vertical-align: middle;"/>
+</a>
+
+A standalone Rust example script is provided in the `stt-rs` directory in this repo.
+This can be used as follows:
+```bash
+cd stt-rs
+cargo run --features cuda -r -- ../audio/bria.mp3
+```
+You can get the timestamps by adding the `--timestamps` flag, and see the output
+of the semantic VAD by adding the `--vad` flag.
+</details>
+
+<details>
+<summary>MLX implementation</summary>
+<a href="https://huggingface.co/kyutai/stt-2.6b-en-mlx" target="_blank" style="margin: 2px;">
+    <img alt="Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-blue" style="display: inline-block; vertical-align: middle;"/>
+</a>
+
+[MLX](https://ml-explore.github.io/mlx/build/html/index.html) is Apple's ML framework that allows you to use
+hardware acceleration on Apple silicon.
+
+This requires the [moshi-mlx package](https://pypi.org/project/moshi-mlx/)
+with version 0.2.6 or later, which can be installed via pip.
+
+If you just want to run the model on a file, you can use `moshi_mlx.run_inference`:
+
+```bash
+python -m moshi_mlx.run_inference --hf-repo kyutai/stt-2.6b-en-mlx audio/bria.mp3 --temp 0
+```
+
+If you have [uv](https://docs.astral.sh/uv/) installed, you can skip the installation step
+and just prefix the command above with `uvx --with moshi-mlx`.
+
+If you want to transcribe audio from your microphone, use:
+
+```bash
+python scripts/stt_from_mic_mlx.py
+```
+
+The MLX models can also be used in swift using the [moshi-swift
+codebase](https://github.com/kyutai-labs/moshi-swift), the 1b model has been
+tested to work fine on an iPhone 16 Pro.
+</details>
+
+## Kyutai Text-to-Speech
+
+<a href="https://huggingface.co/collections/kyutai/text-to-speech-6866192e7e004ed04fd39e29" target="_blank" style="margin: 2px;">
+    <img alt="Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-KyutaiTTS-blue" style="display: inline-block; vertical-align: middle;"/>
+</a>
+<a target="_blank" href="https://colab.research.google.com/github/kyutai-labs/delayed-streams-modeling/blob/main/tts_pytorch.ipynb">
+  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+</a>
+
+**More details can be found on the [project page](https://kyutai.org/next/tts).**
+
+We provide different implementations of Kyutai TTS for different use cases. Here is how to choose which one to use:
+
+- PyTorch: for research and tinkering. If you want to call the model from Python for research or experimentation, use our PyTorch implementation.
+- Rust: for production. If you want to serve Kyutai TTS in a production setting, use our Rust server. Our robust Rust server provides streaming access to the model over websockets. We use this server to run Unmute.
+- MLX: for on-device inference on iPhone and Mac. MLX is Apple's ML framework that allows you to use hardware acceleration on Apple silicon. If you want to run the model on a Mac or an iPhone, choose the MLX implementation.
+
+<details>
+<summary>PyTorch implementation</summary>
+
+<a target="_blank" href="https://colab.research.google.com/github/kyutai-labs/delayed-streams-modeling/blob/main/tts_pytorch.ipynb">
+  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+</a>
+
+Check out our [Colab notebook](https://colab.research.google.com/github/kyutai-labs/delayed-streams-modeling/blob/main/tts_pytorch.ipynb) or use the script:
+
+```bash
+# From stdin, plays audio immediately
+echo "Hey, how are you?" | python scripts/tts_pytorch.py - -
+
+# From text file to audio file
+python scripts/tts_pytorch.py text_to_say.txt audio_output.wav
+```
+
+The `tts_pytorch.py` script waits for all the text to be available before
+starting the audio generation. A fully streaming implementation is available in
+the `tts_pytorch_streaming.py` script, which can be used as follows:
+
+```bash
+echo "Hey, how are you?" | python scripts/tts_pytorch_streaming.py audio_output.wav
+```
+
+This requires the [moshi package](https://pypi.org/project/moshi/), which can be installed via pip.
+If you have [uv](https://docs.astral.sh/uv/) installed, you can skip the installation step
+and just prefix the command above with `uvx --with moshi`.
+</details>
+
+<details>
+<summary>Rust server</summary>
+
+
+The Rust implementation provides a server that can process multiple streaming
+queries in parallel.
+
+Installing the Rust server is a bit tricky because it uses our Python implementation under the hood,
+which also requires installing the Python dependencies.
+Use the [start_tts.sh](https://github.com/kyutai-labs/unmute/blob/main/dockerless/start_tts.sh) script to properly install the Rust server.
+If you already installed the `moshi-server` crate before and it's not working, you might need to force a reinstall by running `cargo uninstall moshi-server` first.
+Feel free to open an issue if the installation is still broken.
+
+Once installed, the server can be started via the following command using the config file
+from this repository.
+
+```bash
+moshi-server worker --config configs/config-tts.toml
+```
+
+Once the server has started you can connect to it using our script as follows:
+```bash
+# From stdin, plays audio immediately
+echo "Hey, how are you?" | python scripts/tts_rust_server.py - -
+
+# From text file to audio file
+python scripts/tts_rust_server.py text_to_say.txt audio_output.wav
+```
+</details>
+
+<details>
+<summary>MLX implementation</summary>
+
+[MLX](https://ml-explore.github.io/mlx/build/html/index.html) is Apple's ML framework that allows you to use
+hardware acceleration on Apple silicon.
+
+Use our example script to run Kyutai TTS on MLX.
+The script takes text from stdin or a file and can output to a file or stream the resulting audio.
+When streaming the output, if the model is not fast enough to keep with
+real-time, you can use the `--quantize 8` or `--quantize 4` flags to quantize
+the model resulting in faster inference.
+
+```bash
+# From stdin, plays audio immediately
+echo "Hey, how are you?" | python scripts/tts_mlx.py - - --quantize 8
+
+# From text file to audio file
+python scripts/tts_mlx.py text_to_say.txt audio_output.wav
+```
+
+This requires the [moshi-mlx package](https://pypi.org/project/moshi-mlx/), which can be installed via pip.
+If you have [uv](https://docs.astral.sh/uv/) installed, you can skip the installation step
+and just prefix the command above with `uvx --with moshi-mlx`.
+</details>
+
+## FAQ
+
+Checkout the [Frequently Asked Questions](FAQ.md) section before opening an issue.
+
+## License
+
+The present code is provided under the MIT license for the Python parts, and Apache license for the Rust backend.
+The web client code is provided under the MIT license.
+Note that parts of this code is based on [AudioCraft](https://github.com/facebookresearch/audiocraft), released under
+the MIT license.
+
+The weights for the speech-to-text models are released under the CC-BY 4.0 license.
+
+## Developing
+
+Install the [pre-commit hooks](https://pre-commit.com/) by running:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+If you're using `uv`, you can replace the two commands with `uvx pre-commit install`.
+
+## Citation
+
+Please cite the following paper.
+```
+@techreport{kyutai2025streaming,
+      title={Streaming Sequence-to-Sequence Learning with Delayed Streams Modeling}, 
+      author={Neil Zeghidour and Eugene Kharitonov and Manu Orsini and Václav Volhejn and Gabriel de Marmiesse and Edouard Grave and Patrick Pérez and Laurent Mazaré and Alexandre Défossez},
+      year={2025},
+      eprint={2509.08753},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2509.08753}, 
+}
+```
+
+
+
+================================================
+FILE: CONTRIBUTING.md
+================================================
+# Contributing to Delayed-Streams-Modeling
+
+## Pull Requests
+
+Delayed-Streams-Modeling is the implementation of a research paper.
+Therefore, we do not plan on accepting many pull requests for new features.
+However, we certainly welcome them for bug fixes.
+
+1. Fork the repo and create your branch from `main`.
+2. If you have changed APIs, update the documentation accordingly.
+3. Ensure pre-commit hooks pass properly, in particular the linting and typing.
+4. When changing the Rust code, run `cargo check`, `cargo clippy`, `cargo test`.
+5. Accept the Contributor License Agreement (see after).
+
+Note that in general, we will not accept refactoring of the code.
+
+
+## Contributor License Agreement ("CLA")
+
+In order to accept your pull request, we need you to submit a Contributor License Agreement.
+
+If you agree with the full CLA provided in the next paragraph, copy the following statement in your PR, changing your Github Handle:
+
+> I, {your GitHub handle}, confirm that I have read and understood the terms of the CLA of Kyutai-labs, as outlined in the repository's CONTRIBUTING.md, and I agree to be bound by these terms.
+
+The full CLA is provided as follows:
+
+> I, {your GitHub handle}, hereby grant to Kyutai-labs a perpetual, worldwide, non-exclusive, royalty-free,
+> irrevocable license to use, modify, distribute, and sublicense my Contributions.
+
+> I understand and accept that Contributions are limited to modifications, improvements, or changes
+> to the project’s source code submitted via pull requests. I accept that Kyutai-labs has full discretion to
+> review, accept, reject, or request changes to any Contributions I submit, and that submitting
+> a pull request does not guarantee its inclusion in the project.
+
+> By submitting a Contribution, I grant Kyutai-labs a perpetual, worldwide license to use, modify,
+> reproduce, distribute, and create derivative works based on my Contributions.
+> I also agree to assign all patent rights for any inventions or improvements that arise from my Contributions,
+> giving the Kyutai-labs full rights to file for and enforce patents.
+> I understand that the Kyutai-labs may commercialize, relicense, or exploit the project and my Contributions without further notice or obligation to me.
+> I confirm that my Contributions are original and that I have the legal right to grant this license.
+> If my Contributions include third-party materials, I will ensure that I have the necessary permissions
+> and will disclose this information. I accept that once my Contributions are integrated, they may be altered or removed at the Kyutai-labs’s discretion.
+
+> I acknowledge that I am making these Contributions voluntarily and will not receive any compensation.
+> Furthermore, I understand that all Contributions, including mine, are provided on an "as-is" basis, with no warranties.
+> By submitting a pull request, I agree to be bound by these terms.
+
+## Issues
+
+Please submit issues on our Github repository.
+
+## License
+
+By contributing to Delayed-Streams-Modeling, you agree that your contributions
+will be licensed under the LICENSE-* files in the root directory of this source
+tree. In particular, the rust code is licensed under APACHE, and the python code
+under MIT.
+
+
+
+================================================
+FILE: FAQ.md
+================================================
+# FAQ
+
+Here is the answer to a number of frequently asked questions.
+
+### Torch compilation issues
+
+With some PyTorch/triton versions, one might encounter compilation errors
+like the following:
+```
+  Traceback (most recent call last):
+  ...
+  File "site-packages/torch/_inductor/runtime/triton_heuristics.py", line 1153, in make_launcher
+    "launch_enter_hook": binary.__class__.launch_enter_hook,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch._inductor.exc.InductorError: AttributeError: type object 'CompiledKernel' has no attribute 'launch_enter_hook'
+```
+
+If that's the case, you can disable torch compilation by setting the following
+environment variable.
+```bash
+export NO_TORCH_COMPILE=1
+```
+
+### Issues installing the sentencepiece dependency
+
+On some linux distributions (arch) or on macos, the local version of cmake can
+be too recent for the sentencepiece dependency.
+
+```
+CMake Error at CMakeLists.txt:15 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 has been removed from CMake.
+```
+
+You can either downgrade your cmake version, e.g. 3.31.0 on arch works or try
+setting `CMAKE_POLICY_VERSION_MINIMUM=3.5`.
+
+If you run into some errors when compiling the sentencepiece rust bindings,
+these could also be due to gcc being too recent, e.g. gcc 15. You can get
+around this by using gcc-13, e.g. by setting the following after installing
+the proper gcc packages.
+```bash
+export CMAKE_C_COMPILER=/usr/bin/gcc-13
+export CMAKE_CXX_COMPILER=/usr/bin/g++-13 
+CC=gcc-13 CXX=g++-13 cargo build --release
+```
+
+Alternatively you can set `CXXFLAGS="-include cstdint"`, see this
+[issue](https://github.com/google/sentencepiece/issues/1108).
+
+### Will you release training code?
+
+Some finetuning code can be found in the [kyutai-labs/moshi-finetune repo](https://github.com/kyutai-labs/moshi-finetune).
+This code has not been adapted to the Speech-To-Text and Text-To-Speech models
+yet, but it should be a good starting point.
+
+
+
+
+
+================================================
+FILE: LICENSE-APACHE
+================================================
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright [yyyy] [name of copyright owner]
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+
+
+================================================
+FILE: LICENSE-MIT
+================================================
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+
+
+================================================
+FILE: stt_pytorch.ipynb
+================================================
+# Jupyter notebook converted to Python script.
+
+!pip install moshi
+
+!wget https://github.com/kyutai-labs/moshi/raw/refs/heads/main/data/sample_fr_hibiki_crepes.mp3
+
+from dataclasses import dataclass
+import time
+import sentencepiece
+import sphn
+import textwrap
+import torch
+
+from moshi.models import loaders, MimiModel, LMModel, LMGen
+
+@dataclass
+class InferenceState:
+    mimi: MimiModel
+    text_tokenizer: sentencepiece.SentencePieceProcessor
+    lm_gen: LMGen
+
+    def __init__(
+        self,
+        mimi: MimiModel,
+        text_tokenizer: sentencepiece.SentencePieceProcessor,
+        lm: LMModel,
+        batch_size: int,
+        device: str | torch.device,
+    ):
+        self.mimi = mimi
+        self.text_tokenizer = text_tokenizer
+        self.lm_gen = LMGen(lm, temp=0, temp_text=0, use_sampling=False)
+        self.device = device
+        self.frame_size = int(self.mimi.sample_rate / self.mimi.frame_rate)
+        self.batch_size = batch_size
+        self.mimi.streaming_forever(batch_size)
+        self.lm_gen.streaming_forever(batch_size)
+
+    def run(self, in_pcms: torch.Tensor):
+        ntokens = 0
+        first_frame = True
+        chunks = [
+            c
+            for c in in_pcms.split(self.frame_size, dim=2)
+            if c.shape[-1] == self.frame_size
+        ]
+        start_time = time.time()
+        all_text = []
+        for chunk in chunks:
+            codes = self.mimi.encode(chunk)
+            if first_frame:
+                # Ensure that the first slice of codes is properly seen by the transformer
+                # as otherwise the first slice is replaced by the initial tokens.
+                tokens = self.lm_gen.step(codes)
+                first_frame = False
+            tokens = self.lm_gen.step(codes)
+            if tokens is None:
+                continue
+            assert tokens.shape[1] == 1
+            one_text = tokens[0, 0].cpu()
+            if one_text.item() not in [0, 3]:
+                text = self.text_tokenizer.id_to_piece(one_text.item())
+                text = text.replace("▁", " ")
+                all_text.append(text)
+            ntokens += 1
+        dt = time.time() - start_time
+        print(
+            f"processed {ntokens} steps in {dt:.0f}s, {1000 * dt / ntokens:.2f}ms/step"
+        )
+        return "".join(all_text)
+
+device = "cuda"
+# Use the en+fr low latency model, an alternative is kyutai/stt-2.6b-en
+checkpoint_info = loaders.CheckpointInfo.from_hf_repo("kyutai/stt-1b-en_fr")
+mimi = checkpoint_info.get_mimi(device=device)
+text_tokenizer = checkpoint_info.get_text_tokenizer()
+lm = checkpoint_info.get_moshi(device=device)
+in_pcms, _ = sphn.read("sample_fr_hibiki_crepes.mp3", sample_rate=mimi.sample_rate)
+in_pcms = torch.from_numpy(in_pcms).to(device=device)
+
+stt_config = checkpoint_info.stt_config
+pad_left = int(stt_config.get("audio_silence_prefix_seconds", 0.0) * 24000)
+pad_right = int((stt_config.get("audio_delay_seconds", 0.0) + 1.0) * 24000)
+in_pcms = torch.nn.functional.pad(in_pcms, (pad_left, pad_right), mode="constant")
+in_pcms = in_pcms[None, 0:1].expand(1, -1, -1)
+
+state = InferenceState(mimi, text_tokenizer, lm, batch_size=1, device=device)
+text = state.run(in_pcms)
+print(textwrap.fill(text, width=100))
+
+from IPython.display import Audio
+
+Audio("sample_fr_hibiki_crepes.mp3")
+
+
+
+================================================
+FILE: tts_pytorch.ipynb
+================================================
+# Jupyter notebook converted to Python script.
+
+# Fast install, might break in the future.
+!pip install 'safetensors<0.6'
+!pip install 'sphn<0.2'
+!pip install --no-deps "moshi==0.2.11"
+# Slow install (will download torch and cuda), but future proof.
+# !pip install "moshi==0.2.11"
+
+import numpy as np
+import torch
+from moshi.models.loaders import CheckpointInfo
+from moshi.models.tts import DEFAULT_DSM_TTS_REPO, DEFAULT_DSM_TTS_VOICE_REPO, TTSModel
+
+from IPython.display import display, Audio
+
+# Configuration
+text = "Hey there! How are you? I had the craziest day today."
+voice = "expresso/ex03-ex01_happy_001_channel1_334s.wav"
+print(f"See https://huggingface.co/{DEFAULT_DSM_TTS_VOICE_REPO} for available voices.")
+
+# Set everything up
+checkpoint_info = CheckpointInfo.from_hf_repo(DEFAULT_DSM_TTS_REPO)
+tts_model = TTSModel.from_checkpoint_info(
+    checkpoint_info, n_q=32, temp=0.6, device=torch.device("cuda")
+)
+
+# If you want to make a dialog, you can pass more than one turn [text_speaker_1, text_speaker_2, text_2_speaker_1, ...]
+entries = tts_model.prepare_script([text], padding_between=1)
+voice_path = tts_model.get_voice_path(voice)
+# CFG coef goes here because the model was trained with CFG distillation,
+# so it's not _actually_ doing CFG at inference time.
+# Also, if you are generating a dialog, you should have two voices in the list.
+condition_attributes = tts_model.make_condition_attributes([voice_path], cfg_coef=2.0)
+
+print("Generating audio...")
+
+pcms = []
+
+
+def _on_frame(frame):
+    print("Step", len(pcms), end="\r")
+    if (frame != -1).all():
+        pcm = tts_model.mimi.decode(frame[:, 1:, :]).cpu().numpy()
+        pcms.append(np.clip(pcm[0, 0], -1, 1))
+
+
+# You could also generate multiple audios at once by extending the following lists.
+all_entries = [entries]
+all_condition_attributes = [condition_attributes]
+with tts_model.mimi.streaming(len(all_entries)):
+    result = tts_model.generate(
+        all_entries, all_condition_attributes, on_frame=_on_frame
+    )
+
+print("Done generating.")
+audio = np.concatenate(pcms, axis=-1)
+
+display(Audio(audio, rate=tts_model.mimi.sample_rate, autoplay=True))
+
+
+
+================================================
+FILE: .pre-commit-config.yaml
+================================================
+repos:
+  - repo: local
+    hooks:
+    - id: ruff
+      name: ruff
+      language: system
+      entry: bash -c 'uvx ruff check'
+      pass_filenames: false
+      always_run: true
+    - id: ruff-format
+      name: ruff format
+      language: system
+      entry: bash -c 'uvx ruff format --check'
+      pass_filenames: false
+      always_run: true
+    # Get rid of Jupyter Notebook output because we don't want to keep it in Git
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+
+
+
+================================================
+FILE: configs/config-stt-en-hf.toml
+================================================
+static_dir = "./static/"
+log_dir = "$HOME/tmp/tts-logs"
+instance_name = "tts"
+authorized_ids = ["public_token"]
+
+[modules.asr]
+path = "/api/asr-streaming"
+type = "BatchedAsr"
+lm_model_file = "hf://kyutai/stt-2.6b-en-candle/model.safetensors"
+text_tokenizer_file = "hf://kyutai/stt-2.6b-en-candle/tokenizer_en_audio_4000.model"
+audio_tokenizer_file = "hf://kyutai/stt-2.6b-en-candle/mimi-pytorch-e351c8d8@125.safetensors"
+asr_delay_in_tokens = 32
+batch_size = 16
+conditioning_learnt_padding = true
+temperature = 0
+
+[modules.asr.model]
+audio_vocab_size = 2049
+text_in_vocab_size = 4001
+text_out_vocab_size = 4000
+audio_codebooks = 32
+
+[modules.asr.model.transformer]
+d_model = 2048
+num_heads = 32
+num_layers = 48
+dim_feedforward = 8192
+causal = true
+norm_first = true
+bias_ff = false
+bias_attn = false
+context = 375
+max_period = 100000
+use_conv_block = false
+use_conv_bias = true
+gating = "silu"
+norm = "RmsNorm"
+positional_embedding = "Rope"
+conv_layout = false
+conv_kernel_size = 3
+kv_repeat = 1
+max_seq_len = 40960
+
+
+
+================================================
+FILE: configs/config-stt-en_fr-hf.toml
+================================================
+static_dir = "./static/"
+log_dir = "$HOME/tmp/tts-logs"
+instance_name = "tts"
+authorized_ids = ["public_token"]
+
+[modules.asr]
+path = "/api/asr-streaming"
+type = "BatchedAsr"
+lm_model_file = "hf://kyutai/stt-1b-en_fr-candle/model.safetensors"
+text_tokenizer_file = "hf://kyutai/stt-1b-en_fr-candle/tokenizer_en_fr_audio_8000.model"
+audio_tokenizer_file = "hf://kyutai/stt-1b-en_fr-candle/mimi-pytorch-e351c8d8@125.safetensors"
+asr_delay_in_tokens = 6
+batch_size = 64
+conditioning_learnt_padding = true
+temperature = 0.0
+
+[modules.asr.model]
+audio_vocab_size = 2049
+text_in_vocab_size = 8001
+text_out_vocab_size = 8000
+audio_codebooks = 32
+
+[modules.asr.model.transformer]
+d_model = 2048
+num_heads = 16
+num_layers = 16
+dim_feedforward = 8192
+causal = true
+norm_first = true
+bias_ff = false
+bias_attn = false
+context = 750
+max_period = 100000
+use_conv_block = false
+use_conv_bias = true
+gating = "silu"
+norm = "RmsNorm"
+positional_embedding = "Rope"
+conv_layout = false
+conv_kernel_size = 3
+kv_repeat = 1
+max_seq_len = 40960
+
+[modules.asr.model.extra_heads]
+num_heads = 4
+dim = 6
+
+
+
+================================================
+FILE: configs/config-tts.toml
+================================================
+static_dir = "./static/"
+log_dir = "$HOME/tmp/tts-logs"
+instance_name = "tts"
+authorized_ids = ["public_token"]
+
+[modules.tts_py]
+type = "Py"
+path = "/api/tts_streaming"
+text_tokenizer_file = "hf://kyutai/tts-1.6b-en_fr/tokenizer_spm_8k_en_fr_audio.model"
+batch_size = 8  # Adjust to your GPU memory capacity
+text_bos_token = 1
+
+[modules.tts_py.py]
+log_folder = "$HOME/tmp/moshi-server-logs"
+voice_folder = "hf-snapshot://kyutai/tts-voices/**/*.safetensors"
+default_voice = "unmute-prod-website/default_voice.wav"
+cfg_coef = 2.0
+cfg_is_no_text = true
+padding_between = 1
+n_q = 24
+
+
+
+================================================
+FILE: scripts/stt_evaluate_on_dataset.py
+================================================
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "datasets",
+#     "jiwer==3.1.0",
+#     "julius",
+#     "librosa",
+#     "moshi",
+#     "openai-whisper",
+#     "soundfile",
+# ]
+# ///
+"""
+Example implementation of the streaming STT example. Here we group
+test utterances in batches (pre- and post-padded with silence) and
+and then feed these batches into the streaming STT model frame-by-frame.
+"""
+
+# The outputs I get on my H100 using this code with the 2.6B model,
+# bsz 32:
+
+# LibriVox === cer: 4.09% wer: 7.33% corpus_wer: 6.78% RTF = 52.72
+# Ami === cer: 15.99% wer: 18.78% corpus_wer: 12.20% RTF = 28.37
+# LibriSpeech other === cer: 2.31% wer: 5.24% corpus_wer: 4.33% RTF = 44.76
+# LibriSpeech clean === cer: 0.67% wer: 1.95% corpus_wer: 1.69% RTF = 68.19
+# Tedlium (short) === cer: 2.15% wer: 3.65% corpus_wer: 3.33% RTF = 67.44
+# spgispeech === cer: 0.99% wer: 2.00% corpus_wer: 2.03% RTF = 78.64
+# gigaspeech === cer: 6.80% wer: 11.31% corpus_wer: 9.81% RTF = 64.04
+# earnings22 (short) === cer: 12.63% wer: 15.70% corpus_wer: 11.02% RTF = 50.13
+
+# Meanwhile === cer: 2.02% wer: 5.50% corpus_wer: 5.60% RTF = 69.19
+# Tedlium (long) == cer: 1.53% wer: 2.56% corpus_wer: 2.97% RTF = 33.92
+# Rev16 === cer: 6.57% wer: 10.08% corpus_wer: 11.43% RTF = 40.34
+# Earnings21 === cer: 5.73% wer: 9.84% corpus_wer: 10.38% RTF = 73.15
+
+import argparse
+import dataclasses
+import time
+
+import jiwer
+import julius
+import moshi.models
+import torch
+import tqdm
+from datasets import Dataset, load_dataset
+from whisper.normalizers import EnglishTextNormalizer
+
+_NORMALIZER = EnglishTextNormalizer()
+
+
+def get_text(sample):
+    possible_keys = [
+        "text",
+        "sentence",
+        "normalized_text",
+        "transcript",
+        "transcription",
+    ]
+    for key in possible_keys:
+        if key in sample:
+            return sample[key]
+    raise ValueError(
+        f"Expected transcript column of either {possible_keys}."
+        f"Got sample with keys: {', '.join(sample.keys())}. Ensure a text column name is present in the dataset."
+    )
+
+
+# The two functions below are adapted from https://github.com/huggingface/open_asr_leaderboard/blob/main/normalizer/data_utils.py
+
+
+def normalize(batch):
+    batch["original_text"] = get_text(batch)
+    batch["norm_text"] = _NORMALIZER(batch["original_text"])
+    return batch
+
+
+def is_target_text_in_range(ref):
+    if ref.strip() == "ignore time segment in scoring":
+        return False
+    else:
+        return ref.strip() != ""
+
+
+# End of the adapted part
+
+
+class AsrMetrics:
+    def __init__(self):
+        self.cer_sum = 0.0
+        self.wer_sum = 0.0
+        self.errors_sum = 0.0
+        self.total_words_sum = 0.0
+        self.num_sequences = 0.0
+
+    def update(self, hyp: str, ref: str) -> None:
+        normalized_ref = _NORMALIZER(ref)
+        normalized_hyp = _NORMALIZER(hyp)
+
+        this_wer = jiwer.wer(normalized_ref, normalized_hyp)
+        this_cer = jiwer.cer(normalized_ref, normalized_hyp)
+        measures = jiwer.compute_measures(normalized_ref, normalized_hyp)
+
+        self.wer_sum += this_wer
+        self.cer_sum += this_cer
+        self.errors_sum += (
+            measures["substitutions"] + measures["deletions"] + measures["insertions"]
+        )
+        self.total_words_sum += (
+            measures["substitutions"] + measures["deletions"] + measures["hits"]
+        )
+        self.num_sequences += 1
+
+    def compute(self) -> dict:
+        assert self.num_sequences > 0, (
+            "Unable to compute with total number of comparisons <= 0"
+        )  # type: ignore
+        return {
+            "cer": (self.cer_sum / self.num_sequences),
+            "wer": (self.wer_sum / self.num_sequences),
+            "corpus_wer": (self.errors_sum / self.total_words_sum),
+        }
+
+    def __str__(self) -> str:
+        result = self.compute()
+        return " ".join(f"{k}: {100 * v:.2f}%" for k, v in result.items())
+
+
+class Timer:
+    def __init__(self):
+        self.total = 0
+        self._start_time = None
+
+    def __enter__(self):
+        self._start_time = time.perf_counter()
+        return self
+
+    def __exit__(self, *_):
+        self.total += time.perf_counter() - self._start_time
+        self._start_time = None
+
+
+@dataclasses.dataclass
+class _DatasetInfo:
+    alias: str
+
+    name: str
+    config: str
+    split: str = "test"
+
+
+_DATASETS = [
+    # Long-form datasets from distil-whisper
+    _DatasetInfo("rev16", "distil-whisper/rev16", "whisper_subset"),
+    _DatasetInfo("earnings21", "distil-whisper/earnings21", "full"),
+    _DatasetInfo("earnings22", "distil-whisper/earnings22", "full"),
+    _DatasetInfo("tedlium", "distil-whisper/tedlium-long-form", None),
+    _DatasetInfo("meanwhile", "distil-whisper/meanwhile", None),
+    # Short-form datasets from OpenASR leaderboard
+    _DatasetInfo("ami", "hf-audio/esb-datasets-test-only-sorted", "ami"),
+    _DatasetInfo(
+        "librispeech.clean",
+        "hf-audio/esb-datasets-test-only-sorted",
+        "librispeech",
+        split="test.clean",
+    ),
+    _DatasetInfo(
+        "librispeech.other",
+        "hf-audio/esb-datasets-test-only-sorted",
+        "librispeech",
+        split="test.other",
+    ),
+    _DatasetInfo("voxpopuli", "hf-audio/esb-datasets-test-only-sorted", "voxpopuli"),
+    _DatasetInfo("spgispeech", "hf-audio/esb-datasets-test-only-sorted", "spgispeech"),
+    _DatasetInfo("gigaspeech", "hf-audio/esb-datasets-test-only-sorted", "gigaspeech"),
+    _DatasetInfo("tedlium-short", "hf-audio/esb-datasets-test-only-sorted", "tedlium"),
+    _DatasetInfo(
+        "earnings22-short", "hf-audio/esb-datasets-test-only-sorted", "earnings22"
+    ),
+]
+DATASET_MAP = {dataset.alias: dataset for dataset in _DATASETS}
+
+
+def get_dataset(args) -> Dataset:
+    if args.dataset not in DATASET_MAP:
+        raise RuntimeError(f"Unknown dataset: {args.dataset}")
+
+    info = DATASET_MAP[args.dataset]
+
+    dataset = load_dataset(
+        info.name,
+        info.config,
+        split=info.split,
+        cache_dir=args.hf_cache_dir,
+        streaming=False,
+        token=True,
+    )
+    dataset = dataset.map(normalize)
+    dataset = dataset.filter(is_target_text_in_range, input_columns=["norm_text"])
+
+    return dataset
+
+
+@torch.no_grad
+def get_padded_batch(
+    audios: list[tuple[torch.Tensor, int]],
+    before_padding: float,
+    after_padding: float,
+    audio_encoder,
+):
+    sample_rate = audio_encoder.sample_rate
+
+    max_len = 0
+    batch = []
+    durations = []
+    for audio, sr in audios:
+        durations.append(audio.shape[-1] / sr)
+        audio = julius.resample_frac(audio, int(sr), int(sample_rate))
+        audio = torch.nn.functional.pad(
+            audio, (int(before_padding * sample_rate), int(after_padding * sample_rate))
+        )
+        max_len = max(max_len, audio.shape[-1])
+        batch.append(audio)
+
+    target = max_len
+    if target % audio_encoder.frame_size != 0:
+        target = target + (
+            audio_encoder.frame_size - max_len % audio_encoder.frame_size
+        )
+    padded_batch = torch.stack(
+        [
+            torch.nn.functional.pad(audio, (0, target - audio.shape[-1]))
+            for audio in batch
+        ]
+    )
+    return padded_batch
+
+
+@torch.no_grad
+def streaming_transcribe(
+    padded_batch: torch.Tensor,
+    mimi,
+    lm_gen,
+):
+    bsz = padded_batch.shape[0]
+
+    text_tokens_acc = []
+
+    with mimi.streaming(bsz), lm_gen.streaming(bsz):
+        for offset in range(0, padded_batch.shape[-1], mimi.frame_size):
+            audio_chunk = padded_batch[:, offset : offset + mimi.frame_size]
+            audio_chunk = audio_chunk[:, None, :]
+
+            audio_tokens = mimi.encode(audio_chunk)
+            text_tokens = lm_gen.step(audio_tokens)
+            if text_tokens is not None:
+                text_tokens_acc.append(text_tokens)
+
+    return torch.concat(text_tokens_acc, axis=-1)
+
+
+def run_inference(
+    dataset,
+    mimi,
+    lm_gen,
+    tokenizer,
+    padding_token_id,
+    before_padding_sec,
+    after_padding_sec,
+):
+    metrics = AsrMetrics()
+    audio_time = 0.0
+    inference_timer = Timer()
+
+    for batch in tqdm.tqdm(dataset.iter(args.batch_size)):
+        audio_data = list(
+            zip(
+                [torch.tensor(x["array"]).float() for x in batch["audio"]],
+                [x["sampling_rate"] for x in batch["audio"]],
+            )
+        )
+
+        audio_time += sum(audio.shape[-1] / sr for (audio, sr) in audio_data)
+
+        gt_transcripts = batch["original_text"]
+
+        padded_batch = get_padded_batch(
+            audio_data,
+            before_padding=before_padding_sec,
+            after_padding=after_padding_sec,
+            audio_encoder=mimi,
+        )
+        padded_batch = padded_batch.cuda()
+
+        with inference_timer:
+            text_tokens = streaming_transcribe(
+                padded_batch,
+                mimi=mimi,
+                lm_gen=lm_gen,
+            )
+
+        for batch_index in range(text_tokens.shape[0]):
+            utterance_tokens = text_tokens[batch_index, ...]
+            utterance_tokens = utterance_tokens[utterance_tokens > padding_token_id]
+            text = tokenizer.decode(utterance_tokens.cpu().numpy().tolist())
+            metrics.update(hyp=text, ref=gt_transcripts[batch_index])
+
+    return metrics, inference_timer.total, audio_time
+
+
+def main(args):
+    torch.set_float32_matmul_precision("high")
+
+    info = moshi.models.loaders.CheckpointInfo.from_hf_repo(
+        args.hf_repo,
+        moshi_weights=args.moshi_weight,
+        mimi_weights=args.mimi_weight,
+        tokenizer=args.tokenizer,
+        config_path=args.config_path,
+    )
+
+    mimi = info.get_mimi(device=args.device)
+    tokenizer = info.get_text_tokenizer()
+    lm = info.get_moshi(
+        device=args.device,
+        dtype=torch.bfloat16,
+    )
+    lm_gen = moshi.models.LMGen(lm, temp=0, temp_text=0.0)
+    dataset = get_dataset(args)
+
+    padding_token_id = info.raw_config.get("text_padding_token_id", 3)
+    # Putting in some conservative defaults
+    audio_silence_prefix_seconds = info.stt_config.get(
+        "audio_silence_prefix_seconds", 1.0
+    )
+    audio_delay_seconds = info.stt_config.get("audio_delay_seconds", 5.0)
+
+    wer_metric, inference_time, audio_time = run_inference(
+        dataset,
+        mimi,
+        lm_gen,
+        tokenizer,
+        padding_token_id,
+        audio_silence_prefix_seconds,
+        audio_delay_seconds + 0.5,
+    )
+
+    print(wer_metric, f"RTF = {audio_time / inference_time:.2f}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Example streaming STT inference.")
+    parser.add_argument(
+        "--dataset",
+        required=True,
+        choices=DATASET_MAP.keys(),
+        help="Dataset to run inference on.",
+    )
+
+    parser.add_argument(
+        "--hf-repo", type=str, help="HF repo to load the STT model from."
+    )
+    parser.add_argument("--tokenizer", type=str, help="Path to a local tokenizer file.")
+    parser.add_argument(
+        "--moshi-weight", type=str, help="Path to a local checkpoint file."
+    )
+    parser.add_argument(
+        "--mimi-weight", type=str, help="Path to a local checkpoint file for Mimi."
+    )
+    parser.add_argument(
+        "--config-path", type=str, help="Path to a local config file.", default=None
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        help="Batch size.",
+        default=32,
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda",
+        help="Device on which to run, defaults to 'cuda'.",
+    )
+    parser.add_argument("--hf-cache-dir", type=str, help="HuggingFace cache folder.")
+    args = parser.parse_args()
+
+    main(args)
+
+
+
+================================================
+FILE: scripts/stt_from_file_mlx.py
+================================================
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "huggingface_hub",
+#     "moshi_mlx==0.2.12",
+#     "numpy",
+#     "sentencepiece",
+#     "sounddevice",
+#     "sphn",
+# ]
+# ///
+
+import argparse
+import json
+
+import mlx.core as mx
+import mlx.nn as nn
+import sentencepiece
+import sphn
+from huggingface_hub import hf_hub_download
+from moshi_mlx import models, utils
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("in_file", help="The file to transcribe.")
+    parser.add_argument("--max-steps", default=4096)
+    parser.add_argument("--hf-repo")
+    parser.add_argument(
+        "--vad", action="store_true", help="Enable VAD (Voice Activity Detection)."
+    )
+    args = parser.parse_args()
+
+    audio, _ = sphn.read(args.in_file, sample_rate=24000)
+    if args.hf_repo is None:
+        if args.vad:
+            args.hf_repo = "kyutai/stt-1b-en_fr-candle"
+        else:
+            args.hf_repo = "kyutai/stt-1b-en_fr-mlx"
+    lm_config = hf_hub_download(args.hf_repo, "config.json")
+    with open(lm_config, "r") as fobj:
+        lm_config = json.load(fobj)
+    mimi_weights = hf_hub_download(args.hf_repo, lm_config["mimi_name"])
+    moshi_name = lm_config.get("moshi_name", "model.safetensors")
+    moshi_weights = hf_hub_download(args.hf_repo, moshi_name)
+    text_tokenizer = hf_hub_download(args.hf_repo, lm_config["tokenizer_name"])
+
+    lm_config = models.LmConfig.from_config_dict(lm_config)
+    model = models.Lm(lm_config)
+    model.set_dtype(mx.bfloat16)
+    if moshi_weights.endswith(".q4.safetensors"):
+        nn.quantize(model, bits=4, group_size=32)
+    elif moshi_weights.endswith(".q8.safetensors"):
+        nn.quantize(model, bits=8, group_size=64)
+
+    print(f"loading model weights from {moshi_weights}")
+    if args.hf_repo.endswith("-candle"):
+        model.load_pytorch_weights(moshi_weights, lm_config, strict=True)
+    else:
+        model.load_weights(moshi_weights, strict=True)
+
+    print(f"loading the text tokenizer from {text_tokenizer}")
+    text_tokenizer = sentencepiece.SentencePieceProcessor(text_tokenizer)  # type: ignore
+
+    print(f"loading the audio tokenizer {mimi_weights}")
+    audio_tokenizer = models.mimi.Mimi(models.mimi_202407(32))
+    audio_tokenizer.load_pytorch_weights(str(mimi_weights), strict=True)
+    print("warming up the model")
+    model.warmup()
+    gen = models.LmGen(
+        model=model,
+        max_steps=args.max_steps,
+        text_sampler=utils.Sampler(top_k=25, temp=0),
+        audio_sampler=utils.Sampler(top_k=250, temp=0.8),
+        check=False,
+    )
+
+    print(f"starting inference {audio.shape}")
+    audio = mx.concat([mx.array(audio), mx.zeros((1, 48000))], axis=-1)
+    last_print_was_vad = False
+    for start_idx in range(0, audio.shape[-1] // 1920 * 1920, 1920):
+        block = audio[:, None, start_idx : start_idx + 1920]
+        other_audio_tokens = audio_tokenizer.encode_step(block).transpose(0, 2, 1)
+        if args.vad:
+            text_token, vad_heads = gen.step_with_extra_heads(other_audio_tokens[0])
+            if vad_heads:
+                pr_vad = vad_heads[2][0, 0, 0].item()
+                if pr_vad > 0.5 and not last_print_was_vad:
+                    print(" [end of turn detected]")
+                    last_print_was_vad = True
+        else:
+            text_token = gen.step(other_audio_tokens[0])
+        text_token = text_token[0].item()
+        audio_tokens = gen.last_audio_tokens()
+        _text = None
+        if text_token not in (0, 3):
+            _text = text_tokenizer.id_to_piece(text_token)  # type: ignore
+            _text = _text.replace("▁", " ")
+            print(_text, end="", flush=True)
+            last_print_was_vad = False
+    print()
+
+
+
+================================================
+FILE: scripts/stt_from_file_pytorch.py
+================================================
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "julius",
+#     "librosa",
+#     "soundfile",
+#     "moshi==0.2.11",
+# ]
+# ///
+
+"""An example script that illustrates how one can get per-word timestamps from
+Kyutai STT models.
+"""
+
+import argparse
+import dataclasses
+import itertools
+import math
+
+import julius
+import moshi.models
+import sphn
+import time
+import torch
+
+
+@dataclasses.dataclass
+class TimestampedText:
+    text: str
+    timestamp: tuple[float, float]
+
+    def __str__(self):
+        return f"{self.text} ({self.timestamp[0]:.2f}:{self.timestamp[1]:.2f})"
+
+
+def tokens_to_timestamped_text(
+    text_tokens,
+    tokenizer,
+    frame_rate,
+    end_of_padding_id,
+    padding_token_id,
+    offset_seconds,
+) -> list[TimestampedText]:
+    text_tokens = text_tokens.cpu().view(-1)
+
+    # Normally `end_of_padding` tokens indicate word boundaries.
+    # Everything between them should be a single word;
+    # the time offset of the those tokens correspond to word start and
+    # end timestamps (minus silence prefix and audio delay).
+    #
+    # However, in rare cases some complexities could arise. Firstly,
+    # for words that are said quickly but are represented with
+    # multiple tokens, the boundary might be omitted. Secondly,
+    # for the very last word the end boundary might not happen.
+    # Below is a code snippet that handles those situations a bit
+    # more carefully.
+
+    sequence_timestamps = []
+
+    def _tstmp(start_position, end_position):
+        return (
+            max(0, start_position / frame_rate - offset_seconds),
+            max(0, end_position / frame_rate - offset_seconds),
+        )
+
+    def _decode(t):
+        t = t[t > padding_token_id]
+        return tokenizer.decode(t.numpy().tolist())
+
+    def _decode_segment(start, end):
+        nonlocal text_tokens
+        nonlocal sequence_timestamps
+
+        text = _decode(text_tokens[start:end])
+        words_inside_segment = text.split()
+
+        if len(words_inside_segment) == 0:
+            return
+        if len(words_inside_segment) == 1:
+            # Single word within the boundaries, the general case
+            sequence_timestamps.append(
+                TimestampedText(text=text, timestamp=_tstmp(start, end))
+            )
+        else:
+            # We're in a rare situation where multiple words are so close they are not separated by `end_of_padding`.
+            # We tokenize words one-by-one; each word is assigned with as many frames as much tokens it has.
+            for adjacent_word in words_inside_segment[:-1]:
+                n_tokens = len(tokenizer.encode(adjacent_word))
+                sequence_timestamps.append(
+                    TimestampedText(
+                        text=adjacent_word, timestamp=_tstmp(start, start + n_tokens)
+                    )
+                )
+                start += n_tokens
+
+            # The last word takes everything until the boundary
+            adjacent_word = words_inside_segment[-1]
+            sequence_timestamps.append(
+                TimestampedText(text=adjacent_word, timestamp=_tstmp(start, end))
+            )
+
+    (segment_boundaries,) = torch.where(text_tokens == end_of_padding_id)
+
+    if not segment_boundaries.numel():
+        return []
+
+    for i in range(len(segment_boundaries) - 1):
+        segment_start = int(segment_boundaries[i]) + 1
+        segment_end = int(segment_boundaries[i + 1])
+
+        _decode_segment(segment_start, segment_end)
+
+    last_segment_start = segment_boundaries[-1] + 1
+
+    boundary_token = torch.tensor([tokenizer.eos_id()])
+    (end_of_last_segment,) = torch.where(
+        torch.isin(text_tokens[last_segment_start:], boundary_token)
+    )
+
+    if not end_of_last_segment.numel():
+        # upper-bound either end of the audio or 1 second duration, whicher is smaller
+        last_segment_end = min(text_tokens.shape[-1], last_segment_start + frame_rate)
+    else:
+        last_segment_end = last_segment_start + end_of_last_segment[0]
+    _decode_segment(last_segment_start, last_segment_end)
+
+    return sequence_timestamps
+
+
+def main(args):
+    if args.vad and args.hf_repo is None:
+        args.hf_repo = "kyutai/stt-1b-en_fr-candle"
+
+    info = moshi.models.loaders.CheckpointInfo.from_hf_repo(
+        args.hf_repo,
+        moshi_weights=args.moshi_weight,
+        mimi_weights=args.mimi_weight,
+        tokenizer=args.tokenizer,
+        config_path=args.config_path,
+    )
+
+    mimi = info.get_mimi(device=args.device)
+    tokenizer = info.get_text_tokenizer()
+    lm = info.get_moshi(
+        device=args.device,
+        dtype=torch.bfloat16,
+    )
+    lm_gen = moshi.models.LMGen(lm, temp=0, temp_text=0.0)
+
+    audio_silence_prefix_seconds = info.stt_config.get(
+        "audio_silence_prefix_seconds", 1.0
+    )
+    audio_delay_seconds = info.stt_config.get("audio_delay_seconds", 5.0)
+    padding_token_id = info.raw_config.get("text_padding_token_id", 3)
+
+    audio, input_sample_rate = sphn.read(args.in_file)
+    audio = torch.from_numpy(audio).to(args.device)
+    audio = julius.resample_frac(audio, input_sample_rate, mimi.sample_rate)
+    if audio.shape[-1] % mimi.frame_size != 0:
+        to_pad = mimi.frame_size - audio.shape[-1] % mimi.frame_size
+        audio = torch.nn.functional.pad(audio, (0, to_pad))
+
+    text_tokens_accum = []
+
+    n_prefix_chunks = math.ceil(audio_silence_prefix_seconds * mimi.frame_rate)
+    n_suffix_chunks = math.ceil(audio_delay_seconds * mimi.frame_rate)
+    silence_chunk = torch.zeros(
+        (1, 1, mimi.frame_size), dtype=torch.float32, device=args.device
+    )
+
+    chunks = itertools.chain(
+        itertools.repeat(silence_chunk, n_prefix_chunks),
+        torch.split(audio[:, None], mimi.frame_size, dim=-1),
+        itertools.repeat(silence_chunk, n_suffix_chunks),
+    )
+
+    start_time = time.time()
+    nchunks = 0
+    last_print_was_vad = False
+    with mimi.streaming(1), lm_gen.streaming(1):
+        for audio_chunk in chunks:
+            nchunks += 1
+            audio_tokens = mimi.encode(audio_chunk)
+            if args.vad:
+                text_tokens, vad_heads = lm_gen.step_with_extra_heads(audio_tokens)
+                if vad_heads:
+                    pr_vad = vad_heads[2][0, 0, 0].cpu().item()
+                    if pr_vad > 0.5 and not last_print_was_vad:
+                        print(" [end of turn detected]")
+                        last_print_was_vad = True
+            else:
+                text_tokens = lm_gen.step(audio_tokens)
+            text_token = text_tokens[0, 0, 0].cpu().item()
+            if text_token not in (0, 3):
+                _text = tokenizer.id_to_piece(text_tokens[0, 0, 0].cpu().item())  # type: ignore
+                _text = _text.replace("▁", " ")
+                print(_text, end="", flush=True)
+                last_print_was_vad = False
+            text_tokens_accum.append(text_tokens)
+
+    utterance_tokens = torch.concat(text_tokens_accum, dim=-1)
+    dt = time.time() - start_time
+    print(
+        f"\nprocessed {nchunks} chunks in {dt:.2f} seconds, steps per second: {nchunks / dt:.2f}"
+    )
+    timed_text = tokens_to_timestamped_text(
+        utterance_tokens,
+        tokenizer,
+        mimi.frame_rate,
+        end_of_padding_id=0,
+        padding_token_id=padding_token_id,
+        offset_seconds=int(n_prefix_chunks / mimi.frame_rate) + audio_delay_seconds,
+    )
+
+    decoded = " ".join([str(t) for t in timed_text])
+    print(decoded)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Example streaming STT w/ timestamps.")
+    parser.add_argument("in_file", help="The file to transcribe.")
+
+    parser.add_argument(
+        "--hf-repo", type=str, help="HF repo to load the STT model from. "
+    )
+    parser.add_argument("--tokenizer", type=str, help="Path to a local tokenizer file.")
+    parser.add_argument(
+        "--moshi-weight", type=str, help="Path to a local checkpoint file."
+    )
+    parser.add_argument(
+        "--mimi-weight", type=str, help="Path to a local checkpoint file for Mimi."
+    )
+    parser.add_argument(
+        "--config-path", type=str, help="Path to a local config file.", default=None
+    )
+    parser.add_argument(
+        "--vad", action="store_true", help="Enable VAD (Voice Activity Detection)."
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda",
+        help="Device on which to run, defaults to 'cuda'.",
+    )
+    args = parser.parse_args()
+
+    main(args)
+
+
+
+================================================
+FILE: scripts/stt_from_file_rust_server.py
+================================================
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "msgpack",
+#     "numpy",
+#     "sphn",
+#     "websockets",
+# ]
+# ///
+import argparse
+import asyncio
+import time
+
+import msgpack
+import numpy as np
+import sphn
+import websockets
+
+SAMPLE_RATE = 24000
+FRAME_SIZE = 1920  # Send data in chunks
+
+
+def load_and_process_audio(file_path):
+    """Load an MP3 file, resample to 24kHz, convert to mono, and extract PCM float32 data."""
+    pcm_data, _ = sphn.read(file_path, sample_rate=SAMPLE_RATE)
+    return pcm_data[0]
+
+
+async def receive_messages(websocket):
+    transcript = []
+
+    async for message in websocket:
+        data = msgpack.unpackb(message, raw=False)
+        if data["type"] == "Step":
+            # This message contains the signal from the semantic VAD, and tells us how
+            # much audio the server has already processed. We don't use either here.
+            continue
+        if data["type"] == "Word":
+            print(data["text"], end=" ", flush=True)
+            transcript.append(
+                {
+                    "text": data["text"],
+                    "timestamp": [data["start_time"], data["start_time"]],
+                }
+            )
+        if data["type"] == "EndWord":
+            if len(transcript) > 0:
+                transcript[-1]["timestamp"][1] = data["stop_time"]
+        if data["type"] == "Marker":
+            # Received marker, stopping stream
+            break
+
+    return transcript
+
+
+async def send_messages(websocket, rtf: float):
+    audio_data = load_and_process_audio(args.in_file)
+
+    async def send_audio(audio: np.ndarray):
+        await websocket.send(
+            msgpack.packb(
+                {"type": "Audio", "pcm": [float(x) for x in audio]},
+                use_single_float=True,
+            )
+        )
+
+    # Start with a second of silence.
+    # This is needed for the 2.6B model for technical reasons.
+    await send_audio([0.0] * SAMPLE_RATE)
+
+    start_time = time.time()
+    for i in range(0, len(audio_data), FRAME_SIZE):
+        await send_audio(audio_data[i : i + FRAME_SIZE])
+
+        expected_send_time = start_time + (i + 1) / SAMPLE_RATE / rtf
+        current_time = time.time()
+        if current_time < expected_send_time:
+            await asyncio.sleep(expected_send_time - current_time)
+        else:
+            await asyncio.sleep(0.001)
+
+    for _ in range(5):
+        await send_audio([0.0] * SAMPLE_RATE)
+
+    # Send a marker to indicate the end of the stream.
+    await websocket.send(
+        msgpack.packb({"type": "Marker", "id": 0}, use_single_float=True)
+    )
+
+    # We'll get back the marker once the corresponding audio has been transcribed,
+    # accounting for the delay of the model. That's why we need to send some silence
+    # after the marker, because the model will not return the marker immediately.
+    for _ in range(35):
+        await send_audio([0.0] * SAMPLE_RATE)
+
+
+async def stream_audio(url: str, api_key: str, rtf: float):
+    """Stream audio data to a WebSocket server."""
+    headers = {"kyutai-api-key": api_key}
+
+    # Instead of using the header, you can authenticate by adding `?auth_id={api_key}` to the URL
+    async with websockets.connect(url, additional_headers=headers) as websocket:
+        send_task = asyncio.create_task(send_messages(websocket, rtf))
+        receive_task = asyncio.create_task(receive_messages(websocket))
+        _, transcript = await asyncio.gather(send_task, receive_task)
+
+    return transcript
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("in_file")
+    parser.add_argument(
+        "--url",
+        help="The url of the server to which to send the audio",
+        default="ws://127.0.0.1:8080",
+    )
+    parser.add_argument("--api-key", default="public_token")
+    parser.add_argument(
+        "--rtf",
+        type=float,
+        default=1.01,
+        help="The real-time factor of how fast to feed in the audio.",
+    )
+    args = parser.parse_args()
+
+    url = f"{args.url}/api/asr-streaming"
+    transcript = asyncio.run(stream_audio(url, args.api_key, args.rtf))
+
+    print()
+    print()
+    for word in transcript:
+        print(
+            f"{word['timestamp'][0]:7.2f} -{word['timestamp'][1]:7.2f}  {word['text']}"
+        )
+
+
+
+================================================
+FILE: scripts/stt_from_file_with_prompt_pytorch.py
+================================================
+"""An example script that illustrates how one can prompt Kyutai STT models."""
+
+import argparse
+import itertools
+import math
+from collections import deque
+
+import julius
+import moshi.models
+import sphn
+import torch
+import tqdm
+
+
+class PromptHook:
+    def __init__(self, tokenizer, prefix, padding_tokens=(0, 3)):
+        self.tokenizer = tokenizer
+        self.prefix_enforce = deque(self.tokenizer.encode(prefix))
+        self.padding_tokens = padding_tokens
+
+    def on_token(self, token):
+        if not self.prefix_enforce:
+            return
+
+        token = token.item()
+
+        if token in self.padding_tokens:
+            pass
+        elif token == self.prefix_enforce[0]:
+            self.prefix_enforce.popleft()
+        else:
+            assert False
+
+    def on_logits(self, logits):
+        if not self.prefix_enforce:
+            return
+
+        mask = torch.zeros_like(logits, dtype=torch.bool)
+        for t in self.padding_tokens:
+            mask[..., t] = True
+        mask[..., self.prefix_enforce[0]] = True
+
+        logits[:] = torch.where(mask, logits, float("-inf"))
+
+
+def main(args):
+    info = moshi.models.loaders.CheckpointInfo.from_hf_repo(
+        args.hf_repo,
+        moshi_weights=args.moshi_weight,
+        mimi_weights=args.mimi_weight,
+        tokenizer=args.tokenizer,
+        config_path=args.config_path,
+    )
+
+    mimi = info.get_mimi(device=args.device)
+    tokenizer = info.get_text_tokenizer()
+    lm = info.get_moshi(
+        device=args.device,
+        dtype=torch.bfloat16,
+    )
+
+    if args.prompt_text:
+        prompt_hook = PromptHook(tokenizer, args.prompt_text)
+        lm_gen = moshi.models.LMGen(
+            lm,
+            temp=0,
+            temp_text=0.0,
+            on_text_hook=prompt_hook.on_token,
+            on_text_logits_hook=prompt_hook.on_logits,
+        )
+    else:
+        lm_gen = moshi.models.LMGen(lm, temp=0, temp_text=0.0)
+
+    audio_silence_prefix_seconds = info.stt_config.get(
+        "audio_silence_prefix_seconds", 1.0
+    )
+    audio_delay_seconds = info.stt_config.get("audio_delay_seconds", 5.0)
+    padding_token_id = info.raw_config.get("text_padding_token_id", 3)
+
+    def _load_and_process(path):
+        audio, input_sample_rate = sphn.read(path)
+        audio = torch.from_numpy(audio).to(args.device).mean(axis=0, keepdim=True)
+        audio = julius.resample_frac(audio, input_sample_rate, mimi.sample_rate)
+        if audio.shape[-1] % mimi.frame_size != 0:
+            to_pad = mimi.frame_size - audio.shape[-1] % mimi.frame_size
+            audio = torch.nn.functional.pad(audio, (0, to_pad))
+        return audio
+
+    n_prefix_chunks = math.ceil(audio_silence_prefix_seconds * mimi.frame_rate)
+    n_suffix_chunks = math.ceil(audio_delay_seconds * mimi.frame_rate)
+    silence_chunk = torch.zeros(
+        (1, 1, mimi.frame_size), dtype=torch.float32, device=args.device
+    )
+
+    audio = _load_and_process(args.file)
+    if args.prompt_file:
+        audio_prompt = _load_and_process(args.prompt_file)
+    else:
+        audio_prompt = None
+
+    chain = [itertools.repeat(silence_chunk, n_prefix_chunks)]
+
+    if audio_prompt is not None:
+        chain.append(torch.split(audio_prompt[:, None, :], mimi.frame_size, dim=-1))
+        # adding a bit (0.8s) of silence to separate prompt and the actual audio
+        chain.append(itertools.repeat(silence_chunk, 10))
+
+    chain += [
+        torch.split(audio[:, None, :], mimi.frame_size, dim=-1),
+        itertools.repeat(silence_chunk, n_suffix_chunks),
+    ]
+
+    chunks = itertools.chain(*chain)
+
+    text_tokens_accum = []
+    with mimi.streaming(1), lm_gen.streaming(1):
+        for audio_chunk in tqdm.tqdm(chunks):
+            audio_tokens = mimi.encode(audio_chunk)
+            text_tokens = lm_gen.step(audio_tokens)
+            if text_tokens is not None:
+                text_tokens_accum.append(text_tokens)
+
+    utterance_tokens = torch.concat(text_tokens_accum, dim=-1)
+    text_tokens = utterance_tokens.cpu().view(-1)
+
+    # if we have an audio prompt and we don't want to have it in the transcript,
+    # we should cut the corresponding number of frames from the output tokens.
+    # However, there is also some amount of padding that happens before it
+    # due to silence_prefix and audio_delay. Normally it is ignored in detokenization,
+    # but now we should account for it to find the position of the prompt transcript.
+    if args.cut_prompt_transcript and audio_prompt is not None:
+        prompt_frames = audio_prompt.shape[1] // mimi.frame_size
+        no_prompt_offset_seconds = audio_delay_seconds + audio_silence_prefix_seconds
+        no_prompt_offset = int(no_prompt_offset_seconds * mimi.frame_rate)
+        text_tokens = text_tokens[prompt_frames + no_prompt_offset :]
+
+    text = tokenizer.decode(
+        text_tokens[text_tokens > padding_token_id].numpy().tolist()
+    )
+
+    print(text)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Example streaming STT w/ a prompt.")
+    parser.add_argument(
+        "--file",
+        required=True,
+        help="File to transcribe.",
+    )
+    parser.add_argument(
+        "--prompt_file",
+        required=False,
+        help="Audio of the prompt.",
+    )
+    parser.add_argument(
+        "--prompt_text",
+        required=False,
+        help="Text of the prompt.",
+    )
+    parser.add_argument(
+        "--cut-prompt-transcript",
+        action="store_true",
+        help="Cut the prompt from the output transcript",
+    )
+    parser.add_argument(
+        "--hf-repo", type=str, help="HF repo to load the STT model from. "
+    )
+    parser.add_argument("--tokenizer", type=str, help="Path to a local tokenizer file.")
+    parser.add_argument(
+        "--moshi-weight", type=str, help="Path to a local checkpoint file."
+    )
+    parser.add_argument(
+        "--mimi-weight", type=str, help="Path to a local checkpoint file for Mimi."
+    )
+    parser.add_argument(
+        "--config-path", type=str, help="Path to a local config file.", default=None
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda",
+        help="Device on which to run, defaults to 'cuda'.",
+    )
+    args = parser.parse_args()
+
+    main(args)
+
+
+
+================================================
+FILE: scripts/stt_from_mic_mlx.py
+================================================
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "huggingface_hub",
+#     "moshi_mlx==0.2.12",
+#     "numpy",
+#     "rustymimi",
+#     "sentencepiece",
+#     "sounddevice",
+# ]
+# ///
+
+import argparse
+import json
+import queue
+
+import mlx.core as mx
+import mlx.nn as nn
+import rustymimi
+import sentencepiece
+import sounddevice as sd
+from huggingface_hub import hf_hub_download
+from moshi_mlx import models, utils
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--max-steps", default=4096)
+    parser.add_argument("--hf-repo")
+    parser.add_argument(
+        "--vad", action="store_true", help="Enable VAD (Voice Activity Detection)."
+    )
+    args = parser.parse_args()
+
+    if args.hf_repo is None:
+        if args.vad:
+            args.hf_repo = "kyutai/stt-1b-en_fr-candle"
+        else:
+            args.hf_repo = "kyutai/stt-1b-en_fr-mlx"
+    lm_config = hf_hub_download(args.hf_repo, "config.json")
+    with open(lm_config, "r") as fobj:
+        lm_config = json.load(fobj)
+    mimi_weights = hf_hub_download(args.hf_repo, lm_config["mimi_name"])
+    moshi_name = lm_config.get("moshi_name", "model.safetensors")
+    moshi_weights = hf_hub_download(args.hf_repo, moshi_name)
+    tokenizer = hf_hub_download(args.hf_repo, lm_config["tokenizer_name"])
+
+    lm_config = models.LmConfig.from_config_dict(lm_config)
+    model = models.Lm(lm_config)
+    model.set_dtype(mx.bfloat16)
+    if moshi_weights.endswith(".q4.safetensors"):
+        nn.quantize(model, bits=4, group_size=32)
+    elif moshi_weights.endswith(".q8.safetensors"):
+        nn.quantize(model, bits=8, group_size=64)
+
+    print(f"loading model weights from {moshi_weights}")
+    if args.hf_repo.endswith("-candle"):
+        model.load_pytorch_weights(moshi_weights, lm_config, strict=True)
+    else:
+        model.load_weights(moshi_weights, strict=True)
+
+    print(f"loading the text tokenizer from {tokenizer}")
+    text_tokenizer = sentencepiece.SentencePieceProcessor(tokenizer)  # type: ignore
+
+    print(f"loading the audio tokenizer {mimi_weights}")
+    generated_codebooks = lm_config.generated_codebooks
+    other_codebooks = lm_config.other_codebooks
+    mimi_codebooks = max(generated_codebooks, other_codebooks)
+    audio_tokenizer = rustymimi.Tokenizer(mimi_weights, num_codebooks=mimi_codebooks)  # type: ignore
+    print("warming up the model")
+    model.warmup()
+    gen = models.LmGen(
+        model=model,
+        max_steps=args.max_steps,
+        text_sampler=utils.Sampler(top_k=25, temp=0),
+        audio_sampler=utils.Sampler(top_k=250, temp=0.8),
+        check=False,
+    )
+
+    block_queue = queue.Queue()
+
+    def audio_callback(indata, _frames, _time, _status):
+        block_queue.put(indata.copy())
+
+    print("recording audio from microphone, speak to get your words transcribed")
+    last_print_was_vad = False
+    with sd.InputStream(
+        channels=1,
+        dtype="float32",
+        samplerate=24000,
+        blocksize=1920,
+        callback=audio_callback,
+    ):
+        while True:
+            block = block_queue.get()
+            block = block[None, :, 0]
+            other_audio_tokens = audio_tokenizer.encode_step(block[None, 0:1])
+            other_audio_tokens = mx.array(other_audio_tokens).transpose(0, 2, 1)[
+                :, :, :other_codebooks
+            ]
+            if args.vad:
+                text_token, vad_heads = gen.step_with_extra_heads(other_audio_tokens[0])
+                if vad_heads:
+                    pr_vad = vad_heads[2][0, 0, 0].item()
+                    if pr_vad > 0.5 and not last_print_was_vad:
+                        print(" [end of turn detected]")
+                        last_print_was_vad = True
+            else:
+                text_token = gen.step(other_audio_tokens[0])
+            text_token = text_token[0].item()
+            audio_tokens = gen.last_audio_tokens()
+            _text = None
+            if text_token not in (0, 3):
+                _text = text_tokenizer.id_to_piece(text_token)  # type: ignore
+                _text = _text.replace("▁", " ")
+                print(_text, end="", flush=True)
+                last_print_was_vad = False
+
+
+
+================================================
+FILE: scripts/stt_from_mic_rust_server.py
+================================================
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "msgpack",
+#     "numpy",
+#     "sounddevice",
+#     "websockets",
+# ]
+# ///
+import argparse
+import asyncio
+import signal
+
+import msgpack
+import numpy as np
+import sounddevice as sd
+import websockets
+
+SAMPLE_RATE = 24000
+
+# The VAD has several prediction heads, each of which tries to determine whether there
+# has been a pause of a given length. The lengths are 0.5, 1.0, 2.0, and 3.0 seconds.
+# Lower indices predict pauses more aggressively. In Unmute, we use 2.0 seconds = index 2.
+PAUSE_PREDICTION_HEAD_INDEX = 2
+
+
+async def receive_messages(websocket, show_vad: bool = False):
+    """Receive and process messages from the WebSocket server."""
+    try:
+        speech_started = False
+        async for message in websocket:
+            data = msgpack.unpackb(message, raw=False)
+
+            # The Step message only gets sent if the model has semantic VAD available
+            if data["type"] == "Step" and show_vad:
+                pause_prediction = data["prs"][PAUSE_PREDICTION_HEAD_INDEX]
+                if pause_prediction > 0.5 and speech_started:
+                    print("| ", end="", flush=True)
+                    speech_started = False
+
+            elif data["type"] == "Word":
+                print(data["text"], end=" ", flush=True)
+                speech_started = True
+    except websockets.ConnectionClosed:
+        print("Connection closed while receiving messages.")
+
+
+async def send_messages(websocket, audio_queue):
+    """Send audio data from microphone to WebSocket server."""
+    try:
+        # Start by draining the queue to avoid lags
+        while not audio_queue.empty():
+            await audio_queue.get()
+
+        print("Starting the transcription")
+
+        while True:
+            audio_data = await audio_queue.get()
+            chunk = {"type": "Audio", "pcm": [float(x) for x in audio_data]}
+            msg = msgpack.packb(chunk, use_bin_type=True, use_single_float=True)
+            await websocket.send(msg)
+
+    except websockets.ConnectionClosed:
+        print("Connection closed while sending messages.")
+
+
+async def stream_audio(url: str, api_key: str, show_vad: bool):
+    """Stream audio data to a WebSocket server."""
+    print("Starting microphone recording...")
+    print("Press Ctrl+C to stop recording")
+    audio_queue = asyncio.Queue()
+
+    loop = asyncio.get_event_loop()
+
+    def audio_callback(indata, frames, time, status):
+        loop.call_soon_threadsafe(
+            audio_queue.put_nowait, indata[:, 0].astype(np.float32).copy()
+        )
+
+    # Start audio stream
+    with sd.InputStream(
+        samplerate=SAMPLE_RATE,
+        channels=1,
+        dtype="float32",
+        callback=audio_callback,
+        blocksize=1920,  # 80ms blocks
+    ):
+        headers = {"kyutai-api-key": api_key}
+        # Instead of using the header, you can authenticate by adding `?auth_id={api_key}` to the URL
+        async with websockets.connect(url, additional_headers=headers) as websocket:
+            send_task = asyncio.create_task(send_messages(websocket, audio_queue))
+            receive_task = asyncio.create_task(
+                receive_messages(websocket, show_vad=show_vad)
+            )
+            await asyncio.gather(send_task, receive_task)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Real-time microphone transcription")
+    parser.add_argument(
+        "--url",
+        help="The URL of the server to which to send the audio",
+        default="ws://127.0.0.1:8080",
+    )
+    parser.add_argument("--api-key", default="public_token")
+    parser.add_argument(
+        "--list-devices", action="store_true", help="List available audio devices"
+    )
+    parser.add_argument(
+        "--device", type=int, help="Input device ID (use --list-devices to see options)"
+    )
+    parser.add_argument(
+        "--show-vad",
+        action="store_true",
+        help="Visualize the predictions of the semantic voice activity detector with a '|' symbol",
+    )
+
+    args = parser.parse_args()
+
+    def handle_sigint(signum, frame):
+        print("Interrupted by user")  # Don't complain about KeyboardInterrupt
+        exit(0)
+
+    signal.signal(signal.SIGINT, handle_sigint)
+
+    if args.list_devices:
+        print("Available audio devices:")
+        print(sd.query_devices())
+        exit(0)
+
+    if args.device is not None:
+        sd.default.device[0] = args.device  # Set input device
+
+    url = f"{args.url}/api/asr-streaming"
+    asyncio.run(stream_audio(url, args.api_key, args.show_vad))
+
+
+
+================================================
+FILE: scripts/tts_mlx.py
+================================================
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "huggingface_hub",
+#     "moshi_mlx==0.2.12",
+#     "numpy",
+#     "sounddevice",
+# ]
+# ///
+
+import argparse
+import json
+import queue
+import sys
+import time
+
+import mlx.core as mx
+import mlx.nn as nn
+import numpy as np
+import sentencepiece
+import sounddevice as sd
+import sphn
+from moshi_mlx import models
+from moshi_mlx.client_utils import make_log
+from moshi_mlx.models.tts import (
+    DEFAULT_DSM_TTS_REPO,
+    DEFAULT_DSM_TTS_VOICE_REPO,
+    TTSModel,
+)
+from moshi_mlx.utils.loaders import hf_get
+
+
+def log(level: str, msg: str):
+    print(make_log(level, msg))
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run Kyutai TTS using the MLX implementation"
+    )
+    parser.add_argument("inp", type=str, help="Input file, use - for stdin")
+    parser.add_argument(
+        "out", type=str, help="Output file to generate, use - for playing the audio"
+    )
+    parser.add_argument(
+        "--hf-repo",
+        type=str,
+        default=DEFAULT_DSM_TTS_REPO,
+        help="HF repo in which to look for the pretrained models.",
+    )
+    parser.add_argument(
+        "--voice-repo",
+        default=DEFAULT_DSM_TTS_VOICE_REPO,
+        help="HF repo in which to look for pre-computed voice embeddings.",
+    )
+    parser.add_argument(
+        "--voice", default="expresso/ex03-ex01_happy_001_channel1_334s.wav"
+    )
+    parser.add_argument(
+        "--quantize",
+        type=int,
+        help="The quantization to be applied, e.g. 8 for 8 bits.",
+    )
+    args = parser.parse_args()
+
+    mx.random.seed(299792458)
+
+    log("info", "retrieving checkpoints")
+
+    raw_config = hf_get("config.json", args.hf_repo)
+    with open(hf_get(raw_config), "r") as fobj:
+        raw_config = json.load(fobj)
+
+    mimi_weights = hf_get(raw_config["mimi_name"], args.hf_repo)
+    moshi_name = raw_config.get("moshi_name", "model.safetensors")
+    moshi_weights = hf_get(moshi_name, args.hf_repo)
+    tokenizer = hf_get(raw_config["tokenizer_name"], args.hf_repo)
+    lm_config = models.LmConfig.from_config_dict(raw_config)
+    # There is a bug in moshi_mlx <= 0.3.0 handling of the ring kv cache.
+    # The following line gets around it for now.
+    lm_config.transformer.max_seq_len = lm_config.transformer.context
+    model = models.Lm(lm_config)
+    model.set_dtype(mx.bfloat16)
+
+    log("info", f"loading model weights from {moshi_weights}")
+    model.load_pytorch_weights(str(moshi_weights), lm_config, strict=True)
+
+    if args.quantize is not None:
+        log("info", f"quantizing model to {args.quantize} bits")
+        nn.quantize(model.depformer, bits=args.quantize)
+        for layer in model.transformer.layers:
+            nn.quantize(layer.self_attn, bits=args.quantize)
+            nn.quantize(layer.gating, bits=args.quantize)
+
+    log("info", f"loading the text tokenizer from {tokenizer}")
+    text_tokenizer = sentencepiece.SentencePieceProcessor(str(tokenizer))  # type: ignore
+
+    log("info", f"loading the audio tokenizer {mimi_weights}")
+    generated_codebooks = lm_config.generated_codebooks
+    audio_tokenizer = models.mimi.Mimi(models.mimi_202407(generated_codebooks))
+    audio_tokenizer.load_pytorch_weights(str(mimi_weights), strict=True)
+
+    cfg_coef_conditioning = None
+    tts_model = TTSModel(
+        model,
+        audio_tokenizer,
+        text_tokenizer,
+        voice_repo=args.voice_repo,
+        temp=0.6,
+        cfg_coef=1,
+        max_padding=8,
+        initial_padding=2,
+        final_padding=2,
+        padding_bonus=0,
+        raw_config=raw_config,
+    )
+    if tts_model.valid_cfg_conditionings:
+        # Model was trained with CFG distillation.
+        cfg_coef_conditioning = tts_model.cfg_coef
+        tts_model.cfg_coef = 1.0
+        cfg_is_no_text = False
+        cfg_is_no_prefix = False
+    else:
+        cfg_is_no_text = True
+        cfg_is_no_prefix = True
+    mimi = tts_model.mimi
+
+    log("info", f"reading input from {args.inp}")
+    if args.inp == "-":
+        if sys.stdin.isatty():  # Interactive
+            print("Enter text to synthesize (Ctrl+D to end input):")
+        text_to_tts = sys.stdin.read().strip()
+    else:
+        with open(args.inp, "r", encoding="utf-8") as fobj:
+            text_to_tts = fobj.read().strip()
+
+    all_entries = [tts_model.prepare_script([text_to_tts])]
+    if tts_model.multi_speaker:
+        voices = [tts_model.get_voice_path(args.voice)]
+    else:
+        voices = []
+    all_attributes = [
+        tts_model.make_condition_attributes(voices, cfg_coef_conditioning)
+    ]
+
+    wav_frames = queue.Queue()
+    _frames_cnt = 0
+
+    def _on_frame(frame):
+        nonlocal _frames_cnt
+        if (frame == -1).any():
+            return
+        _pcm = tts_model.mimi.decode_step(frame[:, :, None])
+        _pcm = np.array(mx.clip(_pcm[0, 0], -1, 1))
+        wav_frames.put_nowait(_pcm)
+        _frames_cnt += 1
+        print(f"generated {_frames_cnt / 12.5:.2f}s", end="\r", flush=True)
+
+    def run():
+        log("info", "starting the inference loop")
+        begin = time.time()
+        result = tts_model.generate(
+            all_entries,
+            all_attributes,
+            cfg_is_no_prefix=cfg_is_no_prefix,
+            cfg_is_no_text=cfg_is_no_text,
+            on_frame=_on_frame,
+        )
+        frames = mx.concat(result.frames, axis=-1)
+        total_duration = frames.shape[0] * frames.shape[-1] / mimi.frame_rate
+        time_taken = time.time() - begin
+        total_speed = total_duration / time_taken
+        log("info", f"[LM] took {time_taken:.2f}s, total speed {total_speed:.2f}x")
+        return result
+
+    if args.out == "-":
+
+        def audio_callback(outdata, _a, _b, _c):
+            try:
+                pcm_data = wav_frames.get(block=False)
+                outdata[:, 0] = pcm_data
+            except queue.Empty:
+                outdata[:] = 0
+
+        with sd.OutputStream(
+            samplerate=mimi.sample_rate,
+            blocksize=1920,
+            channels=1,
+            callback=audio_callback,
+        ):
+            run()
+            time.sleep(3)
+            while True:
+                if wav_frames.qsize() == 0:
+                    break
+                time.sleep(1)
+    else:
+        run()
+        frames = []
+        while True:
+            try:
+                frames.append(wav_frames.get_nowait())
+            except queue.Empty:
+                break
+        wav = np.concat(frames, -1)
+        sphn.write_wav(args.out, wav, mimi.sample_rate)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================
+FILE: scripts/tts_mlx_streaming.py
+================================================
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "huggingface_hub",
+#     "moshi_mlx==0.2.12",
+#     "numpy",
+#     "sounddevice",
+# ]
+# ///
+
+import argparse
+from dataclasses import dataclass
+import json
+import queue
+import sys
+import time
+
+import mlx.core as mx
+import mlx.nn as nn
+import numpy as np
+import sentencepiece
+import sounddevice as sd
+import sphn
+import typing as tp
+from moshi_mlx import models
+from moshi_mlx.models.generate import LmGen
+from moshi_mlx.client_utils import make_log
+from moshi_mlx.modules.conditioner import (
+    ConditionAttributes,
+    ConditionTensor,
+    dropout_all_conditions,
+)
+from moshi_mlx.utils.sampling import Sampler
+from moshi_mlx.models.tts import (
+    Entry,
+    DEFAULT_DSM_TTS_REPO,
+    DEFAULT_DSM_TTS_VOICE_REPO,
+    TTSModel,
+    script_to_entries,
+)
+from moshi_mlx.utils.loaders import hf_get
+
+
+def prepare_script(model: TTSModel, script: str, first_turn: bool) -> list[Entry]:
+    multi_speaker = first_turn and model.multi_speaker
+    return script_to_entries(
+        model.tokenizer,
+        model.machine.token_ids,
+        model.mimi.frame_rate,
+        [script],
+        multi_speaker=multi_speaker,
+        padding_between=1,
+    )
+
+
+def _make_null(
+    all_attributes: tp.Sequence[ConditionAttributes],
+) -> list[ConditionAttributes]:
+    # When using CFG, returns the null conditions.
+    return dropout_all_conditions(all_attributes)
+
+
+@dataclass
+class TTSGen:
+    tts_model: TTSModel
+    attributes: tp.Sequence[ConditionAttributes]
+    on_frame: tp.Optional[tp.Callable[[mx.array], None]] = None
+
+    def __post_init__(self):
+        tts_model = self.tts_model
+        attributes = self.attributes
+        self.offset = 0
+        self.state = self.tts_model.machine.new_state([])
+
+        if tts_model.cfg_coef != 1.0:
+            if tts_model.valid_cfg_conditionings:
+                raise ValueError(
+                    "This model does not support direct CFG, but was trained with "
+                    "CFG distillation. Pass instead `cfg_coef` to `make_condition_attributes`."
+                )
+            nulled = _make_null(attributes)
+            attributes = list(attributes) + nulled
+
+        assert tts_model.lm.condition_provider is not None
+        self.ct = None
+        self.cross_attention_src = None
+        for _attr in attributes:
+            for _key, _value in _attr.text.items():
+                _ct = tts_model.lm.condition_provider.condition_tensor(_key, _value)
+                if self.ct is None:
+                    self.ct = _ct
+                else:
+                    self.ct = ConditionTensor(self.ct.tensor + _ct.tensor)
+            for _key, _value in _attr.tensor.items():
+                _conditioner = tts_model.lm.condition_provider.conditioners[_key]
+                _ca_src = _conditioner.condition(_value)
+                if self.cross_attention_src is None:
+                    self.cross_attention_src = _ca_src
+                else:
+                    raise ValueError("multiple cross-attention conditioners")
+
+        def _on_audio_hook(audio_tokens):
+            delays = tts_model.lm.delays
+            for q in range(audio_tokens.shape[0]):
+                delay = delays[q]
+                if self.offset < delay + tts_model.delay_steps:
+                    audio_tokens[q] = tts_model.machine.token_ids.zero
+
+        def _on_text_hook(text_tokens):
+            tokens = text_tokens.tolist()
+            out_tokens = []
+            for token in tokens:
+                out_token, _ = tts_model.machine.process(self.offset, self.state, token)
+                out_tokens.append(out_token)
+            text_tokens[:] = mx.array(out_tokens, dtype=mx.int64)
+
+        self.lm_gen = LmGen(
+            tts_model.lm,
+            max_steps=tts_model.max_gen_length,
+            text_sampler=Sampler(temp=tts_model.temp),
+            audio_sampler=Sampler(temp=tts_model.temp),
+            cfg_coef=tts_model.cfg_coef,
+            on_text_hook=_on_text_hook,
+            on_audio_hook=_on_audio_hook,
+            # TODO(laurent):
+            # cfg_is_masked_until=cfg_is_masked_until,
+            # cfg_is_no_text=cfg_is_no_text,
+        )
+
+    def process_last(self):
+        while len(self.state.entries) > 0 or self.state.end_step is not None:
+            self._step()
+        additional_steps = (
+            self.tts_model.delay_steps + max(self.tts_model.lm.delays) + 8
+        )
+        for _ in range(additional_steps):
+            self._step()
+
+    def process(self):
+        while len(self.state.entries) > self.tts_model.machine.second_stream_ahead:
+            self._step()
+
+    def _step(self):
+        missing = self.tts_model.lm.n_q - self.tts_model.lm.dep_q
+        missing = self.tts_model.lm.n_q - self.tts_model.lm.dep_q
+        input_tokens = (
+            mx.ones((1, missing), dtype=mx.int64)
+            * self.tts_model.machine.token_ids.zero
+        )
+        self.lm_gen.step(
+            input_tokens, ct=self.ct, cross_attention_src=self.cross_attention_src
+        )
+        frame = self.lm_gen.last_audio_tokens()
+        self.offset += 1
+        if frame is not None:
+            if self.on_frame is not None:
+                self.on_frame(frame)
+
+    def append_entry(self, entry):
+        self.state.entries.append(entry)
+
+
+def log(level: str, msg: str):
+    print(make_log(level, msg))
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run Kyutai TTS using the MLX implementation"
+    )
+    parser.add_argument(
+        "out", type=str, help="Output file to generate, use - for playing the audio"
+    )
+    parser.add_argument(
+        "--hf-repo",
+        type=str,
+        default=DEFAULT_DSM_TTS_REPO,
+        help="HF repo in which to look for the pretrained models.",
+    )
+    parser.add_argument(
+        "--voice-repo",
+        default=DEFAULT_DSM_TTS_VOICE_REPO,
+        help="HF repo in which to look for pre-computed voice embeddings.",
+    )
+    parser.add_argument(
+        "--voice", default="expresso/ex03-ex01_happy_001_channel1_334s.wav"
+    )
+    parser.add_argument(
+        "--quantize",
+        type=int,
+        help="The quantization to be applied, e.g. 8 for 8 bits.",
+    )
+    args = parser.parse_args()
+
+    mx.random.seed(299792458)
+
+    log("info", "retrieving checkpoints")
+
+    raw_config = hf_get("config.json", args.hf_repo)
+    with open(hf_get(raw_config), "r") as fobj:
+        raw_config = json.load(fobj)
+
+    mimi_weights = hf_get(raw_config["mimi_name"], args.hf_repo)
+    moshi_name = raw_config.get("moshi_name", "model.safetensors")
+    moshi_weights = hf_get(moshi_name, args.hf_repo)
+    tokenizer = hf_get(raw_config["tokenizer_name"], args.hf_repo)
+    lm_config = models.LmConfig.from_config_dict(raw_config)
+    # There is a bug in moshi_mlx <= 0.3.0 handling of the ring kv cache.
+    # The following line gets around it for now.
+    lm_config.transformer.max_seq_len = lm_config.transformer.context
+    model = models.Lm(lm_config)
+    model.set_dtype(mx.bfloat16)
+
+    log("info", f"loading model weights from {moshi_weights}")
+    model.load_pytorch_weights(str(moshi_weights), lm_config, strict=True)
+
+    if args.quantize is not None:
+        log("info", f"quantizing model to {args.quantize} bits")
+        nn.quantize(model.depformer, bits=args.quantize)
+        for layer in model.transformer.layers:
+            nn.quantize(layer.self_attn, bits=args.quantize)
+            nn.quantize(layer.gating, bits=args.quantize)
+
+    log("info", f"loading the text tokenizer from {tokenizer}")
+    text_tokenizer = sentencepiece.SentencePieceProcessor(str(tokenizer))  # type: ignore
+
+    log("info", f"loading the audio tokenizer {mimi_weights}")
+    generated_codebooks = lm_config.generated_codebooks
+    audio_tokenizer = models.mimi.Mimi(models.mimi_202407(generated_codebooks))
+    audio_tokenizer.load_pytorch_weights(str(mimi_weights), strict=True)
+
+    cfg_coef_conditioning = None
+    tts_model = TTSModel(
+        model,
+        audio_tokenizer,
+        text_tokenizer,
+        voice_repo=args.voice_repo,
+        temp=0.6,
+        cfg_coef=1,
+        max_padding=8,
+        initial_padding=2,
+        final_padding=2,
+        padding_bonus=0,
+        raw_config=raw_config,
+    )
+    if tts_model.valid_cfg_conditionings:
+        # Model was trained with CFG distillation.
+        cfg_coef_conditioning = tts_model.cfg_coef
+        tts_model.cfg_coef = 1.0
+    mimi = tts_model.mimi
+
+    log("info", "reading input from stdin")
+
+    if tts_model.multi_speaker:
+        voices = [tts_model.get_voice_path(args.voice)]
+    else:
+        voices = []
+    all_attributes = [
+        tts_model.make_condition_attributes(voices, cfg_coef_conditioning)
+    ]
+
+    wav_frames = queue.Queue()
+
+    def _on_frame(frame):
+        if (frame == -1).any():
+            return
+        _pcm = tts_model.mimi.decode_step(frame[:, :, None])
+        _pcm = np.array(mx.clip(_pcm[0, 0], -1, 1))
+        wav_frames.put_nowait(_pcm)
+
+    gen = TTSGen(tts_model, all_attributes, on_frame=_on_frame)
+
+    def run():
+        log("info", "starting the inference loop")
+        first_turn = True
+        for line in sys.stdin:
+            entries = prepare_script(tts_model, line.strip(), first_turn=first_turn)
+            first_turn = False
+            for entry in entries:
+                gen.append_entry(entry)
+                gen.process()
+        gen.process_last()
+
+    if args.out == "-":
+
+        def audio_callback(outdata, _a, _b, _c):
+            try:
+                pcm_data = wav_frames.get(block=False)
+                outdata[:, 0] = pcm_data
+            except queue.Empty:
+                outdata[:] = 0
+
+        with sd.OutputStream(
+            samplerate=mimi.sample_rate,
+            blocksize=1920,
+            channels=1,
+            callback=audio_callback,
+        ):
+            run()
+            while True:
+                if wav_frames.qsize() == 0:
+                    break
+                time.sleep(1)
+    else:
+        run()
+        frames = []
+        while True:
+            try:
+                frames.append(wav_frames.get_nowait())
+            except queue.Empty:
+                break
+        wav = np.concat(frames, -1)
+        sphn.write_wav(args.out, wav, mimi.sample_rate)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================
+FILE: scripts/tts_pytorch.py
+================================================
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "moshi==0.2.11",
+#     "torch",
+#     "sphn",
+#     "sounddevice",
+# ]
+# ///
+import argparse
+import sys
+
+import numpy as np
+import queue
+import sphn
+import time
+import torch
+from moshi.models.loaders import CheckpointInfo
+from moshi.models.tts import DEFAULT_DSM_TTS_REPO, DEFAULT_DSM_TTS_VOICE_REPO, TTSModel
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run Kyutai TTS using the PyTorch implementation"
+    )
+    parser.add_argument("inp", type=str, help="Input file, use - for stdin.")
+    parser.add_argument(
+        "out", type=str, help="Output file to generate, use - for playing the audio"
+    )
+    parser.add_argument(
+        "--hf-repo",
+        type=str,
+        default=DEFAULT_DSM_TTS_REPO,
+        help="HF repo in which to look for the pretrained models.",
+    )
+    parser.add_argument(
+        "--voice-repo",
+        default=DEFAULT_DSM_TTS_VOICE_REPO,
+        help="HF repo in which to look for pre-computed voice embeddings.",
+    )
+    parser.add_argument(
+        "--voice",
+        default="expresso/ex03-ex01_happy_001_channel1_334s.wav",
+        help="The voice to use, relative to the voice repo root. "
+        f"See {DEFAULT_DSM_TTS_VOICE_REPO}",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda",
+        help="Device on which to run, defaults to 'cuda'.",
+    )
+    args = parser.parse_args()
+
+    print("Loading model...")
+    checkpoint_info = CheckpointInfo.from_hf_repo(args.hf_repo)
+    tts_model = TTSModel.from_checkpoint_info(
+        checkpoint_info, n_q=32, temp=0.6, device=args.device
+    )
+
+    if args.inp == "-":
+        if sys.stdin.isatty():  # Interactive
+            print("Enter text to synthesize (Ctrl+D to end input):")
+        text = sys.stdin.read().strip()
+    else:
+        with open(args.inp, "r", encoding="utf-8") as fobj:
+            text = fobj.read().strip()
+
+    # If you want to make a dialog, you can pass more than one turn [text_speaker_1, text_speaker_2, text_2_speaker_1, ...]
+    entries = tts_model.prepare_script([text], padding_between=1)
+    if args.voice.endswith(".safetensors"):
+        voice_path = args.voice
+    else:
+        voice_path = tts_model.get_voice_path(args.voice)
+    # CFG coef goes here because the model was trained with CFG distillation,
+    # so it's not _actually_ doing CFG at inference time.
+    # Also, if you are generating a dialog, you should have two voices in the list.
+    condition_attributes = tts_model.make_condition_attributes(
+        [voice_path], cfg_coef=2.0
+    )
+    _frames_cnt = 0
+
+    if args.out == "-":
+        # Stream the audio to the speakers using sounddevice.
+        import sounddevice as sd
+
+        pcms = queue.Queue()
+
+        def _on_frame(frame):
+            nonlocal _frames_cnt
+            if (frame != -1).all():
+                pcm = tts_model.mimi.decode(frame[:, 1:, :]).cpu().numpy()
+                pcms.put_nowait(np.clip(pcm[0, 0], -1, 1))
+                _frames_cnt += 1
+                print(f"generated {_frames_cnt / 12.5:.2f}s", end="\r", flush=True)
+
+        def audio_callback(outdata, _a, _b, _c):
+            try:
+                pcm_data = pcms.get(block=False)
+                outdata[:, 0] = pcm_data
+            except queue.Empty:
+                outdata[:] = 0
+
+        with sd.OutputStream(
+            samplerate=tts_model.mimi.sample_rate,
+            blocksize=1920,
+            channels=1,
+            callback=audio_callback,
+        ):
+            with tts_model.mimi.streaming(1):
+                tts_model.generate(
+                    [entries], [condition_attributes], on_frame=_on_frame
+                )
+            time.sleep(3)
+            while True:
+                if pcms.qsize() == 0:
+                    break
+                time.sleep(1)
+    else:
+
+        def _on_frame(frame):
+            nonlocal _frames_cnt
+            if (frame != -1).all():
+                _frames_cnt += 1
+                print(f"generated {_frames_cnt / 12.5:.2f}s", end="\r", flush=True)
+
+        start_time = time.time()
+        result = tts_model.generate(
+            [entries], [condition_attributes], on_frame=_on_frame
+        )
+        print(f"\nTotal time: {time.time() - start_time:.2f}s")
+        with tts_model.mimi.streaming(1), torch.no_grad():
+            pcms = []
+            for frame in result.frames[tts_model.delay_steps :]:
+                pcm = tts_model.mimi.decode(frame[:, 1:, :]).cpu().numpy()
+                pcms.append(np.clip(pcm[0, 0], -1, 1))
+            pcm = np.concatenate(pcms, axis=-1)
+        sphn.write_wav(args.out, pcm, tts_model.mimi.sample_rate)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================
+FILE: scripts/tts_pytorch_streaming.py
+================================================
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "moshi==0.2.11",
+#     "torch",
+#     "sphn",
+#     "sounddevice",
+# ]
+# ///
+import argparse
+from dataclasses import dataclass
+import sys
+
+import numpy as np
+import queue
+import sphn
+import time
+import torch
+import typing as tp
+from moshi.models.loaders import CheckpointInfo
+from moshi.conditioners import dropout_all_conditions
+from moshi.models.lm import LMGen
+from moshi.models.tts import (
+    Entry,
+    DEFAULT_DSM_TTS_REPO,
+    DEFAULT_DSM_TTS_VOICE_REPO,
+    TTSModel,
+    ConditionAttributes,
+    script_to_entries,
+)
+
+
+def prepare_script(model: TTSModel, script: str, first_turn: bool) -> list[Entry]:
+    multi_speaker = first_turn and model.multi_speaker
+    return script_to_entries(
+        model.tokenizer,
+        model.machine.token_ids,
+        model.mimi.frame_rate,
+        [script],
+        multi_speaker=multi_speaker,
+        padding_between=1,
+    )
+
+
+def _make_null(
+    all_attributes: tp.Sequence[ConditionAttributes],
+) -> list[ConditionAttributes]:
+    # When using CFG, returns the null conditions.
+    return dropout_all_conditions(all_attributes)
+
+
+@dataclass
+class TTSGen:
+    tts_model: TTSModel
+    attributes: tp.Sequence[ConditionAttributes]
+    on_frame: tp.Optional[tp.Callable[[torch.Tensor], None]] = None
+
+    def __post_init__(self):
+        tts_model = self.tts_model
+        attributes = self.attributes
+        self.offset = 0
+        self.state = self.tts_model.machine.new_state([])
+        if tts_model.cfg_coef != 1.0:
+            if tts_model.valid_cfg_conditionings:
+                raise ValueError(
+                    "This model does not support direct CFG, but was trained with "
+                    "CFG distillation. Pass instead `cfg_coef` to `make_condition_attributes`."
+                )
+            nulled = _make_null(attributes)
+            attributes = list(attributes) + nulled
+
+        assert tts_model.lm.condition_provider is not None
+        prepared = tts_model.lm.condition_provider.prepare(attributes)
+        condition_tensors = tts_model.lm.condition_provider(prepared)
+
+        def _on_text_logits_hook(text_logits):
+            if tts_model.padding_bonus:
+                text_logits[..., tts_model.machine.token_ids.pad] += (
+                    tts_model.padding_bonus
+                )
+            return text_logits
+
+        def _on_audio_hook(audio_tokens):
+            audio_offset = tts_model.lm.audio_offset
+            delays = tts_model.lm.delays
+            for q in range(audio_tokens.shape[1]):
+                delay = delays[q + audio_offset]
+                if self.offset < delay + tts_model.delay_steps:
+                    audio_tokens[:, q] = tts_model.machine.token_ids.zero
+
+        def _on_text_hook(text_tokens):
+            tokens = text_tokens.tolist()
+            out_tokens = []
+            for token in tokens:
+                out_token, _ = tts_model.machine.process(self.offset, self.state, token)
+                out_tokens.append(out_token)
+            text_tokens[:] = torch.tensor(
+                out_tokens, dtype=torch.long, device=text_tokens.device
+            )
+
+        tts_model.lm.dep_q = tts_model.n_q
+        self.lm_gen = LMGen(
+            tts_model.lm,
+            temp=tts_model.temp,
+            temp_text=tts_model.temp,
+            cfg_coef=tts_model.cfg_coef,
+            condition_tensors=condition_tensors,
+            on_text_logits_hook=_on_text_logits_hook,
+            on_text_hook=_on_text_hook,
+            on_audio_hook=_on_audio_hook,
+            cfg_is_masked_until=None,
+            cfg_is_no_text=True,
+        )
+        self.lm_gen.streaming_forever(1)
+
+    def process_last(self):
+        while len(self.state.entries) > 0 or self.state.end_step is not None:
+            self._step()
+        additional_steps = (
+            self.tts_model.delay_steps + max(self.tts_model.lm.delays) + 8
+        )
+        for _ in range(additional_steps):
+            self._step()
+
+    def process(self):
+        while len(self.state.entries) > self.tts_model.machine.second_stream_ahead:
+            self._step()
+
+    def _step(self):
+        missing = self.tts_model.lm.n_q - self.tts_model.lm.dep_q
+        input_tokens = torch.full(
+            (1, missing, 1),
+            self.tts_model.machine.token_ids.zero,
+            dtype=torch.long,
+            device=self.tts_model.lm.device,
+        )
+        frame = self.lm_gen.step(input_tokens)
+        self.offset += 1
+        if frame is not None:
+            if self.on_frame is not None:
+                self.on_frame(frame)
+
+    def append_entry(self, entry):
+        self.state.entries.append(entry)
+
+
+@torch.no_grad()
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run Kyutai TTS using the PyTorch implementation"
+    )
+    parser.add_argument(
+        "out", type=str, help="Output file to generate, use - for playing the audio"
+    )
+    parser.add_argument(
+        "--hf-repo",
+        type=str,
+        default=DEFAULT_DSM_TTS_REPO,
+        help="HF repo in which to look for the pretrained models.",
+    )
+    parser.add_argument(
+        "--voice-repo",
+        default=DEFAULT_DSM_TTS_VOICE_REPO,
+        help="HF repo in which to look for pre-computed voice embeddings.",
+    )
+    parser.add_argument(
+        "--voice",
+        default="expresso/ex03-ex01_happy_001_channel1_334s.wav",
+        help="The voice to use, relative to the voice repo root. "
+        f"See {DEFAULT_DSM_TTS_VOICE_REPO}",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda",
+        help="Device on which to run, defaults to 'cuda'.",
+    )
+    args = parser.parse_args()
+
+    print("Loading model...")
+    checkpoint_info = CheckpointInfo.from_hf_repo(args.hf_repo)
+    tts_model = TTSModel.from_checkpoint_info(
+        checkpoint_info, n_q=32, temp=0.6, device=args.device
+    )
+
+    if args.voice.endswith(".safetensors"):
+        voice_path = args.voice
+    else:
+        voice_path = tts_model.get_voice_path(args.voice)
+    # CFG coef goes here because the model was trained with CFG distillation,
+    # so it's not _actually_ doing CFG at inference time.
+    # Also, if you are generating a dialog, you should have two voices in the list.
+    condition_attributes = tts_model.make_condition_attributes(
+        [voice_path], cfg_coef=2.0
+    )
+
+    if sys.stdin.isatty():  # Interactive
+        print("Enter text to synthesize (Ctrl+D to end input):")
+
+    if args.out == "-":
+        # Stream the audio to the speakers using sounddevice.
+        import sounddevice as sd
+
+        pcms = queue.Queue()
+
+        def _on_frame(frame):
+            if (frame != -1).all():
+                pcm = tts_model.mimi.decode(frame[:, 1:, :]).cpu().numpy()
+                pcms.put_nowait(np.clip(pcm[0, 0], -1, 1))
+
+        def audio_callback(outdata, _a, _b, _c):
+            try:
+                pcm_data = pcms.get(block=False)
+                outdata[:, 0] = pcm_data
+            except queue.Empty:
+                outdata[:] = 0
+
+        gen = TTSGen(tts_model, [condition_attributes], on_frame=_on_frame)
+
+        with sd.OutputStream(
+            samplerate=tts_model.mimi.sample_rate,
+            blocksize=1920,
+            channels=1,
+            callback=audio_callback,
+        ) and tts_model.mimi.streaming(1):
+            first_turn = True
+            for line in sys.stdin:
+                entries = prepare_script(tts_model, line.strip(), first_turn=first_turn)
+                first_turn = False
+                for entry in entries:
+                    gen.append_entry(entry)
+                    gen.process()
+            gen.process_last()
+            while True:
+                if pcms.qsize() == 0:
+                    break
+                time.sleep(1)
+    else:
+        pcms = []
+
+        def _on_frame(frame: torch.Tensor):
+            if (frame != -1).all():
+                pcm = tts_model.mimi.decode(frame[:, 1:, :]).cpu().numpy()
+                pcms.append(np.clip(pcm[0, 0]))
+
+        gen = TTSGen(tts_model, [condition_attributes], on_frame=_on_frame)
+        with tts_model.mimi.streaming(1):
+            first_turn = True
+            for line in sys.stdin:
+                entries = prepare_script(tts_model, line.strip(), first_turn=first_turn)
+                first_turn = False
+                for entry in entries:
+                    gen.append_entry(entry)
+                    gen.process()
+            gen.process_last()
+        pcm = np.concatenate(pcms, axis=-1)
+        sphn.write_wav(args.out, pcm, tts_model.mimi.sample_rate)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================
+FILE: scripts/tts_rust_server.py
+================================================
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "msgpack",
+#     "numpy",
+#     "sphn",
+#     "websockets",
+#     "sounddevice",
+#     "tqdm",
+# ]
+# ///
+import argparse
+import asyncio
+import sys
+from urllib.parse import urlencode
+
+import msgpack
+import numpy as np
+import sounddevice as sd
+import sphn
+import tqdm
+import websockets
+
+SAMPLE_RATE = 24000
+
+TTS_TEXT = "Hello, this is a test of the moshi text to speech system, this should result in some nicely sounding generated voice."
+DEFAULT_DSM_TTS_VOICE_REPO = "kyutai/tts-voices"
+AUTH_TOKEN = "public_token"
+
+
+async def receive_messages(websocket: websockets.ClientConnection, output_queue):
+    with tqdm.tqdm(desc="Receiving audio", unit=" seconds generated") as pbar:
+        accumulated_samples = 0
+        last_seconds = 0
+
+        async for message_bytes in websocket:
+            msg = msgpack.unpackb(message_bytes)
+
+            if msg["type"] == "Audio":
+                pcm = np.array(msg["pcm"]).astype(np.float32)
+                await output_queue.put(pcm)
+
+                accumulated_samples += len(msg["pcm"])
+                current_seconds = accumulated_samples // SAMPLE_RATE
+                if current_seconds > last_seconds:
+                    pbar.update(current_seconds - last_seconds)
+                    last_seconds = current_seconds
+
+    print("End of audio.")
+    await output_queue.put(None)  # Signal end of audio
+
+
+async def output_audio(out: str, output_queue: asyncio.Queue[np.ndarray | None]):
+    if out == "-":
+        should_exit = False
+
+        def audio_callback(outdata, _a, _b, _c):
+            nonlocal should_exit
+
+            try:
+                pcm_data = output_queue.get_nowait()
+                if pcm_data is not None:
+                    outdata[:, 0] = pcm_data
+                else:
+                    should_exit = True
+                    outdata[:] = 0
+            except asyncio.QueueEmpty:
+                outdata[:] = 0
+
+        with sd.OutputStream(
+            samplerate=SAMPLE_RATE,
+            blocksize=1920,
+            channels=1,
+            callback=audio_callback,
+        ):
+            while True:
+                if should_exit:
+                    break
+                await asyncio.sleep(1)
+    else:
+        frames = []
+        while True:
+            item = await output_queue.get()
+            if item is None:
+                break
+            frames.append(item)
+
+        sphn.write_wav(out, np.concat(frames, -1), SAMPLE_RATE)
+        print(f"Saved audio to {out}")
+
+
+async def read_lines_from_stdin():
+    reader = asyncio.StreamReader()
+    protocol = asyncio.StreamReaderProtocol(reader)
+    loop = asyncio.get_running_loop()
+    await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+    while True:
+        line = await reader.readline()
+        if not line:
+            break
+        yield line.decode().rstrip()
+
+
+async def read_lines_from_file(path: str):
+    queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def producer():
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                asyncio.run_coroutine_threadsafe(queue.put(line), loop)
+        asyncio.run_coroutine_threadsafe(queue.put(None), loop)
+
+    await asyncio.to_thread(producer)
+    while True:
+        line = await queue.get()
+        if line is None:
+            break
+        yield line
+
+
+async def get_lines(source: str):
+    if source == "-":
+        async for line in read_lines_from_stdin():
+            yield line
+    else:
+        async for line in read_lines_from_file(source):
+            yield line
+
+
+async def websocket_client():
+    parser = argparse.ArgumentParser(description="Use the TTS streaming API")
+    parser.add_argument("inp", type=str, help="Input file, use - for stdin.")
+    parser.add_argument(
+        "out", type=str, help="Output file to generate, use - for playing the audio"
+    )
+    parser.add_argument(
+        "--voice",
+        default="expresso/ex03-ex01_happy_001_channel1_334s.wav",
+        help="The voice to use, relative to the voice repo root. "
+        f"See {DEFAULT_DSM_TTS_VOICE_REPO}",
+    )
+    parser.add_argument(
+        "--url",
+        help="The URL of the server to which to send the audio",
+        default="ws://127.0.0.1:8080",
+    )
+    parser.add_argument("--api-key", default="public_token")
+    args = parser.parse_args()
+
+    params = {"voice": args.voice, "format": "PcmMessagePack"}
+    uri = f"{args.url}/api/tts_streaming?{urlencode(params)}"
+    print(uri)
+
+    if args.inp == "-":
+        if sys.stdin.isatty():  # Interactive
+            print("Enter text to synthesize (Ctrl+D to end input):")
+    headers = {"kyutai-api-key": args.api_key}
+
+    async with websockets.connect(uri, additional_headers=headers) as websocket:
+        print("connected")
+
+        async def send_loop():
+            print("go send")
+            async for line in get_lines(args.inp):
+                for word in line.split():
+                    await websocket.send(msgpack.packb({"type": "Text", "text": word}))
+            await websocket.send(msgpack.packb({"type": "Eos"}))
+
+        output_queue = asyncio.Queue()
+        receive_task = asyncio.create_task(receive_messages(websocket, output_queue))
+        output_audio_task = asyncio.create_task(output_audio(args.out, output_queue))
+        send_task = asyncio.create_task(send_loop())
+        await asyncio.gather(receive_task, output_audio_task, send_task)
+
+
+if __name__ == "__main__":
+    asyncio.run(websocket_client())
+
+
+
+================================================
+FILE: stt-rs/Cargo.toml
+================================================
+[package]
+name = "kyutai-stt-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0"
+candle = { version = "0.9.1",  package = "candle-core" }
+candle-nn = "0.9.1"
+candle-transformers = "0.9.1"
+clap = { version = "4.4.12", features = ["derive"] }
+hf-hub = "0.4.3"
+kaudio = "0.2.1"
+moshi = "0.6.1"
+sentencepiece = "0.11.3"
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.115"
+
+[features]
+default = []
+cuda = ["candle/cuda", "candle-nn/cuda"]
+cudnn = ["candle/cudnn", "candle-nn/cudnn"]
+metal = ["candle/metal", "candle-nn/metal"]
+
+[profile.release]
+debug = true
+
+[profile.release-no-debug]
+inherits = "release"
+debug = false
+
+
+
+
+================================================
+FILE: stt-rs/src/main.rs
+================================================
+// Copyright (c) Kyutai, all rights reserved.
+// This source code is licensed under the license found in the
+// LICENSE file in the root directory of this source tree.
+
+use anyhow::Result;
+use candle::{Device, Tensor};
+use clap::Parser;
+
+#[derive(Debug, Parser)]
+struct Args {
+    /// The audio input file, in wav/mp3/ogg/... format.
+    in_file: String,
+
+    /// The repo where to get the model from.
+    #[arg(long, default_value = "kyutai/stt-1b-en_fr-candle")]
+    hf_repo: String,
+
+    /// Path to the model file in the repo.
+    #[arg(long, default_value = "model.safetensors")]
+    model_path: String,
+
+    /// Run the model on cpu.
+    #[arg(long)]
+    cpu: bool,
+
+    /// Display word level timestamps.
+    #[arg(long)]
+    timestamps: bool,
+
+    /// Display the level of voice activity detection (VAD).
+    #[arg(long)]
+    vad: bool,
+}
+
+fn device(cpu: bool) -> Result<Device> {
+    if cpu {
+        Ok(Device::Cpu)
+    } else if candle::utils::cuda_is_available() {
+        Ok(Device::new_cuda(0)?)
+    } else if candle::utils::metal_is_available() {
+        Ok(Device::new_metal(0)?)
+    } else {
+        Ok(Device::Cpu)
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct SttConfig {
+    audio_silence_prefix_seconds: f64,
+    audio_delay_seconds: f64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct Config {
+    mimi_name: String,
+    tokenizer_name: String,
+    card: usize,
+    text_card: usize,
+    dim: usize,
+    n_q: usize,
+    context: usize,
+    max_period: f64,
+    num_heads: usize,
+    num_layers: usize,
+    causal: bool,
+    stt_config: SttConfig,
+}
+
+impl Config {
+    fn model_config(&self, vad: bool) -> moshi::lm::Config {
+        let lm_cfg = moshi::transformer::Config {
+            d_model: self.dim,
+            num_heads: self.num_heads,
+            num_layers: self.num_layers,
+            dim_feedforward: self.dim * 4,
+            causal: self.causal,
+            norm_first: true,
+            bias_ff: false,
+            bias_attn: false,
+            layer_scale: None,
+            context: self.context,
+            max_period: self.max_period as usize,
+            use_conv_block: false,
+            use_conv_bias: true,
+            cross_attention: None,
+            gating: Some(candle_nn::Activation::Silu),
+            norm: moshi::NormType::RmsNorm,
+            positional_embedding: moshi::transformer::PositionalEmbedding::Rope,
+            conv_layout: false,
+            conv_kernel_size: 3,
+            kv_repeat: 1,
+            max_seq_len: 4096 * 4,
+            shared_cross_attn: false,
+        };
+        let extra_heads = if vad {
+            Some(moshi::lm::ExtraHeadsConfig {
+                num_heads: 4,
+                dim: 6,
+            })
+        } else {
+            None
+        };
+        moshi::lm::Config {
+            transformer: lm_cfg,
+            depformer: None,
+            audio_vocab_size: self.card + 1,
+            text_in_vocab_size: self.text_card + 1,
+            text_out_vocab_size: self.text_card,
+            audio_codebooks: self.n_q,
+            conditioners: Default::default(),
+            extra_heads,
+        }
+    }
+}
+
+struct Model {
+    state: moshi::asr::State,
+    text_tokenizer: sentencepiece::SentencePieceProcessor,
+    timestamps: bool,
+    vad: bool,
+    config: Config,
+    dev: Device,
+}
+
+impl Model {
+    fn load_from_hf(args: &Args, dev: &Device) -> Result<Self> {
+        // Retrieve the model files from the Hugging Face Hub
+        let api = hf_hub::api::sync::Api::new()?;
+        let repo = api.model(args.hf_repo.to_string());
+        let config_file = repo.get("config.json")?;
+        let config: Config = serde_json::from_str(&std::fs::read_to_string(&config_file)?)?;
+        let tokenizer_file = repo.get(&config.tokenizer_name)?;
+        let model_file = repo.get(&args.model_path)?;
+        let mimi_file = repo.get(&config.mimi_name)?;
+        let is_quantized = model_file.to_str().unwrap().ends_with(".gguf");
+
+        let text_tokenizer = sentencepiece::SentencePieceProcessor::open(&tokenizer_file)?;
+
+        let lm = if is_quantized {
+            let vb_lm = candle_transformers::quantized_var_builder::VarBuilder::from_gguf(
+                &model_file,
+                dev,
+            )?;
+            moshi::lm::LmModel::new(
+                &config.model_config(args.vad),
+                moshi::nn::MaybeQuantizedVarBuilder::Quantized(vb_lm),
+            )?
+        } else {
+            let dtype = dev.bf16_default_to_f32();
+            let vb_lm = unsafe {
+                candle_nn::VarBuilder::from_mmaped_safetensors(&[&model_file], dtype, dev)?
+            };
+            moshi::lm::LmModel::new(
+                &config.model_config(args.vad),
+                moshi::nn::MaybeQuantizedVarBuilder::Real(vb_lm),
+            )?
+        };
+
+        let audio_tokenizer = moshi::mimi::load(mimi_file.to_str().unwrap(), Some(32), dev)?;
+        let asr_delay_in_tokens = (config.stt_config.audio_delay_seconds * 12.5) as usize;
+        let state = moshi::asr::State::new(1, asr_delay_in_tokens, 0., audio_tokenizer, lm)?;
+        Ok(Model {
+            state,
+            config,
+            text_tokenizer,
+            timestamps: args.timestamps,
+            vad: args.vad,
+            dev: dev.clone(),
+        })
+    }
+
+    fn run(&mut self, mut pcm: Vec<f32>) -> Result<()> {
+        use std::io::Write;
+
+        // Add the silence prefix to the audio.
+        if self.config.stt_config.audio_silence_prefix_seconds > 0.0 {
+            let silence_len =
+                (self.config.stt_config.audio_silence_prefix_seconds * 24000.0) as usize;
+            pcm.splice(0..0, vec![0.0; silence_len]);
+        }
+        // Add some silence at the end to ensure all the audio is processed.
+        let suffix = (self.config.stt_config.audio_delay_seconds * 24000.0) as usize;
+        pcm.resize(pcm.len() + suffix + 24000, 0.0);
+
+        let mut last_word = None;
+        let mut printed_eot = false;
+        for pcm in pcm.chunks(1920) {
+            let pcm = Tensor::new(pcm, &self.dev)?.reshape((1, 1, ()))?;
+            let asr_msgs = self.state.step_pcm(pcm, None, &().into(), |_, _, _| ())?;
+            for asr_msg in asr_msgs.iter() {
+                match asr_msg {
+                    moshi::asr::AsrMsg::Step { prs, .. } => {
+                        // prs is the probability of having no voice activity for different time
+                        // horizons.
+                        // In kyutai/stt-1b-en_fr-candle, these horizons are 0.5s, 1s, 2s, and 3s.
+                        if self.vad && prs[2][0] > 0.5 && !printed_eot {
+                            printed_eot = true;
+                            if !self.timestamps {
+                                print!(" <endofturn pr={}>", prs[2][0]);
+                            } else {
+                                println!("<endofturn pr={}>", prs[2][0]);
+                            }
+                        }
+                    }
+                    moshi::asr::AsrMsg::EndWord { stop_time, .. } => {
+                        printed_eot = false;
+                        #[allow(clippy::collapsible_if)]
+                        if self.timestamps {
+                            if let Some((word, start_time)) = last_word.take() {
+                                println!("[{start_time:5.2}-{stop_time:5.2}] {word}");
+                            }
+                        }
+                    }
+                    moshi::asr::AsrMsg::Word {
+                        tokens, start_time, ..
+                    } => {
+                        printed_eot = false;
+                        let word = self
+                            .text_tokenizer
+                            .decode_piece_ids(tokens)
+                            .unwrap_or_else(|_| String::new());
+                        if !self.timestamps {
+                            print!(" {word}");
+                            std::io::stdout().flush()?
+                        } else {
+                            if let Some((word, prev_start_time)) = last_word.take() {
+                                println!("[{prev_start_time:5.2}-{start_time:5.2}] {word}");
+                            }
+                            last_word = Some((word, *start_time));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some((word, start_time)) = last_word.take() {
+            println!("[{start_time:5.2}-     ] {word}");
+        }
+        println!();
+        Ok(())
+    }
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+    let device = device(args.cpu)?;
+    println!("Using device: {:?}", device);
+
+    println!("Loading audio file from: {}", args.in_file);
+    let (pcm, sample_rate) = kaudio::pcm_decode(&args.in_file)?;
+    let pcm = if sample_rate != 24_000 {
+        kaudio::resample(&pcm, sample_rate as usize, 24_000)?
+    } else {
+        pcm
+    };
+    println!("Loading model from repository: {}", args.hf_repo);
+    let mut model = Model::load_from_hf(&args, &device)?;
+    println!("Running inference");
+    model.run(pcm)?;
+    Ok(())
+}
+
+
+
+================================================
+FILE: .github/PULL_REQUEST_TEMPLATE.md
+================================================
+## Checklist
+
+- [ ] Read CONTRIBUTING.md, and accept the CLA by including the provided snippet. We will not accept PR without this.
+- [ ] Run pre-commit hook.
+- [ ] If you changed Rust code, run `cargo check`, `cargo clippy`, `cargo test`.
+
+## PR Description
+
+<!-- Description for the PR -->
+
+
+
+================================================
+FILE: .github/actions/moshi_build/action.yml
+================================================
+name: moshi_build
+description: 'Build env.'
+runs:
+  using: "composite"
+  steps:
+  - uses: actions/setup-python@v2
+    with:
+      python-version: '3.10.14'
+  - uses: actions/cache@v3
+    id: cache
+    with:
+      path: env
+      key: env-${{ hashFiles('moshi/pyproject.toml') }}
+  - name: Install dependencies
+    if: steps.cache.outputs.cache-hit != 'true'
+    shell: bash
+    run: |
+      python3 -m venv env
+      .  env/bin/activate
+      python -m pip install --upgrade pip
+      pip install torch==2.4.0 --index-url https://download.pytorch.org/whl/cpu
+      pip install moshi==0.2.7
+      pip install pre-commit
+  - name: Setup env
+    shell: bash
+    run: |
+      source  env/bin/activate
+      pre-commit install
+  - name: Install uv
+    uses: astral-sh/setup-uv@v6
+    with:
+      version: "0.8.13"
+
+
+
+================================================
+FILE: .github/ISSUE_TEMPLATE/bug.yml
+================================================
+name: Bug Report
+description: You found a bug.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please first check the [FAQ](https://github.com/kyutai-labs/delayed-streams-modeling/blob/main/FAQ.md).
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend impacted
+      description: Which backend is concerned with your bug report?
+      options:
+        - The PyTorch implementation
+        - The MLX implementation
+        - The Rust implementation
+        - Other / All
+      default: 0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: What is your operating system?
+      options:
+        - Linux
+        - Mac OS X
+        - Windows (unsupported)
+      default: 0
+    validations:
+      required: true
+  - type: dropdown
+    id: hardware
+    attributes:
+      label: Hardware
+      description: What hardware are you using?
+      options:
+        - CPU
+        - GPU with CUDA
+        - Metal with MLX
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Provide a detailed description of your bug.
+      placeholder: 
+      value: 
+    validations:
+      required: true
+  - type: textarea
+    id: more_info
+    attributes:
+      label: Extra information
+      description: Please provide any other relevant information, such as log extracts, code etc.
+      placeholder: 
+      value: 
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Please provide any other relevant information, such as log extracts, code etc.
+      placeholder: 
+      value: |
+          Fill in the following information on your system.
+          - Operating system version:
+
+          If the backend impacted is PyTorch:
+          - Python version:
+          - PyTorch version:
+          - CUDA version (run `python -c 'import torch;  print(torch.version.cuda)'`):
+          - GPU model and memory:
+            
+          If the backend is MLX:
+          - Mac model:
+    validations:
+      required: true
+
+
+
+================================================
+FILE: .github/ISSUE_TEMPLATE/question.yml
+================================================
+name: Question
+description: You have a question about the codebase, the paper, or the implementation.
+labels: ["question", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please first check the [FAQ](https://github.com/kyutai-labs/delayed-streams-modeling/blob/main/FAQ.md).
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Due diligence
+      description: Have you searched the existing issues / FAQ / Google / asked ChatGPT?
+      options:
+        - label: I have done my due diligence in trying to find the answer myself.
+          required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Topic
+      description: What is your question about?
+      options:
+        - The paper
+        - The PyTorch implementation
+        - The MLX implementation
+        - The Rust implementation
+        - Other / All
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What is your question?
+      placeholder: Your question. Please make sure this is directly related to our codebase. We will not provide support for installing PyTorch, CUDA, Rust etc.
+      value: 
+    validations:
+      required: true
+
+
+
+================================================
+FILE: .github/workflows/precommit.yml
+================================================
+name: precommit
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  run_precommit:
+    name: Run precommit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/moshi_build
+      - run: |
+          source env/bin/activate
+          pre-commit run --all-files
+
+

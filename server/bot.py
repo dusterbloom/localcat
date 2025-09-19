@@ -18,8 +18,7 @@ from loguru import logger
 
 
 from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
-#from pipecat.audio.turn.smart_turn.local_smart_turn_v2 import LocalSmartTurnAnalyzerV2
-from pipecat.audio.turn.smart_turn.local_coreml_smart_turn import LocalCoreMLSmartTurnAnalyzer
+from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
@@ -37,7 +36,13 @@ from pipecat.frames.frames import LLMRunFrame
 from hotpath_processor import HotPathMemoryProcessor
 
 # Import streaming STT service
-from whisperlivekit_streaming_stt import WhisperLiveKitStreamingSTT
+try:
+    from kyutai_streaming_stt import KyutaiStreamingSTT
+    from mic_probe import MicProbe
+    KYUTAI_AVAILABLE = True
+except ImportError as e:
+    logger.error(f"Failed to import KyutaiStreamingSTT: {e}")
+    KYUTAI_AVAILABLE = False
 
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
@@ -68,7 +73,7 @@ ice_servers = [
 ]
 
 
-smart_turn_model_path = os.getenv("LOCAL_SMART_TURN_MODEL_PATH")
+# LocalSmartTurnAnalyzerV3 includes model weights bundled with Pipecat
 
 
 SYSTEM_INSTRUCTION =  """You are Locat, a personal assistant. You can remember things about the person you are talking to.
@@ -86,13 +91,12 @@ async def run_bot(webrtc_connection):
             audio_in_enabled=True,
             audio_out_enabled=True,
             vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
-            turn_analyzer=LocalCoreMLSmartTurnAnalyzer(
-                smart_turn_model_path=smart_turn_model_path,  # Download from HuggingFace
+            turn_analyzer=LocalSmartTurnAnalyzerV3(
                 params=SmartTurnParams(
-                stop_secs=2.0,  # Shorter stop time when using Smart Turn
-                pre_speech_ms=0.0,
-                max_duration_secs=20.0
-            )
+                    stop_secs=3.0,  # Recommended stop time for Smart Turn v3
+                    pre_speech_ms=0.0,
+                    max_duration_secs=8.0  # Recommended max duration for Smart Turn v3
+                )
             ),
         ),
     )
@@ -100,20 +104,25 @@ async def run_bot(webrtc_connection):
     # Use streaming STT if enabled (default), otherwise fall back to batch mode
     use_streaming_stt = os.getenv("USE_STREAMING_STT", "true").lower() == "true"
 
-    if use_streaming_stt:
+    if use_streaming_stt and KYUTAI_AVAILABLE:
         try:
-            stt = WhisperLiveKitStreamingSTT(
-                model=os.getenv("WHISPER_MODEL", "base"),
-                language=os.getenv("WHISPER_LANGUAGE", "en"),
-                backend="simulstreaming",
-                chunk_size_ms=100,  # Process every 100ms for low latency
-                use_mlx_encoder=True  # Use MLX for Apple Silicon
+            hf_repo = os.getenv("KYUTAI_STT_REPO", "kyutai/stt-1b-en_fr-mlx")
+            logger.info(f"Attempting to initialize Kyutai STT with repo: {hf_repo}")
+            stt = KyutaiStreamingSTT(
+                hf_repo=hf_repo,
+                enable_vad=True,  # Re-enable VAD for proper speech detection
+                max_steps=4096
             )
-            logger.info("Using WhisperLiveKit streaming STT")
+            logger.info(f"✅ Successfully initialized Kyutai streaming STT ({'MLX' if hf_repo.endswith('-mlx') else 'Candle'})")
         except Exception as e:
-            logger.warning(f"Failed to initialize streaming STT: {e}, falling back to batch mode")
+            logger.error(f"❌ Failed to initialize Kyutai STT: {e}", exc_info=True)
+            logger.warning(f"Falling back to batch mode")
             stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
+    elif use_streaming_stt and not KYUTAI_AVAILABLE:
+        logger.warning("Kyutai STT not available, falling back to batch mode")
+        stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
     else:
+        logger.info("Using batch STT mode")
         stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
 
     tts = TTSMLXIsolated(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
@@ -174,8 +183,8 @@ async def run_bot(webrtc_connection):
 
     # Initialize HotMem ultra-fast memory processor with context aggregator
     memory = HotPathMemoryProcessor(
-        sqlite_path=os.getenv("HOTMEM_SQLITE", "memory.db"),
-        lmdb_dir=os.getenv("HOTMEM_LMDB_DIR", "graph.lmdb"),
+        sqlite_path=os.getenv("HOTMEM_SQLITE", ":memory:"),  # Use in-memory database for now
+        lmdb_dir=os.getenv("HOTMEM_LMDB_DIR", None),  # Disable LMDB temporarily
         user_id=os.getenv("USER_ID", "default-user"),
         enable_metrics=True,  # Log performance metrics
         context_aggregator=context_aggregator  # Pass context aggregator for injection
@@ -186,19 +195,25 @@ async def run_bot(webrtc_connection):
     #
     rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
 
-    pipeline = Pipeline(
-        [
-            transport.input(),
-            stt,
-            rtvi,
-            memory,  # Move HotMem BEFORE context_aggregator so it sees TranscriptionFrames
-            context_aggregator.user(),
-            llm,
-            tts,
-            transport.output(),
-            context_aggregator.assistant(),
-        ]
-    )
+    stages = [transport.input()]
+
+    # Optional mic probe
+    if os.getenv("ENABLE_MIC_PROBE", "false").lower() in ("1", "true", "yes"): 
+        logger.info("MicProbe enabled: logging mic input levels")
+        stages.append(MicProbe())
+
+    stages += [
+        stt,
+        rtvi,
+        memory,  # Move HotMem BEFORE context_aggregator so it sees TranscriptionFrames
+        context_aggregator.user(),
+        llm,
+        tts,
+        transport.output(),
+        context_aggregator.assistant(),
+    ]
+
+    pipeline = Pipeline(stages)
 
     task = PipelineTask(
         pipeline,

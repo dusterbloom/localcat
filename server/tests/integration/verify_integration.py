@@ -10,6 +10,9 @@ import asyncio
 from loguru import logger
 from dotenv import load_dotenv
 
+# Add server directory to path for local modules
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
 # Load environment
 load_dotenv(override=True)
 
@@ -30,8 +33,8 @@ def test_imports():
         logger.success(f"✓ Pipecat {pipecat.__version__} imported")
 
         # STT imports
-        from whisperlivekit_streaming_stt import WhisperLiveKitStreamingSTT
-        logger.success("✓ WhisperLiveKit streaming STT imported")
+        from kyutai_streaming_stt import KyutaiStreamingSTT
+        logger.success("✓ Kyutai streaming STT imported")
 
         from pipecat.services.whisper.stt import WhisperSTTServiceMLX
         logger.success("✓ Batch STT fallback imported")
@@ -86,13 +89,12 @@ async def test_service_initialization():
         logger.info("\nTesting service initialization...")
 
         # Initialize STT
-        from whisperlivekit_streaming_stt import WhisperLiveKitStreamingSTT
+        from kyutai_streaming_stt import KyutaiStreamingSTT
 
-        stt = WhisperLiveKitStreamingSTT(
-            model="base",
-            language="en",
-            backend="simulstreaming",
-            chunk_size_ms=100
+        stt = KyutaiStreamingSTT(
+            hf_repo="kyutai/stt-1b-en_fr-mlx",
+            enable_vad=True,
+            max_steps=4096
         )
         logger.success("✓ Streaming STT initialized")
 

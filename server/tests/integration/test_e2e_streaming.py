@@ -15,7 +15,9 @@ from loguru import logger
 from dotenv import load_dotenv
 
 # Add local pipecat to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "pipecat", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "pipecat", "src"))
+# Add server directory to path for local modules
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 # Load environment variables
 load_dotenv(override=True)
@@ -45,15 +47,14 @@ class StreamingIntegrationTester:
             logger.info("Testing STT streaming compatibility...")
 
             # Test both streaming and batch modes
-            from whisperlivekit_streaming_stt import WhisperLiveKitStreamingSTT
+            from kyutai_streaming_stt import KyutaiStreamingSTT
             from pipecat.services.whisper.stt import WhisperSTTServiceMLX, MLXModel
 
             # Test streaming mode
-            streaming_stt = WhisperLiveKitStreamingSTT(
-                model="base",
-                language="en",
-                backend="simulstreaming",
-                chunk_size_ms=100
+            streaming_stt = KyutaiStreamingSTT(
+                hf_repo="kyutai/stt-1b-en_fr-mlx",
+                enable_vad=True,
+                max_steps=4096
             )
 
             # Test batch mode fallback
@@ -115,7 +116,7 @@ class StreamingIntegrationTester:
 
             # Process frames through HotMem
             for frame in test_frames:
-                await memory.process_frame(frame)
+                await memory.process_frame(frame, None)
 
             latency = (time.perf_counter() - start_time) * 1000
 
@@ -147,16 +148,16 @@ class StreamingIntegrationTester:
             from pipecat.pipeline.task import PipelineParams, PipelineTask
 
             # Import all components
-            from whisperlivekit_streaming_stt import WhisperLiveKitStreamingSTT
+            from kyutai_streaming_stt import KyutaiStreamingSTT
             from pipecat.services.openai.llm import OpenAILLMService
             from tts_mlx_isolated import TTSMLXIsolated
             from hotpath_processor import HotPathMemoryProcessor
 
             # Create mock components
-            stt = WhisperLiveKitStreamingSTT(
-                model="base",
-                language="en",
-                backend="simulstreaming"
+            stt = KyutaiStreamingSTT(
+                hf_repo="kyutai/stt-1b-en_fr-mlx",
+                enable_vad=True,
+                max_steps=4096
             )
 
             # Mock LLM (won't actually connect)
@@ -186,11 +187,15 @@ class StreamingIntegrationTester:
                 {"role": "system", "content": "Test system"}
             ])
 
+            context_aggregator = llm.create_context_aggregator(context)
+
             pipeline = Pipeline([
                 stt,
                 memory,
-                llm.create_context_aggregator(context),
-                tts
+                context_aggregator.user(),
+                llm,
+                tts,
+                context_aggregator.assistant()
             ])
 
             latency = (time.perf_counter() - start_time) * 1000
@@ -339,10 +344,11 @@ class StreamingIntegrationTester:
             measurements = {}
 
             # Test STT chunk processing
-            from whisperlivekit_streaming_stt import WhisperLiveKitStreamingSTT
-            stt = WhisperLiveKitStreamingSTT(
-                model="base",
-                chunk_size_ms=100
+            from kyutai_streaming_stt import KyutaiStreamingSTT
+            stt = KyutaiStreamingSTT(
+                hf_repo="kyutai/stt-1b-en_fr-mlx",
+                enable_vad=True,
+                max_steps=4096
             )
 
             chunk_start = time.perf_counter()

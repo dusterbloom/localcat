@@ -18,21 +18,19 @@ load_dotenv(override=True)
 
 
 async def test_streaming_stt():
-    """Test the WhisperLiveKit streaming STT service."""
-    logger.info("Testing WhisperLiveKit Streaming STT...")
+    """Test the Kyutai streaming STT service."""
+    logger.info("Testing Kyutai Streaming STT...")
 
     try:
-        from whisperlivekit_streaming_stt import WhisperLiveKitStreamingSTT
+        from kyutai_streaming_stt import KyutaiStreamingSTT
 
         # Initialize streaming STT
-        stt = WhisperLiveKitStreamingSTT(
-            model="base",
-            language="en",
-            backend="simulstreaming",
-            chunk_size_ms=100,
-            use_mlx_encoder=True
+        stt = KyutaiStreamingSTT(
+            hf_repo="kyutai/stt-1b-en_fr-mlx",
+            enable_vad=True,
+            max_steps=4096
         )
-        logger.success("✓ WhisperLiveKit STT initialized successfully")
+        logger.success("✓ Kyutai STT initialized successfully")
 
         # Generate test audio (1 second of silence)
         sample_rate = 16000
@@ -49,7 +47,7 @@ async def test_streaming_stt():
         return True
 
     except Exception as e:
-        logger.error(f"✗ WhisperLiveKit STT test failed: {e}")
+        logger.error(f"✗ Kyutai STT test failed: {e}")
         return False
 
 

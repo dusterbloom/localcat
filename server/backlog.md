@@ -1,5 +1,178 @@
 # LocalCat Server Development Backlog
 
+## 🗺️ Candidate ROADMAP: Memory Reliability & Modularity (2025-09-19)
+
+### Summary
+- Make memory deterministic in streaming (bullets present before LLM starts).
+- Reduce coupling by separating extraction, retrieval, persistence, and injection.
+- Honor env config, add intent‑gated retrieval, and tighten observability.
+- Preserve ultra‑low latency (<200 ms p95 for hot path).
+
+### Goals
+- Deterministic memory presence at LLM time in streaming.
+- Modular “HotMem” with pluggable extractors and retrieval strategies.
+- Config fidelity: env → behavior parity (caps, toggles, backends).
+- Testable, observable, and easy to extend.
+
+---
+
+## 🚀 Phase 0 (Weeks 1–2): Streaming Correctness & Config Fidelity
+
+Why: Fix the race where the LLM aggregator flushes on a “stable interim” before final, so memory isn’t present for the turn.
+
+Tasks
+- Interim pre‑injection (retrieval‑only)
+  - In `hotpath_processor.py`:
+    - Add handling for `InterimTranscriptionFrame`.
+    - Gate with `needs_retrieval(text)` (rules + hot index probe).
+    - If text length ≥ `HOTMEM_INTERIM_MIN_WORDS` and not a question, call `HotMemory.preview_bullets(text)` (no writes), then inject bullets once per turn before aggregator flush.
+    - Track a per‑turn flag to avoid duplicate pre‑injections.
+- VAD stop backstop
+  - If no pre‑injection occurred, on `UserStoppedSpeakingFrame` run a quick retrieval and inject before aggregator flush.
+- Final turn handling
+  - On `TranscriptionFrame` (final):
+    - If intent indicates a fact/correction statement: extract and persist (`store.observe_edge`).
+    - Re‑run retrieval (if `needs_retrieval(text)` is True); if bullets differ from pre‑injection, refresh injected bullets (idempotent).
+- Intent‑gated retrieval
+  - Add `needs_retrieval(text)`:
+    - Rules (sub‑ms): “remember/again/last time/usual/my X?”, pronoun‑only follow‑ups → True; greetings/meta (“can you hear me?”, “thanks”, “ok”) → False.
+    - Cheap hot‑index probe for entity overlap; overridable by a classifier if configured.
+- Wire envs (config parity)
+  - Honor:
+    - `ENABLE_MEMORY=true|false` (default true) – quick disable.
+    - `HOTMEM_BULLETS_MAX` – replace all hard‑coded `[:3]` caps.
+    - `HOTMEM_RETRIEVE_ON_INTERIM`, `HOTMEM_RETRIEVE_ON_FINAL` (default true).
+    - `HOTMEM_INTERIM_MIN_WORDS` (default 6).
+    - `HOTMEM_ENABLE_INTENT_ROUTING` (default true).
+    - `HOTMEM_LANG` (language hint override).
+  - Add optional `USER_AGGREGATION_TIMEOUT` env to suggest 0.25s when streaming (or keep current default if not set).
+- Observability
+  - Per‑turn logs:
+    - `injected_before_llm=<bool>`, `no_inject_reason=<reason>`, `bullets_count=<n>`, `update_count=<n>`, and timings for extract/retrieve/update.
+  - Keep existing metrics (`get_metrics()`) but add per‑turn outcome lines.
+
+Deliverables
+- Updated `hotpath_processor.py` with interim/VAD branches and env‑driven caps.
+- Updated `memory_hotpath.py` to honor caps and expose `preview_bullets`.
+- Minimal docs in this file and `.env` for new envs.
+
+Acceptance Criteria
+- In streaming: memory bullets are present before LLM begins on ≥95% turns that need retrieval.
+- Hot path p95 (extract+retrieve) ≤ 200 ms on laptop CPU.
+- `HOTMEM_BULLETS_MAX` and `ENABLE_MEMORY` work as documented.
+
+Risks/Mitigations
+- Duplicate bullets: guard with per‑turn flags and refresh logic.
+- Latency: interim retrieval is gated and budgeted (entity+recency), no FTS/vector by default.
+
+---
+
+## 🧩 Phase 1 (Weeks 3–4): Modularization (No Behavior Change)
+
+Why: Reduce coupling, increase testability and flexibility.
+
+New package layout (server/memory/)
+- `store.py` – persistence API (move `MemoryStore` here). Optional LMDB adjacency; SQLite‑only fallback.
+- `index.py` – in‑RAM indices: `entity_index`, recency buffer, alias map; rebuild at init.
+- `extractors/base.py` – extractor interface; `ud.py` – move UD 27‑pattern extractor + refinement here.
+- `retrieval.py` – entity‑first + relation priority + recency. Define hook points for FTS/vector boosting.
+- `context.py` – bullet formatting/dedup/capping; templates per relation.
+- `processor.py` – `HotMemProcessor`: orchestrates frames; calls extract/retrieve/store/context. Backward‑compatible import alias for `hotpath_processor`.
+- `config.py` – typed config mapping env→settings (caps, toggles).
+- `metrics.py` – unify timings and outcomes.
+
+Tasks
+- Move code in small steps; keep API compatibility.
+- Add adapter shims so imports like `from hotpath_processor import HotPathMemoryProcessor` don’t break.
+- Unit tests for new modules (extractors/retrieval/context/store/index).
+
+Acceptance Criteria
+- All current tests pass.
+- No behavior change vs Phase 0 (verified by integration tests).
+
+---
+
+## 🎯 Phase 2 (Weeks 5–6): Retrieval Quality Under Budget
+
+Why: Improve relevance while keeping latency tight.
+
+Tasks
+- Scoring composition (in `retrieval.py`):
+  - Base score for entity match.
+  - Relation priority boost (lives_in, works_at, born_in, …).
+  - Recency (`ts`) boost using adjacency timestamps.
+  - Optional BM25 re‑rank (SQLite FTS5 `chunks_fts`) for topical alignment under tight budget (e.g., re‑rank top K).
+  - Optional vector re‑rank with LEANN if `HOTMEM_USE_LEANN=true` (strict time cap).
+- Bullet templates (in `context.py`):
+  - Normalize formats (e.g., “• you live in Paris”) with short, consistent phrasing.
+
+Acceptance Criteria
+- Better hit‑rate on recall queries without measurable latency regression.
+- Code paths toggleable via env (`HOTMEM_USE_LEANN`, etc.).
+
+---
+
+## 🔭 Phase 3 (Weeks 6–8): Observability & Tests
+
+Tasks
+- Per‑turn diagnostics:
+  - Emit a single “turn summary” line with: interim pre‑injection (yes/no), injected_before_llm (yes/no), bullets_count, update_count, timing breakdown.
+- Streaming integration tests:
+  - Simulate aggregator flushing before final; assert pre‑injection delivers bullets in time.
+  - Fact statement (“my name is Ana” → write), follow‑up recall (“what’s my name?” → retrieve).
+  - Latency budget tests: ensure p95 under threshold on reference hardware.
+- Unit tests:
+  - Extraction patterns (name, lives_in, works_at, moved_from, …).
+  - Retrieval ranking order stability.
+  - Context formatting and de‑duplication.
+
+Acceptance Criteria
+- Tests reliably catch regressions in streaming memory presence and quality.
+- Turn summaries make causes of “no memory” self‑evident.
+
+---
+
+## 🛠️ Phase 4 (Weeks 8–9): DX & Config Fidelity
+
+Tasks
+- Honor all documented envs:
+  - `ENABLE_MEMORY`, `HOTMEM_BULLETS_MAX`, `HOTMEM_RETRIEVE_ON_INTERIM/FINAL`, `HOTMEM_INTERIM_MIN_WORDS`, `HOTMEM_ENABLE_INTENT_ROUTING`, `HOTMEM_LANG`, `HOTMEM_USE_LEANN`.
+- Provide a sample `memory.toml` or `.env` presets for common modes (minimal / default / advanced).
+- Lightweight docs: one page in `server/backlog.md` + comments in `.env`.
+
+Acceptance Criteria
+- Config → behavior parity; flags do what they say.
+- Quick start presets reduce cold‑start friction.
+
+---
+
+## ✨ Phase 5 (Weeks 10–12): Optional Enhancements
+
+Tasks (optional, behind flags)
+- Periodic summarizer integration (already in `.env`):
+  - Summarize last N turn pairs to compact context; store summaries as edges or notes (not injected every turn).
+- Active recall:
+  - When confidence in retrieval is borderline, suggest a short clarification or confirm past fact before using it.
+- Corrections pipeline:
+  - Detect “Actually, …” and immediately negate/update edges (already mostly in place with question gating).
+- Export & privacy:
+  - Export/import memory graph; per‑user encryption hooks.
+
+Acceptance Criteria
+- Enhancements do not regress latency or determinism; fully feature‑flagged.
+
+---
+
+### Risks & Mitigations
+- Increased complexity → modularization, tests, clear interfaces.
+- Streaming timing edge cases → interim pre‑injection + VAD backstop + tiny optional hold.
+- Latency creep → intent‑gated retrieval, budgets, and feature flags.
+
+### Tracking & Ownership
+- Owner: Memory subsystem lead (code: `server/memory/*`).
+- Reviewers: STT/turn control owner (interim/VAD timing), LLM pipeline owner (aggregator interaction).
+- Milestone check‑ins: weekly; track p95 and “injected_before_llm” success rate.
+
 ## ✅ Completed: STT/LLM/TTS Streaming Integration (2025-09-18)
 
 ### Summary

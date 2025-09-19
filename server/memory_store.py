@@ -22,10 +22,18 @@ from loguru import logger
 class Paths:
     sqlite_path: str = None
     lmdb_dir: str = None
-    
+
     def __post_init__(self):
-        self.sqlite_path = self.sqlite_path or os.getenv("HOTMEM_SQLITE", "memory.db")
-        self.lmdb_dir = self.lmdb_dir or os.getenv("HOTMEM_LMDB_DIR", "graph.lmdb")
+        # Only set defaults if not explicitly provided (including ":memory:")
+        if self.sqlite_path is None:
+            self.sqlite_path = os.getenv("HOTMEM_SQLITE", "memory.db")
+        # For LMDB, None means disabled, so don't set a default in that case
+        if self.lmdb_dir is None:
+            env_lmdb = os.getenv("HOTMEM_LMDB_DIR")
+            if env_lmdb:
+                self.lmdb_dir = env_lmdb
+            # else keep it as None to disable LMDB
+        logger.debug(f"Paths initialized: sqlite_path={self.sqlite_path!r}, lmdb_dir={self.lmdb_dir!r}")
 
 
 def _now_i() -> int:
@@ -64,9 +72,17 @@ class MemoryStore:
     def _init_databases(self):
         """Initialize SQLite and LMDB databases"""
         # SQLite with optimal settings for write performance
+        logger.debug(f"Connecting to SQLite database at: {self.paths.sqlite_path!r}")
         self.sql = sqlite3.connect(self.paths.sqlite_path, check_same_thread=False)
-        self.sql.executescript("""
-            PRAGMA journal_mode=WAL;
+
+        # Use WAL mode only for file-based databases, not for :memory:
+        if self.paths.sqlite_path != ":memory:":
+            journal_mode = "WAL"
+        else:
+            journal_mode = "MEMORY"
+
+        self.sql.executescript(f"""
+            PRAGMA journal_mode={journal_mode};
             PRAGMA synchronous=NORMAL;
             PRAGMA temp_store=MEMORY;
             PRAGMA mmap_size=268435456;  -- 256MB memory map
@@ -114,18 +130,26 @@ class MemoryStore:
               );
         """)
         
-        # LMDB with proper settings
-        os.makedirs(self.paths.lmdb_dir, exist_ok=True)
-        self.lenv = lmdb.open(
-            self.paths.lmdb_dir, 
-            map_size=2_147_483_648,  # 2GB
-            max_dbs=8, 
-            subdir=True,
-            sync=False,  # Don't sync on every write
-            writemap=True  # Use writemap for better performance
-        )
-        self.db_alias = self.lenv.open_db(b"alias")
-        self.db_adj = self.lenv.open_db(b"adj")
+        # LMDB with proper settings (skip if lmdb_dir is None)
+        if self.paths.lmdb_dir:
+            os.makedirs(self.paths.lmdb_dir, exist_ok=True)
+            self.lenv = lmdb.open(
+                self.paths.lmdb_dir,
+                map_size=2_147_483_648,  # 2GB
+                max_dbs=8,
+                subdir=True,
+                sync=False,  # Don't sync on every write
+                writemap=True  # Use writemap for better performance
+            )
+        else:
+            self.lenv = None
+
+        if self.lenv:
+            self.db_alias = self.lenv.open_db(b"alias")
+            self.db_adj = self.lenv.open_db(b"adj")
+        else:
+            self.db_alias = None
+            self.db_adj = None
     
     def _recover_from_corruption(self):
         """Recover from database corruption"""
