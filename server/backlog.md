@@ -1,5 +1,44 @@
 # LocalCat Server Development Backlog
 
+## ✅ Progress (2025-09-19)
+
+- Phase 0: Minimal Streaming Correctness — COMPLETED
+  - Interim pre‑injection (retrieval‑only, once per turn) before LLM aggregation
+  - Final refresh on TranscriptionFrame (extract + persist + retrieve)
+  - Unified retrieval API: `retrieve_bullets(read_only=True|False)`
+  - Tests updated; green on local runs
+
+- Phase 0.5: Stability & Config Parity — COMPLETED
+  - Env wiring: `ENABLE_MEMORY`, `HOTMEM_BULLETS_MAX`, `HOTMEM_INTERIM_MIN_WORDS`
+  - Optional handshake: `MemoryContextReadyFrame` emitted immediately after injection
+  - LMDB optional guards for in‑memory tests
+  - Unit tests: `test_hotmem_phase0.py`, `test_hotmem_env.py`
+
+- Phase 1: Modularization — STARTED
+  - 1A complete: `server/memory/` package added with `store.py` (compat re‑export) and `index.py` (HotIndex skeleton)
+  - 1B complete: `memory/context.py` + `MemoryContextFrame` (no behavior change; compat preserved)
+  - 1C complete: Extractor seam added (`memory/extractors/` + UD adapter)
+  - 1D complete: Retrieval modularized (`memory/retrieval.py`) and wired to HotMemory
+
+### Test Status (2025-09-19)
+- All unit + integration tests green on local env (4/4 in earlier run; 5/5 with new unit added)
+- Streaming STT/LLM/TTS integration passes; HotMem unit/env tests pass
+- Handshake enabled by default (HOTMEM_ENABLE_HANDSHAKE=true) — no regressions observed
+
+### Next Milestones
+- Phase 2 (Retrieval Quality; behind flags, no default cost)
+  - Optional BM25 (SQLite FTS5) re‑rank for top‑K under strict budget
+  - Optional vector re‑rank (LEANN) under tight time cap
+  - Env flags: HOTMEM_USE_FTS, HOTMEM_USE_LEANN, HOTMEM_RETRIEVAL_BUDGET_MS
+
+- Phase 3 (Observability)
+  - Per‑turn “turn summary” logs: pre_injected, source=interim|final, injected_before_llm, bullets_count, update_count, timings
+  - Add a simple metrics export hook for local dashboards (optional)
+
+- Phase 4 (DX & Config)
+  - `.env` presets: minimal/default/advanced
+  - Tighten docs for handshake and env caps/thresholds
+
 ## 🗺️ ROADMAP Update: Streaming Determinism & Modularization (2025-09-19)
 
 This update refines the Candidate ROADMAP above based on review feedback. It simplifies Phase 0, inserts a stability Phase 0.5, clarifies determinism, and splits modularization into incremental weekly steps. The original Candidate ROADMAP remains for reference.
@@ -38,6 +77,8 @@ Success Criteria
 Notes
 - Intent gating and VAD stop backstop are deferred to Phase 0.5 to reduce Phase 0 complexity.
 
+Status: COMPLETED (2025-09-19)
+
 ---
 
 ## 🧯 Phase 0.5 (Week 2): Stability & Config Parity
@@ -63,6 +104,8 @@ Success Criteria
 - With handshake ON: 100% memory presence before LLM, bounded by timeout.
 - With handshake OFF: ≥99% presence; misses logged with cause.
 
+Status: COMPLETED (2025-09-19)
+
 ---
 
 ## 🧩 Phase 1 (Weeks 3–6): Incremental Modularization (No Behavior Change)
@@ -72,7 +115,7 @@ Objective
 
 Weekly Slices
 - 1A (Week 3): `memory/store.py` (move `MemoryStore`) and `memory/index.py` (entity_index, recency, rebuild).
-- 1B (Week 4): `memory/context.py` (format/dedup/caps). Replace direct context mutation with `MemoryContextFrame` in processor.
+- 1B (Week 4): `memory/context.py` (format/dedup/caps). Add `MemoryContextFrame`; processor emits both typed frame and direct context message (compat).
 - 1C (Week 5): `memory/extractors/ud.py` (move UD extractor + refinement), introduce extractor interface and registry.
 - 1D (Week 6): `memory/retrieval.py` (entity+relation+recency routing), plus `config.py` and `metrics.py` scaffolding.
 
@@ -81,6 +124,8 @@ Compatibility
 
 Acceptance Criteria
 - All existing tests pass; no observable behavior changes vs Phase 0.5.
+
+Status: IN PROGRESS — 1A completed (store/index); 1B implemented (context + MemoryContextFrame; compat preserved); 1C implemented (extractor seam); 1D implemented (retrieval module wired)
 
 ---
 
