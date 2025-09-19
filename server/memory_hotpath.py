@@ -733,6 +733,30 @@ class HotMemory:
         bullets = self._retrieve_context(text, entities, turn_id=-1)
         return {"entities": entities, "bullets": bullets}
 
+    # Phase 0: unified retrieval entry point (read-only or normal)
+    def retrieve_bullets(self, text: str, read_only: bool = True, lang: str = "en") -> List[str]:
+        """
+        Retrieve bullets for the given text.
+
+        - read_only=True: does not perform any store updates or recency changes; uses extraction + retrieval only.
+        - read_only=False: behaves like normal retrieval path after extraction/persist (callers should have persisted if needed).
+        """
+        if read_only:
+            try:
+                entities, _, _, _ = self._extract(text, lang)
+                entities = self._refine_entities_from_text(text, entities)
+            except Exception:
+                entities = []
+            return self._retrieve_context(text, entities, turn_id=-1)
+        else:
+            # Non read-only: reuse preview path for now; callers may have called process_turn before this.
+            try:
+                entities, _, _, _ = self._extract(text, lang)
+                entities = self._refine_entities_from_text(text, entities)
+            except Exception:
+                entities = []
+            return self._retrieve_context(text, entities, turn_id=-1)
+
     # ---------- Refinement helpers (quality without large perf cost) ----------
     def _is_question(self, text: str) -> bool:
         t = (text or "").strip().lower()

@@ -1,5 +1,148 @@
 # LocalCat Server Development Backlog
 
+## 🗺️ ROADMAP Update: Streaming Determinism & Modularization (2025-09-19)
+
+This update refines the Candidate ROADMAP above based on review feedback. It simplifies Phase 0, inserts a stability Phase 0.5, clarifies determinism, and splits modularization into incremental weekly steps. The original Candidate ROADMAP remains for reference.
+
+### Key Changes
+- Simpler Phase 0: Fix the streaming race with interim pre-injection only (no intent gating yet).
+- Add Phase 0.5: Stability and config parity (bug fixes, env fidelity, handshake frames).
+- Determinism clarified: Strong (with handshake) vs highly reliable (without).
+- API surface: Use a single retrieval entry point with a read_only flag instead of adding a new method.
+- Realistic timelines: Modularization split into 4 smaller weekly slices.
+
+---
+
+## 🚀 Phase 0 (Week 1): Minimal Streaming Correctness
+
+Objective
+- Ensure memory bullets are present before LLM in streaming by pre-injecting on interims.
+
+Scope (keep it narrow)
+- Interim pre‑injection (retrieval‑only), injected once per turn.
+- Refresh bullets on final only if content changed.
+- No intent gating yet (always attempt retrieval on interims that meet a basic length threshold).
+- No VAD backstop in this phase (defer to 0.5 for fewer moving parts).
+
+Implementation
+- `hotpath_processor.py`
+  - Handle `InterimTranscriptionFrame`: if interim ≥ N words (default 6) and not trivially empty, call retrieval in read‑only mode and inject bullets once.
+  - Handle `TranscriptionFrame` (final): extract + persist (if fact); re‑retrieve and refresh bullets if changed.
+- `memory_hotpath.py`
+  - Provide `retrieve_bullets(text, read_only=True|False, budget_ms=N)` (replacing the need for a separate preview method).
+
+Success Criteria
+- Without handshake: target >99% of turns have bullets before LLM starts; misses logged with cause.
+- Hot path p95 (retrieve only) ≤ 100 ms; (final extract+retrieve) ≤ 200 ms.
+
+Notes
+- Intent gating and VAD stop backstop are deferred to Phase 0.5 to reduce Phase 0 complexity.
+
+---
+
+## 🧯 Phase 0.5 (Week 2): Stability & Config Parity
+
+Objective
+- Fix correctness edge cases and wire config before modularization.
+
+Tasks
+- Bug fixes:
+  - Question classification edge cases (ensure punctuation doesn’t create false questions).
+  - Confirm missing context injection edge cases (e.g., duplicate injections blocked, refresh logic sound).
+- Env fidelity:
+  - Wire `HOTMEM_BULLETS_MAX` (replace hard-coded caps) and `ENABLE_MEMORY` (pass‑through mode).
+- Determinism handshake:
+  - Introduce `MemoryContextFrame` (bullets payload) and `MemoryContextReadyFrame` (signal).
+  - Aggregator defers user flush until `MemoryContextReadyFrame` or a strict timeout (≤120 ms), then proceeds.
+  - With handshake ON: deterministic presence (within timeout). With handshake OFF: best‑effort (>99%).
+- Minimal tests:
+  - Unit tests for handshake state transitions.
+  - Integration: interim pre‑injection present before aggregator flush in the “flush‑before‑final” scenario.
+
+Success Criteria
+- With handshake ON: 100% memory presence before LLM, bounded by timeout.
+- With handshake OFF: ≥99% presence; misses logged with cause.
+
+---
+
+## 🧩 Phase 1 (Weeks 3–6): Incremental Modularization (No Behavior Change)
+
+Objective
+- Reduce coupling and improve testability without changing behavior from 0/0.5.
+
+Weekly Slices
+- 1A (Week 3): `memory/store.py` (move `MemoryStore`) and `memory/index.py` (entity_index, recency, rebuild).
+- 1B (Week 4): `memory/context.py` (format/dedup/caps). Replace direct context mutation with `MemoryContextFrame` in processor.
+- 1C (Week 5): `memory/extractors/ud.py` (move UD extractor + refinement), introduce extractor interface and registry.
+- 1D (Week 6): `memory/retrieval.py` (entity+relation+recency routing), plus `config.py` and `metrics.py` scaffolding.
+
+Compatibility
+- Keep adapters/aliases so `from hotpath_processor import HotPathMemoryProcessor` continues to work.
+
+Acceptance Criteria
+- All existing tests pass; no observable behavior changes vs Phase 0.5.
+
+---
+
+## 🎯 Phase 2 (Weeks 7–8): Retrieval Quality Under Budget
+
+Objective
+- Improve relevance with modest, controllable boosts.
+
+Tasks
+- Scoring composition in `retrieval.py`:
+  - Base entity match + relation priority + recency boost (timestamps from adjacency).
+  - Optional BM25 re‑rank via SQLite FTS5 (`chunks_fts`) under a tight budget.
+  - Optional vector re‑rank (LEANN) behind `HOTMEM_USE_LEANN` with strict time cap.
+- Keep bullets concise via shared templates in `memory/context.py`.
+
+Acceptance Criteria
+- Measurable improvement on recall queries without p95 regression.
+
+---
+
+## 🔭 Phase 3 (Weeks 9–10): Observability & Tests
+
+Objective
+- Make success/failure self‑evident per turn; lock streaming behavior with tests.
+
+Tasks
+- Turn summary log per user turn: `pre_injected=<bool>`, `source=interim|final`, `injected_before_llm=<bool>`, `bullets_count`, `update_count`, timing breakdown.
+- Streaming tests: aggregator flush‑before‑final, handshake success, latency budget checks.
+- Unit tests: extraction patterns (name/lives_in/works_at/moved_from), retrieval ranking stability, context formatting/dedup.
+
+Acceptance Criteria
+- Tests catch regressions in streaming memory presence and quality; logs make root causes clear.
+
+---
+
+## 🛠️ Phase 4 (Weeks 11–12): DX & Config Fidelity
+
+Tasks
+- Honor all documented envs: `ENABLE_MEMORY`, `HOTMEM_BULLETS_MAX`, `HOTMEM_RETRIEVE_ON_INTERIM/FINAL`, `HOTMEM_INTERIM_MIN_WORDS`, `HOTMEM_ENABLE_INTENT_ROUTING`, `HOTMEM_LANG`, `HOTMEM_USE_LEANN`.
+- Provide `.env` presets (minimal / default / advanced) and one‑pager docs update here.
+
+Acceptance Criteria
+- Config → behavior parity; frictionless setup for common modes.
+
+---
+
+### Determinism Definition
+- Strong (with handshake ON): Aggregator defers user flush until `MemoryContextReadyFrame` or a firm timeout (≤120 ms). Within that bound, memory presence is 100% deterministic; timeouts are logged as controlled misses.
+- Highly reliable (handshake OFF): Pre‑injection on interims yields >99% presence; any miss is logged with cause (e.g., no interims, extremely short utterance).
+
+### API Decisions
+- Retrieval entry point: `retrieve_bullets(text, read_only=True|False, budget_ms=N)` consolidates preview/read‑only and final retrieval paths.
+- Processor orchestration:
+  - Interims: `read_only=True`, inject once/turn, set ready.
+  - Final: extract+persist (if fact), `read_only=False` re‑retrieve and refresh if changed, set ready if not already.
+  - VAD stop (Phase 0.5+): used only to set ready if no interim occurred; not a third injection path.
+
+### Risks & Mitigations
+- Phase 0 complexity: Kept minimal (interim only). VAD backstop and gating moved to 0.5.
+- Timeline: Modularization split into weekly slices, each shippable and testable.
+- API sprawl: Single retrieval function with `read_only` flag avoids extra surface.
+
 ## 🗺️ Candidate ROADMAP: Memory Reliability & Modularity (2025-09-19)
 
 ### Summary

@@ -12,7 +12,7 @@ import os
 # Add local pipecat to path if needed
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "pipecat", "src"))
 
-from pipecat.frames.frames import Frame, TranscriptionFrame, LLMMessagesFrame, TextFrame, StartFrame
+from pipecat.frames.frames import Frame, TranscriptionFrame, LLMMessagesFrame, TextFrame, StartFrame, InterimTranscriptionFrame
 from pipecat.processors.frame_processor import FrameProcessor as BaseProcessor, FrameDirection
 
 from memory_store import MemoryStore, Paths
@@ -101,6 +101,10 @@ class HotPathMemoryProcessor(BaseProcessor):
         self._session_id = user_id
         self._enable_metrics = enable_metrics
         self._pending_bullets: List[str] = []
+        # Phase 0 state: track one-time interim pre-injection per turn
+        self._turn_has_preinjected_bullets: bool = False
+        self._last_injected_bullets: List[str] = []
+        self._interim_min_words: int = 6  # Phase 0 default; env wiring in Phase 0.5
         self._inject_role = os.getenv("HOTMEM_INJECT_ROLE", "user").strip().lower()
         if self._inject_role not in ("user", "system"):
             self._inject_role = "user"
@@ -156,7 +160,35 @@ class HotPathMemoryProcessor(BaseProcessor):
         #     except Exception as e:
         #         logger.warning(f"[HotMem TRACE] Error tracing {type(frame).__name__}: {e}")
 
-        # Process final transcriptions (compute bullets, update store)  
+        # Phase 0: Interim pre-injection (retrieval-only; once per turn)
+        if isinstance(frame, InterimTranscriptionFrame):
+            text = getattr(frame, 'text', '') or ''
+            # Basic length threshold; no intent gating in Phase 0
+            if not self._turn_has_preinjected_bullets:
+                try:
+                    # Count words quickly
+                    wcount = len([w for w in text.strip().split() if w])
+                except Exception:
+                    wcount = 0
+                if wcount >= self._interim_min_words:
+                    try:
+                        preview = self.hot.retrieve_bullets(text, read_only=True)
+                    except Exception as e:
+                        logger.error(f"[HotMem] Interim retrieval failed: {e}")
+                        preview = []
+                    if preview:
+                        cap = 3  # Phase 0: fixed cap; env wiring in Phase 0.5
+                        inject_now = preview[:cap]
+                        self._pending_bullets = list(inject_now)
+                        try:
+                            await self._inject_memory_context()
+                            self._turn_has_preinjected_bullets = True
+                            self._last_injected_bullets = list(inject_now)
+                            logger.info(f"[HotMem] Interim pre-injection completed with {len(self._last_injected_bullets)} bullets")
+                        except Exception as e:
+                            logger.error(f"[HotMem] Interim pre-injection error: {e}")
+
+        # Process final transcriptions (compute bullets, update store)
         if isinstance(frame, TranscriptionFrame):
             is_final = getattr(frame, 'is_final', None)
             text = getattr(frame, 'text', '') or ''
@@ -164,11 +196,23 @@ class HotPathMemoryProcessor(BaseProcessor):
             # WhisperSTTServiceMLX doesn't set is_final, so treat None as final (non-streaming)
             if is_final is True or is_final is None:
                 logger.info(f"[HotMem] Processing transcription (is_final={is_final}): '{text}'")
+                # Process: extract+persist+retrieve for final
                 await self._process_transcription(frame, direction)
-                
-                # Inject memory bullets directly into context before the aggregator processes the frame
+
+                # Phase 0: Refresh injection if different from interim
                 if self._pending_bullets and self._context_aggregator:
-                    await self._inject_memory_context()
+                    try:
+                        # Compare with last injected bullets
+                        new_bullets = list(self._pending_bullets)
+                        if not self._turn_has_preinjected_bullets or new_bullets != self._last_injected_bullets:
+                            await self._inject_memory_context()
+                            self._last_injected_bullets = new_bullets
+                            logger.info(f"[HotMem] Final injection {'refreshed' if self._turn_has_preinjected_bullets else 'inserted'} with {len(new_bullets)} bullets")
+                    except Exception as e:
+                        logger.error(f"[HotMem] Final injection error: {e}")
+                # Reset pre-injection state for next turn
+                self._turn_has_preinjected_bullets = False
+                self._last_injected_bullets = []
             else:
                 logger.info(f"[HotMem] Skipping non-final transcription")
 
@@ -198,7 +242,8 @@ class HotPathMemoryProcessor(BaseProcessor):
             # Stash bullets to inject just before the aggregated user message
             if bullets:
                 logger.info(f"[HotMem] Prepared {len(bullets)} memory bullets for injection")
-                self._pending_bullets = bullets[:3]
+                cap = 3  # Phase 0: fixed cap; env wiring in Phase 0.5
+                self._pending_bullets = bullets[:cap]
             
             # Track performance
             elapsed_ms = (time.perf_counter() - start) * 1000

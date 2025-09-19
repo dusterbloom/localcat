@@ -31,8 +31,12 @@ def run_test_file(test_path: Path) -> bool:
             return True
         else:
             logger.error(f"✗ {test_path.name} failed")
+            if result.stdout:
+                logger.error("  ----- stdout -----")
+                logger.error(result.stdout[-2000:])
             if result.stderr:
-                logger.error(f"  Error: {result.stderr[:200]}")
+                logger.error("  ----- stderr -----")
+                logger.error(result.stderr[-2000:])
             return False
 
     except subprocess.TimeoutExpired:

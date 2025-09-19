@@ -10,8 +10,13 @@ import os
 from loguru import logger
 from dotenv import load_dotenv
 
-# Add local pipecat to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "pipecat", "src"))
+# Ensure server root and local pipecat are importable
+_HERE = os.path.dirname(__file__)
+_SERVER_ROOT = os.path.normpath(os.path.join(_HERE, "..", ".."))
+_PIPECAT_SRC = os.path.join(_SERVER_ROOT, "pipecat", "src")
+for p in (_SERVER_ROOT, _PIPECAT_SRC):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 # Load environment variables
 load_dotenv(override=True)
