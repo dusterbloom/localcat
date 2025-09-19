@@ -117,7 +117,7 @@ async def test_full_pipeline():
         logger.success("✓ Pipecat imports successful")
 
         # Test TTS service
-        from tts_mlx_isolated import TTSMLXIsolated
+        from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
         logger.success("✓ TTS service import successful")
 
         return True

@@ -40,7 +40,7 @@ def test_imports():
         logger.success("✓ Batch STT fallback imported")
 
         # TTS imports
-        from tts_mlx_isolated import TTSMLXIsolated
+        from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
         logger.success("✓ TTS service imported")
 
         # Memory imports
@@ -99,9 +99,9 @@ async def test_service_initialization():
         logger.success("✓ Streaming STT initialized")
 
         # Initialize TTS
-        from tts_mlx_isolated import TTSMLXIsolated
+        from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
 
-        tts = TTSMLXIsolated(
+        tts = TTSMLXUltraLowLatency(
             model="mlx-community/Kokoro-82M-bf16",
             voice="af_heart",
             sample_rate=24000

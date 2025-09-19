@@ -38,7 +38,7 @@ if SERVER_DIR not in sys.path:
     sys.path.insert(0, SERVER_DIR)
 
 from kyutai_streaming_stt import KyutaiStreamingSTT, rustymimi, mx, models  # type: ignore
-from tts_mlx_isolated import TTSMLXIsolated
+from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
 
 
 @dataclass
@@ -60,7 +60,7 @@ async def generate_tts_wave(text: str) -> Tuple[np.ndarray, int]:
 
     Returns (audio_f32, sample_rate)
     """
-    tts = TTSMLXIsolated(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
+    tts = TTSMLXUltraLowLatency(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
     audio_chunks: List[bytes] = []
     sr = 24000
 

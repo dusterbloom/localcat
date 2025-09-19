@@ -2,11 +2,20 @@
 """Test memory system functionality"""
 
 import asyncio
+import os
 import sys
 from loguru import logger
+
+# Add server root to path for imports
+_HERE = os.path.dirname(__file__)
+_SERVER_ROOT = os.path.normpath(os.path.join(_HERE, "..", ".."))
+_PIPECAT_SRC = os.path.join(_SERVER_ROOT, "pipecat", "src")
+for p in (_SERVER_ROOT, _PIPECAT_SRC):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
 from hotpath_processor import HotPathMemoryProcessor
 from pipecat.frames.frames import TranscriptionFrame
-import os
 
 async def test_memory_system():
     """Test the memory system with sample interactions"""
@@ -48,16 +57,18 @@ async def test_memory_system():
     # Check what's in memory
     print("\n🧠 Memory contents:")
 
-    # Get current memory state
-    memory_context = processor.hot.get_context("test-user", k=5)
-    if memory_context:
-        print(f"  Context: {memory_context}")
+    # Get current memory state using new API
+    memory_bullets = processor.hot.retrieve_bullets("Tell me about the user", read_only=True)
+    if memory_bullets:
+        print(f"  Memory bullets: {memory_bullets}")
+    else:
+        print("  No memory bullets found")
 
-    # Check edges
-    edges = list(processor.hot.graph.edges(data=True))
+    # Check edges using store API
+    edges = processor.hot.store.get_all_edges()
     print(f"\n  Found {len(edges)} edges in memory graph:")
-    for src, dest, data in edges[:5]:  # Show first 5
-        print(f"    • {src} → {dest} ({data.get('relation', 'unknown')})")
+    for src, rel, dest, weight in edges[:5]:  # Show first 5
+        print(f"    • {src} → {dest} (relation: {rel}, weight: {weight:.3f})")
 
     # Test retrieval
     print("\n🔍 Testing retrieval:")
@@ -68,9 +79,9 @@ async def test_memory_system():
     ]
 
     for query in test_queries:
-        context = processor.hot.get_context(query, k=3)
+        bullets = processor.hot.retrieve_bullets(query, read_only=True)
         print(f"  Query: '{query}'")
-        print(f"    → Context: {context if context else 'No relevant context found'}")
+        print(f"    → Bullets: {bullets if bullets else 'No relevant context found'}")
 
     print("\n" + "="*60)
     if edges:

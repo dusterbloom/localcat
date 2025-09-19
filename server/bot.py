@@ -52,7 +52,7 @@ from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, Ice
 
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 
-from tts_mlx_isolated import TTSMLXIsolated
+from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
 
 
 load_dotenv(override=True)
@@ -115,53 +115,53 @@ async def run_bot(webrtc_connection):
         ),
     )
 
-    # Use streaming STT if enabled (default), otherwise fall back to batch mode
+    # STT: Kyutai streaming by default, Whisper MLX as fallback
     use_streaming_stt = os.getenv("USE_STREAMING_STT", "true").lower() == "true"
 
     if use_streaming_stt and KYUTAI_AVAILABLE:
         try:
             hf_repo = os.getenv("KYUTAI_STT_REPO", "kyutai/stt-1b-en_fr-mlx")
-            logger.info(f"Attempting to initialize Kyutai STT with repo: {hf_repo}")
+            enable_vad = os.getenv("KYUTAI_ENABLE_VAD", "false").lower() in ("1", "true", "yes")
+            max_steps = int(os.getenv("KYUTAI_MAX_STEPS", "4096"))
+
+            logger.info(f"Initializing Kyutai streaming STT with repo: {hf_repo}")
             stt = KyutaiStreamingSTT(
                 hf_repo=hf_repo,
-                enable_vad=os.getenv("KYUTAI_ENABLE_VAD", "false").lower() in ("1", "true", "yes"),
-                max_steps=4096
+                enable_vad=enable_vad,
+                max_steps=max_steps
             )
-            logger.info(f"✅ Successfully initialized Kyutai streaming STT ({'MLX' if hf_repo.endswith('-mlx') else 'Candle'})")
+            logger.info(f"✅ Kyutai streaming STT initialized ({'MLX' if hf_repo.endswith('-mlx') else 'Candle'})")
         except Exception as e:
-            logger.error(f"❌ Failed to initialize Kyutai STT: {e}", exc_info=True)
-            logger.warning(f"Falling back to batch mode")
+            logger.error(f"❌ Kyutai STT failed: {e}", exc_info=True)
+            logger.warning("Falling back to Whisper MLX batch mode")
             stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
-    elif use_streaming_stt and not KYUTAI_AVAILABLE:
-        logger.warning("Kyutai STT not available, falling back to batch mode")
-        stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
     else:
-        logger.info("Using batch STT mode")
+        if not KYUTAI_AVAILABLE:
+            logger.warning("Kyutai STT not available")
+        else:
+            logger.info("Streaming STT disabled via USE_STREAMING_STT=false")
+        logger.info("Using Whisper MLX batch mode (multilingual support)")
         stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
 
-    # Choose TTS mode based on environment variable
-    use_ultra_low_latency = os.getenv("TTS_ULTRA_LOW_LATENCY", "true").lower() in ("1", "true", "yes")
+    # Ultra-low latency TTS with optimized streaming
+    logger.info("Using ultra-low latency TTS mode (40-80ms TTFB)")
 
-    if use_ultra_low_latency:
-        logger.info("Using ultra-low latency TTS mode (40-80ms TTFB)")
-        from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
-        tts = TTSMLXUltraLowLatency(
-            model="mlx-community/Kokoro-82M-bf16",
-            voice="af_heart",
-            sample_rate=24000,
-            speed=1.0,
-            buffer_ms=50,  # 50ms buffer for optimal latency
-            use_boundaries=True
-        )
-    else:
-        logger.info("Using standard TTS mode")
-        tts = TTSMLXIsolated(model="mlx-community/Kokoro-82M-bf16", voice="af_heart", sample_rate=24000)
+    # Get buffer size from environment (default 80ms for stability)
+    buffer_ms = int(os.getenv("KOKORO_BUFFER_MS", "80"))
+
+    tts = TTSMLXUltraLowLatency(
+        model="mlx-community/Kokoro-82M-bf16",
+        voice="af_heart",
+        sample_rate=24000,
+        speed=1.0,
+        buffer_ms=buffer_ms,
+        use_boundaries=True
+    )
 
     try:
         await tts._initialize_if_needed()
     except Exception as e:
         logger.warning(f"TTS prewarm failed: {e}")
-    # tts = TTSMLXIsolated(model="Marvis-AI/marvis-tts-250m-v0.1", voice=None)
 
 
 

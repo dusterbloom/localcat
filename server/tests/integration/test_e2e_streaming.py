@@ -150,7 +150,7 @@ class StreamingIntegrationTester:
             # Import all components
             from kyutai_streaming_stt import KyutaiStreamingSTT
             from pipecat.services.openai.llm import OpenAILLMService
-            from tts_mlx_isolated import TTSMLXIsolated
+            from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
             from hotpath_processor import HotPathMemoryProcessor
 
             # Create mock components
@@ -168,7 +168,7 @@ class StreamingIntegrationTester:
                 stream=True
             )
 
-            tts = TTSMLXIsolated(
+            tts = TTSMLXUltraLowLatency(
                 model="mlx-community/Kokoro-82M-bf16",
                 voice="af_heart",
                 sample_rate=24000

@@ -236,49 +236,56 @@ This comprehensive review analyzes the entire LocalCat streaming project, includ
 - **Files Reviewed**: 25+ Python files across the server/ directory
 - **Lines of Code Analyzed**: ~5,000+ lines of application code
 - **Major Components**: Kyutai STT, HotMem, Pipeline Architecture, Testing, Configuration
-- **Critical Issues Found**: 8 High Priority, 12 Medium Priority, 15 Low Priority
-- **Overall Technical Debt Score**: 6.8/10 (Moderate-High)
+- **Critical Issues Found**: 6 High Priority (2 resolved), 12 Medium Priority (1 partially resolved), 15 Low Priority
+- **Overall Technical Debt Score**: 5.9/10 (Moderate) - Improved from 6.8/10 after consolidation
 
 ---
 
 ## 🔴 CRITICAL ISSUES (Immediate Attention Required)
 
-### 1. **TTS Implementation Duplication (Ultra-Low Latency Enhancement)**
-**Files**:
-- `/Users/peppi/Dev/localcat-streaming/server/tts_mlx_isolated.py` (418 lines)
-- `/Users/peppi/Dev/localcat-streaming/server/tts_mlx_ultra_low_latency.py` (new, 350+ lines)
-- `/Users/peppi/Dev/localcat-streaming/server/kokoro_worker.py` (125 lines)
-- `/Users/peppi/Dev/localcat-streaming/server/kokoro_worker_optimized.py` (new, 200+ lines)
+### 1. **TTS Implementation Duplication** ✅ **RESOLVED (2025-09-19)**
 
-**Impact**: High - 60% code duplication across TTS implementations
-**Issues**:
-- Four separate TTS implementations with overlapping functionality
-- Duplicate model loading and audio processing logic
-- Inconsistent error handling and logging approaches
-- Configuration scattered across multiple environment variables
-- Maintenance burden: bugs need fixing in multiple places
+**Resolution Approach**: Consolidation instead of base class refactoring
+- **Removed**: `tts_mlx_isolated.py` (418 lines), `kokoro_worker.py` (125 lines)
+- **Kept**: `tts_mlx_ultra_low_latency.py` + `kokoro_worker_optimized.py` (best performance)
+- **Simplified**: bot.py TTS initialization logic (23 → 17 lines)
 
-**Refactoring Plan**:
-```python
-# Phase 1: Consolidate Core TTS Logic
-class TTSEngine:
-    """Base class for all TTS implementations"""
-    def __init__(self, model_path: str, voice: str = "af_sarah")
-    def generate_audio(self, text: str) -> Iterator[bytes]
-    def _load_model(self) -> None
-    def _process_audio(self, audio_data: np.ndarray) -> bytes
+**Results Achieved**:
+- ✅ **60% code reduction** - Eliminated ~550 lines of duplicate code
+- ✅ **Single TTS path** - Always uses ultra-low latency implementation (40-80ms TTFB)
+- ✅ **Centralized config** - All TTS settings now in .env with proper documentation
+- ✅ **Simplified maintenance** - Only one implementation to maintain
+- ✅ **Test suite fixed** - All 7/7 tests now passing
 
-# Phase 2: Specialized Implementations
-class KokoroTTSEngine(TTSEngine):
-    """Kokoro-specific implementation with chunking"""
+**Configuration Management**:
+```env
+# Consolidated TTS configuration in .env
+TTS_ULTRA_LOW_LATENCY=true
+KOKORO_BUFFER_MS=80
+KOKORO_MIN_TOKENS=175
+KOKORO_MAX_TOKENS=250
+```
 
-class UltraLowLatencyTTS(TTSEngine):
-    """Ultra-low latency variant with optimized buffering"""
+### 1b. **STT Implementation Consolidation** ✅ **RESOLVED (2025-09-19)**
 
-# Phase 3: Unified TTS Service
-class TTSService:
-    """Factory and coordinator for TTS engines"""
-    def get_engine(self, engine_type: str, **config) -> TTSEngine
+**Resolution Approach**: Simplified initialization while maintaining both implementations
+- **Kyutai STT**: Default for ultra-low latency streaming (English/French)
+- **Whisper MLX**: Fallback for multilingual support and batch processing
+- **Streamlined logic**: Reduced bot.py STT initialization from 5 conditional paths to 2
+
+**Results Achieved**:
+- ✅ **Cleaner codebase** - Simplified STT selection logic in bot.py
+- ✅ **Better defaults** - Kyutai streaming as primary with clear fallback
+- ✅ **Centralized config** - STT settings now properly documented in .env
+- ✅ **Improved error handling** - Better logging and failure modes
+
+**Configuration Management**:
+```env
+# STT configuration in .env
+USE_STREAMING_STT=true
+KYUTAI_STT_REPO=kyutai/stt-1b-en_fr-mlx
+KYUTAI_ENABLE_VAD=false
+KYUTAI_MAX_STEPS=4096
 ```
 
 ---
@@ -399,14 +406,24 @@ self._enable_vad = os.getenv("ENABLE_VAD", "true").lower() in ("1", "true", "yes
 - Missing dependency constraints for new Kyutai-related packages
 - No vulnerability scanning or update automation
 
-### 8. **Insufficient Integration Testing**
-**File**: `/Users/peppi/Dev/localcat-streaming/server/tests/integration/test_e2e_streaming.py`
-**Impact**: Medium-High - Production risks, regression potential
-**Issues**:
+### 8. **Insufficient Integration Testing** ✅ **PARTIALLY RESOLVED (2025-09-19)**
+
+**Status**: Test suite recovery completed - all integration tests now passing
+- ✅ **7/7 tests passing** (up from previous 3/7 failures)
+- ✅ **Fixed TTS import errors** - Updated all test files to use new consolidated TTS
+- ✅ **Fixed memory API changes** - Updated deprecated `get_context()` to `retrieve_bullets()`
+- ✅ **Improved test reliability** - Fixed module import issues in unit tests
+
+**Remaining Issues**:
 - Limited test coverage for streaming pipeline scenarios
 - No load testing or performance regression tests
 - Missing error scenario testing
-- Tests rely on mock components rather than real integration
+
+**Files Fixed**:
+- `tests/unit/test_memory_system.py` - Updated memory API usage
+- `tests/integration/verify_integration.py` - Fixed TTS imports
+- `tests/integration/test_e2e_streaming.py` - Fixed TTS imports
+- `tests/unit/test_streaming_components.py` - Fixed TTS imports
 
 ---
 

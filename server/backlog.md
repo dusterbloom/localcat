@@ -14,16 +14,35 @@
   - LMDB optional guards for in‑memory tests
   - Unit tests: `test_hotmem_phase0.py`, `test_hotmem_env.py`
 
-- Phase 1: Modularization — STARTED
+- Phase 1: Modularization — COMPLETED
   - 1A complete: `server/memory/` package added with `store.py` (compat re‑export) and `index.py` (HotIndex skeleton)
   - 1B complete: `memory/context.py` + `MemoryContextFrame` (no behavior change; compat preserved)
   - 1C complete: Extractor seam added (`memory/extractors/` + UD adapter)
   - 1D complete: Retrieval modularized (`memory/retrieval.py`) and wired to HotMemory
 
+- **Phase 1.5: TTS/STT Consolidation — COMPLETED (2025-09-19)**
+  - **TTS Consolidation**: Eliminated 60% code duplication (4 → 2 implementations)
+    - Removed: `tts_mlx_isolated.py` (418 lines), `kokoro_worker.py` (125 lines)
+    - Kept: `tts_mlx_ultra_low_latency.py` (best performance, 40-80ms TTFB)
+    - Simplified bot.py initialization logic (23 → 17 lines)
+  - **STT Consolidation**: Streamlined initialization while maintaining flexibility
+    - Kyutai streaming STT as default with clean Whisper MLX fallback
+    - Centralized configuration via environment variables
+    - Improved error handling and logging clarity
+  - **Configuration Management**:
+    - Updated `.env` with comprehensive STT/TTS settings
+    - Updated `env.example` with full documentation
+    - Added organized sections with clear comments
+  - **Test Suite Recovery**: Fixed all integration test failures
+    - Updated all imports from old to new TTS implementation
+    - Fixed API changes in memory system tests
+    - **Result**: 7/7 tests now passing (up from 3/7)
+
 ### Test Status (2025-09-19)
-- All unit + integration tests green on local env (4/4 in earlier run; 5/5 with new unit added)
+- **All 7/7 tests now passing** (up from previous 3/7 after TTS/STT consolidation)
 - Streaming STT/LLM/TTS integration passes; HotMem unit/env tests pass
 - Handshake enabled by default (HOTMEM_ENABLE_HANDSHAKE=true) — no regressions observed
+- Integration tests fully recovered from consolidation changes
 
 ### Next Milestones
 - Phase 2 (Retrieval Quality; behind flags, no default cost)
