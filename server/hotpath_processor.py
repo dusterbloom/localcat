@@ -133,6 +133,13 @@ class HotPathMemoryProcessor(BaseProcessor):
         
         # Performance tracking
         self._last_metrics_log = time.time()
+        # Summary controls
+        self._summary_enabled = os.getenv("MEMORY_SUMMARY_ENABLED", "false").lower() in ("1", "true", "yes")
+        try:
+            self._summary_interval_ms = int(float(os.getenv("SUMMARIZER_INTERVAL_SECS", "60")) * 1000)
+        except Exception:
+            self._summary_interval_ms = 60000
+        self._last_summary_ms = 0
         
         logger.info(f"HotPathMemoryProcessor initialized for user: {user_id}")
     
@@ -284,6 +291,18 @@ class HotPathMemoryProcessor(BaseProcessor):
                     self.store.flush_if_needed()
             except Exception as e:
                 logger.warning(f"[HotMem] Convo index failed: {e}")
+
+            # Optional: store a simple summary note periodically (uses last user text)
+            try:
+                if self._summary_enabled and text.strip():
+                    now_ms = int(time.time() * 1000)
+                    if now_ms - self._last_summary_ms >= self._summary_interval_ms:
+                        note = f"User said: {text.strip()}"
+                        self.store.enqueue_mention("summary", note, now_ms, self._session_id, self._turn_id)
+                        self.store.flush_if_needed()
+                        self._last_summary_ms = now_ms
+            except Exception as e:
+                logger.warning(f"[HotMem] Summary note failed: {e}")
             
             # Track performance
             elapsed_ms = (time.perf_counter() - start) * 1000

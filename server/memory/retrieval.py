@@ -11,6 +11,7 @@ store exactly as the previous implementation did.
 """
 
 from typing import List, Tuple, Any
+import time
 
 
 import os
@@ -30,16 +31,15 @@ class Retrieval:
 
         # 1) Graph retrieval
         if "graph" in sources and len(bullets) < max_bullets:
-            bullets.extend(self._graph_retrieve(query, entities, turn_id, max_bullets, seen))
+            bullets.extend(self._graph_retrieve(query, entities, turn_id, max_bullets - len(bullets), seen))
 
-        # 2) Summary retrieval (stubbed for now)
+        # 2) Summary retrieval
         if "summary" in sources and len(bullets) < max_bullets:
-            # Placeholder: integrate summarizer-backed retrieval later.
-            pass
+            bullets.extend(self._summary_retrieve(max_bullets - len(bullets), seen))
 
         # 3) Conversation retrieval via FTS (if indexed)
         if "convo" in sources and len(bullets) < max_bullets:
-            bullets.extend(self._convo_retrieve(query, max_bullets, seen))
+            bullets.extend(self._convo_retrieve(query, max_bullets - len(bullets), seen))
 
         return bullets[:max_bullets]
 
@@ -84,7 +84,8 @@ class Retrieval:
                 for _pri, _ts, s, r, d in scored:
                     fact = f"{s} {r} {d}"
                     if fact not in seen:
-                        out.append(f"• {fact}")
+                        suffix = self._ago_suffix(_ts)
+                        out.append(f"• {fact}{suffix}")
                         seen.add(fact)
                         if len(out) >= max_bullets:
                             return out
@@ -93,6 +94,7 @@ class Retrieval:
         for item in reversed(list(self.host.recency_buffer)[-10:]):
             fact = f"{item.s} {item.r} {item.d}"
             if fact not in seen:
+                age = self._ago_suffix(item.timestamp if hasattr(item, 'timestamp') else 0)
                 if item.r == "name":
                     formatted = f"• {item.s}'s name is {item.d}"
                 elif item.r == "has":
@@ -104,7 +106,7 @@ class Retrieval:
                 else:
                     formatted = f"• {item.s} {item.r.replace('_', ' ')} {item.d}"
 
-                out.append(formatted)
+                out.append(formatted + age)
                 seen.add(fact)
                 if len(out) >= max_bullets:
                     break
@@ -118,11 +120,11 @@ class Retrieval:
             hits = self.host.store.search_fts(query, limit=max_bullets * 2)
         except Exception:
             hits = []
-        for text, eid in hits:
+        for text, eid, ts in hits:
             s = text.strip().replace("\n", " ")
             if not s:
                 continue
-            bullet = f"• recently: {s[:120]}"  # keep short
+            bullet = f"• recently: {s[:120]}{self._ago_suffix(ts)}"  # keep short
             if bullet in seen:
                 continue
             seen.add(bullet)
@@ -130,3 +132,46 @@ class Retrieval:
             if len(out) >= max_bullets:
                 break
         return out
+
+    def _summary_retrieve(self, max_bullets: int, seen: set) -> List[str]:
+        out: List[str] = []
+        try:
+            rows = self.host.store.get_recent_chunks_by_eid("summary", limit=max_bullets * 2)
+        except Exception:
+            rows = []
+        for text, ts in rows:
+            s = text.strip().replace("\n", " ")
+            if not s:
+                continue
+            bullet = f"• summary: {s[:160]}{self._ago_suffix(ts)}"
+            if bullet in seen:
+                continue
+            seen.add(bullet)
+            out.append(bullet)
+            if len(out) >= max_bullets:
+                break
+        return out
+
+    def _ago_suffix(self, ts_ms: int) -> str:
+        try:
+            if not ts_ms:
+                return ""
+            now_ms = int(time.time() * 1000)
+            delta = max(0, now_ms - int(ts_ms))
+            sec = delta // 1000
+            if sec < 60:
+                return f" ({sec}s ago)"
+            mins = sec // 60
+            if mins < 60:
+                return f" ({mins}m ago)"
+            hours = mins // 60
+            if hours < 24:
+                return f" ({hours}h ago)"
+            days = hours // 24
+            # compact format: include days and remaining hours
+            rem_h = hours % 24
+            if rem_h > 0:
+                return f" ({days}d {rem_h}h ago)"
+            return f" ({days}d ago)"
+        except Exception:
+            return ""

@@ -461,15 +461,15 @@ class MemoryStore:
                 self.sql.commit()
     
     # ---------- Search operations ----------
-    def search_fts(self, query: str, limit: int = 10) -> List[Tuple[str, str]]:
-        """Full-text search using SQLite FTS5"""
+    def search_fts(self, query: str, limit: int = 10) -> List[Tuple[str, str, int]]:
+        """Full-text search using SQLite FTS5, including timestamp for recency."""
         cur = self.sql.cursor()
-        results = []
-        for (text, eid) in cur.execute(
-            "SELECT text, eid FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?",
+        results: List[Tuple[str, str, int]] = []
+        for (text, eid, ts) in cur.execute(
+            "SELECT text, eid, ts FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?",
             (query, limit)
         ):
-            results.append((text, eid))
+            results.append((str(text), str(eid), int(ts)))
         return results
     
     def get_metrics(self) -> Dict[str, Any]:
@@ -484,6 +484,24 @@ class MemoryStore:
                     'count': len(values)
                 }
         return metrics
+
+    # ---------- Recent items helpers ----------
+    def get_recent_chunks_by_eid(self, eid: str, limit: int = 5) -> List[Tuple[str, int]]:
+        """Return recent FTS chunks for a given eid ordered by timestamp desc.
+
+        Returns list of (text, ts).
+        """
+        cur = self.sql.cursor()
+        out: List[Tuple[str, int]] = []
+        try:
+            for (text, ts) in cur.execute(
+                "SELECT text, ts FROM chunks_fts WHERE eid = ? ORDER BY ts DESC LIMIT ?",
+                (eid, int(limit)),
+            ):
+                out.append((str(text), int(ts)))
+        except Exception:
+            pass
+        return out
 
     # ---------- Bulk reads for rebuild ----------
     def get_all_edges(self, min_status: int = 0) -> List[Tuple[str, str, str, float]]:
