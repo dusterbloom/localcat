@@ -36,8 +36,8 @@ from pipecat.services.whisper.stt import WhisperSTTServiceMLX, MLXModel
 from pipecat.frames.frames import LLMRunFrame
 
 # Import HotMem processor
-from hotpath_processor import HotPathMemoryProcessor
-from session_tracker import SessionTracker
+from core.memory.hotpath_processor import HotPathMemoryProcessor
+from core.memory.session_tracker import SessionTracker
 from config import VoiceAgentConfig
 
 # Import streaming STT service
@@ -586,7 +586,7 @@ async def lifespan(app: FastAPI):
 
     # Pre-warm models on startup
     try:
-        from model_manager import initialize_models
+        from experiments.development_tools.model_manager import initialize_models
         logger.debug("Pre-warming ML models for ultra-low latency...")
         await initialize_models()
         logger.debug("Model pre-warming complete")

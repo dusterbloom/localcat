@@ -7,27 +7,63 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 
 ---
 
+## ✅ Recently Resolved Technical Debt (2025-09-21)
+
+### 🏗️ Major Project Restructuring & Architecture Cleanup — RESOLVED
+**Previous Issues:**
+- **Scattered files**: 105+ files with no clear organization structure
+- **Duplicate implementations**: Multiple TTS/STT services with code duplication
+- **Large binary clutter**: 259MB of ONNX models and data files in server root
+- **Import chaos**: Inconsistent import paths and circular dependencies
+- **Configuration fragmentation**: Environment variables scattered without structure
+- **No separation**: Production code mixed with experiments and legacy implementations
+
+**Resolution (2025-09-21):**
+- ✅ **Created `core/` architecture**: Production TTS, STT, memory, and config services
+- ✅ **Organized `experiments/`**: Systematic categorization by functionality and time period
+- ✅ **Centralized configuration**: VoiceAgentConfig dataclass with environment integration
+- ✅ **Binary file organization**: Moved to `models/whisper/`, `models/piper/` structure
+- ✅ **Documentation structure**: `docs/investigations/`, `docs/planning/` organization
+- ✅ **Import cleanup**: Fixed all relative imports and circular dependencies
+- ✅ **Server root cleanup**: Reduced from 67 to 33 items, eliminated duplicates
+
+**Impact:** Clean, professional project structure enabling faster development and onboarding
+
+### 🎵 Audio Artifacts & TTS Quality Issues — RESOLVED
+**Previous Issues:**
+- **Kokoro TTS artifacts**: 200+ amplitude spikes at sentence endings causing audio glitches
+- **No professional audio processing**: Raw audio output without optimization
+- **Quality inconsistency**: No standardized audio processing pipeline
+
+**Resolution (2025-09-21):**
+- ✅ **Root cause analysis**: Comprehensive investigation disproving space-before-punctuation hypothesis
+- ✅ **Professional audio processing**: Implemented fade-out, smart limiting, DC offset removal
+- ✅ **ProfessionalKokoroTTSService**: Production-ready TTS with artifact-free quality
+- ✅ **Audio validation**: Generated comparative tests proving fix effectiveness
+
+**Impact:** Professional audio quality meeting production standards
+
+---
+
 ## Current Technical Debt
 
-### 🧩 HotMem Modularization & Duplication (NEW - 2025-09-05)
+### 🧩 HotMem Modularization & Duplication (UPDATED - 2025-09-21)
 
-**Duplicate Extractors / Naming Drift**
-- Issue: Multiple extractor files (`memory_extraction_usgs.py`, `memory_extraction_v2.py`, `memory_extraction_final.py`) coexist
-- Impact: Confusion, higher maintenance, risk of drift
-- Solution: Consolidate under `server/memory/extractors/{usgs.py,rules.py}`
-- Priority: High
-- Effort: 0.5–1 day
+**~~Flat Module Layout~~** — ✅ RESOLVED
+- ~~Issue: HotMem modules live at repo root~~
+- ✅ **RESOLVED**: All memory modules moved to `core/memory/` with proper imports
+- ✅ **RESOLVED**: Clean separation from legacy implementations in `experiments/`
 
-**Flat Module Layout**
-- Issue: HotMem modules live at repo root (`hotpath_processor.py`, `memory_hotpath.py`, `memory_store.py`, `ud_utils.py`)
-- Impact: Harder imports, unclear ownership, test brittleness
-- Solution: Create `server/memory/` package with `processor.py`, `hotpath.py`, `store.py`, `utils/ud.py`
-- Priority: High
-- Effort: 0.5–1 day
+**~~Transient DB Artifacts in VCS~~** — ✅ RESOLVED
+- ~~Issue: `.db`, `*.db-shm`, `*.db-wal`, LMDB directories not ignored~~
+- ✅ **RESOLVED**: All data files moved to `data/legacy/` directory
+- ✅ **RESOLVED**: Clean git status with proper organization
 
-**Transient DB Artifacts in VCS**
-- Issue: `.db`, `*.db-shm`, `*.db-wal`, LMDB directories not ignored; test DBs appear unstaged
-- Impact: Risk of accidental commits and noisy diffs
+**Legacy Extractor Consolidation** — PARTIALLY RESOLVED
+- Issue: Multiple extractor approaches still exist in experiments
+- Status: Legacy extractors preserved in `experiments/memory_system/legacy_memory_v1/`
+- Impact: Historical reference maintained, no active confusion
+- Priority: Low (archived appropriately)
 - Solution: Update `.gitignore` to exclude these
 - Priority: Medium
 - Effort: 10 mins

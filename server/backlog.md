@@ -44,6 +44,33 @@
 - Handshake enabled by default (HOTMEM_ENABLE_HANDSHAKE=true) — no regressions observed
 - Integration tests fully recovered from consolidation changes
 
+- **Phase 1.7: Major Project Restructuring & Cleanup — COMPLETED (2025-09-21)**
+  - **Audio Artifacts Investigation**: Comprehensive analysis and fix for Kokoro TTS sentence ending artifacts
+    - Investigated 200+ amplitude spikes in problematic sentence endings
+    - Disproved hypothesis that space before punctuation was the cause
+    - Implemented professional audio processing with fade-out, limiting, and DC offset removal
+    - Created ProfessionalKokoroTTSService with artifact-free audio quality
+  - **Project Architecture Overhaul**: Complete restructuring based on agent analysis of 105+ files
+    - Created `core/` directory with production-ready TTS/STT services
+    - Organized `experiments/` with systematic categorization of research
+    - Established centralized `config/` system with VoiceAgentConfig dataclass
+    - Moved large binary files (259MB) to organized `models/` directory structure
+  - **Server Root Cleanup**: Eliminated clutter and duplicate files
+    - Removed 15+ duplicate files from server root
+    - Organized documentation into `docs/` with investigations and planning subdirectories
+    - Consolidated legacy `memory/` and `utils/` directories into experiments
+    - Clean separation between production code, experiments, and legacy implementations
+  - **Centralized Configuration**: Professional configuration management
+    - VoiceAgentConfig dataclass with optimization-based defaults (<800ms latency target)
+    - Three preset configurations: minimal, default, advanced
+    - Environment variable overrides with backward compatibility
+    - Integration with bot.py for streamlined service initialization
+  - **Updated Integration**: All components working with new structure
+    - bot.py imports from core/ directories
+    - Professional Kokoro TTS as default with audio artifact fixes
+    - Kyutai STT as default streaming option with Whisper MLX backup
+    - All imports resolved and functionality validated
+
 - **Phase 1.6: DIET Intent Classification Discovery — COMPLETED (2025-09-19)**
   - **Research Completed**: Comprehensive analysis of DIET (Dual Intent and Entity Transformer) for voice agent intent classification
   - **Key Findings**:

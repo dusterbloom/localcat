@@ -16,10 +16,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "pipecat", "src"))
 from pipecat.frames.frames import Frame, TranscriptionFrame, LLMMessagesFrame, TextFrame, StartFrame, InterimTranscriptionFrame
 from pipecat.processors.frame_processor import FrameProcessor as BaseProcessor, FrameDirection
 
-from memory_store import MemoryStore, Paths
-from memory_hotpath import HotMemory
-from memory.context import format_bullets as _fmt_bullets, build_message as _build_msg, MemoryContextFrame
-from session_tracker import SessionTracker
+from .memory_store import MemoryStore, Paths
+from .memory_hotpath import HotMemory
+from .context import format_bullets as _fmt_bullets, build_message as _build_msg, MemoryContextFrame
+from .session_tracker import SessionTracker
 
 # Ensure we only add a file sink once per process
 _HOTMEM_LOG_SINK_ADDED = False
