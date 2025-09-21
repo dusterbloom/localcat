@@ -1,0 +1,118 @@
+Text-to-Speech
+Piper
+
+Copy page
+
+Text-to-speech service implementation using the Piper TTS server
+
+​
+Overview
+Piper provides high-quality neural text-to-speech synthesis through a self-hosted HTTP server. The service offers complete privacy and control with no external API dependencies, making it ideal for on-premise deployments and applications requiring data sovereignty.
+API Reference
+Complete API documentation and method details
+Piper TTS Docs
+Official Piper TTS documentation and setup
+​
+Installation
+To use Piper services, no additional Pipecat dependencies are required:
+
+Copy
+
+Ask AI
+pip install "pipecat-ai"  # Base installation is sufficient
+You’ll need to set up a running Piper TTS server following the HTTP server documentation.
+Piper runs entirely locally, providing complete privacy and eliminating API key requirements.
+​
+Frames
+​
+Input
+TextFrame - Text content to synthesize into speech
+TTSSpeakFrame - Text that should be spoken immediately
+TTSUpdateSettingsFrame - Runtime configuration updates
+LLMFullResponseStartFrame / LLMFullResponseEndFrame - LLM response boundaries
+​
+Output
+TTSStartedFrame - Signals start of synthesis
+TTSAudioRawFrame - Generated audio data chunks (WAV headers automatically removed)
+TTSStoppedFrame - Signals completion of synthesis
+ErrorFrame - HTTP server or processing errors
+​
+Voice Models
+Piper offers various pre-trained voice models with different qualities and languages:
+​
+English Models
+en_US-lessac-medium - Natural female voice, balanced quality
+en_US-ryan-high - High-quality male voice
+en_US-amy-medium - Clear female voice
+en_GB-alan-medium - British male voice
+​
+Quality Levels
+low - Fastest, smallest file size
+medium - Balanced quality and speed
+high - Best quality, larger models
+Check the Piper voices repository for the complete list of available models and languages.
+​
+Supported Sample Rates
+Piper supports multiple sample rates depending on the model quality:
+Low quality: 16kHz
+Medium quality: 22.05kHz
+High quality: 24kHz
+​
+Usage Example
+​
+Basic Configuration
+Initialize the Piper TTS service and use it in a pipeline:
+
+Copy
+
+Ask AI
+import aiohttp
+from pipecat.services.piper.tts import PiperTTSService
+
+# Create aiohttp session (reuse across requests)
+session = aiohttp.ClientSession()
+
+# Configure service
+tts = PiperTTSService(
+    base_url="http://localhost:5000/api/tts",
+    aiohttp_session=session,
+    sample_rate=22050  # Match your Piper model's sample rate
+)
+
+# Use in pipeline
+pipeline = Pipeline([
+    transport.input(),
+    stt,
+    context_aggregator.user(),
+    llm,
+    tts,
+    transport.output(),
+    context_aggregator.assistant()
+])
+​
+Dynamic Voice Switching
+You can dynamically switch voices by updating the voice_id parameter:
+
+Copy
+
+Ask AI
+from pipecat.frames.frames import TTSUpdateSettingsFrame
+
+await task.queue_frame(
+    TTSUpdateSettingsFrame(settings={"voice": "your-new-voice-id"})
+)
+​
+Metrics
+The service provides comprehensive metrics:
+Time to First Byte (TTFB) - Latency from text input to first audio
+Processing Duration - Total synthesis time
+Character Usage - Text processed for monitoring
+Learn how to enable Metrics in your Pipeline.
+​
+Additional Notes
+Self-Hosted: Complete control over TTS infrastructure and data privacy
+No API Keys: No external service dependencies or API costs
+Language Support: Multiple languages available through different voice models
+OpenAI
+
+

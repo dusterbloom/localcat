@@ -10,8 +10,12 @@ import asyncio
 from loguru import logger
 from dotenv import load_dotenv
 
-# Add server directory to path for local modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+# Add server directory plus vendored pipecat to path for local modules
+_BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
+sys.path.insert(0, _BASE_DIR)
+_PIPECAT_SRC = os.path.join(_BASE_DIR, "pipecat", "src")
+if _PIPECAT_SRC not in sys.path:
+    sys.path.insert(0, _PIPECAT_SRC)
 
 # Load environment
 load_dotenv(override=True)
@@ -39,9 +43,13 @@ def test_imports():
         from pipecat.services.whisper.stt import WhisperSTTServiceMLX
         logger.success("✓ Batch STT fallback imported")
 
-        # TTS imports
-        from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
-        logger.success("✓ TTS service imported")
+        # TTS imports - try Piper first, fall back to Kokoro
+        try:
+            from tts_piper_streaming import PiperStreamingTTS
+            logger.success("✓ Piper TTS service imported")
+        except ImportError:
+            from tts_mlx_kokoro import MLXKokoroTTSService
+            logger.success("✓ Kokoro TTS service imported")
 
         # Memory imports
         from hotpath_processor import HotPathMemoryProcessor
@@ -98,15 +106,22 @@ async def test_service_initialization():
         )
         logger.success("✓ Streaming STT initialized")
 
-        # Initialize TTS
-        from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
-
-        tts = TTSMLXUltraLowLatency(
-            model="mlx-community/Kokoro-82M-bf16",
-            voice="af_heart",
-            sample_rate=24000
-        )
-        logger.success("✓ TTS service initialized")
+        # Initialize TTS - try Piper first, fall back to Kokoro
+        try:
+            from tts_piper_streaming import PiperStreamingTTS
+            tts = PiperStreamingTTS(
+                voice="en_US-lessac-medium",
+                sample_rate=22050
+            )
+            logger.success("✓ Piper TTS service initialized")
+        except ImportError:
+            from tts_mlx_kokoro import MLXKokoroTTSService
+            tts = MLXKokoroTTSService(
+                voice="af_heart",
+                speed=1.0,
+                sample_rate=24000
+            )
+            logger.success("✓ Kokoro TTS service initialized")
 
         # Initialize HotMem
         from hotpath_processor import HotPathMemoryProcessor

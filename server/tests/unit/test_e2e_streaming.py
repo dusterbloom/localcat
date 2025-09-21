@@ -150,7 +150,13 @@ class StreamingIntegrationTester:
             # Import all components
             from kyutai_streaming_stt import KyutaiStreamingSTT
             from pipecat.services.openai.llm import OpenAILLMService
-            from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
+            # TTS - try Piper first, fall back to Kokoro
+            try:
+                from tts_piper_streaming import PiperStreamingTTS
+                USE_PIPER = True
+            except ImportError:
+                from tts_mlx_kokoro import MLXKokoroTTSService
+                USE_PIPER = False
             from hotpath_processor import HotPathMemoryProcessor
 
             # Create mock components
@@ -168,11 +174,17 @@ class StreamingIntegrationTester:
                 stream=True
             )
 
-            tts = TTSMLXUltraLowLatency(
-                model="mlx-community/Kokoro-82M-bf16",
-                voice="af_heart",
-                sample_rate=24000
-            )
+            if USE_PIPER:
+                tts = PiperStreamingTTS(
+                    voice="en_US-lessac-medium",
+                    sample_rate=22050
+                )
+            else:
+                tts = MLXKokoroTTSService(
+                    voice="af_heart",
+                    speed=1.0,
+                    sample_rate=24000
+                )
 
             memory = HotPathMemoryProcessor(
                 sqlite_path=":memory:",

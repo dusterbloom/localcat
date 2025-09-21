@@ -1,9 +1,12 @@
 import argparse
 import asyncio
 import os
+import re
 import sys
+import time
+import threading
 from contextlib import asynccontextmanager
-from typing import Dict
+from typing import Dict, Optional
 
 
 # Add local pipecat to Python path
@@ -35,10 +38,11 @@ from pipecat.frames.frames import LLMRunFrame
 # Import HotMem processor
 from hotpath_processor import HotPathMemoryProcessor
 from session_tracker import SessionTracker
+from config import VoiceAgentConfig
 
 # Import streaming STT service
 try:
-    from kyutai_streaming_stt import KyutaiStreamingSTT
+    from core.stt.kyutai_streaming import KyutaiStreamingSTT
     from mic_probe import MicProbe
     KYUTAI_AVAILABLE = True
 except ImportError as e:
@@ -47,15 +51,145 @@ except ImportError as e:
 
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
+# Simple text aggregator for faster TTS response
+from pipecat.frames.frames import (
+    BotInterruptionFrame,
+    CancelFrame,
+    EndFrame,
+    Frame,
+    InterimTranscriptionFrame,
+    InterruptionFrame,
+    TextFrame
+)
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+
+
+class FastTextAggregator(FrameProcessor):
+    """Simple text aggregator that releases text quickly for faster TTS response.
+
+    Releases text based on time (0.2s) or character count (60 chars), whichever comes first.
+    Much faster than SentenceAggregator which waits for full sentences.
+    """
+
+    def __init__(self, max_time: float = 0.2, min_chars: int = 60):
+        super().__init__()
+        self._max_time = max_time
+        self._min_chars = min_chars
+        self._aggregation = ""
+        self._timer = None
+        self._last_release_time = asyncio.get_event_loop().time()
+    async def _release_text(self):
+        """Release accumulated text to TTS."""
+        if self._aggregation.strip():
+            # Clean and format text for better TTS
+            clean_text = self._clean_text_for_tts(self._aggregation)
+            if clean_text:
+                await self.push_frame(TextFrame(clean_text))
+
+        self._aggregation = ""
+        self._last_release_time = asyncio.get_event_loop().time()
+
+        if self._timer and not self._timer.done():
+            self._timer.cancel()
+        self._timer = None
+
+    def _clean_text_for_tts(self, text: str) -> str:
+        """Clean and format text for better TTS output."""
+        import re
+        from tools.text_formatter import sanitize_for_voice
+
+        # Remove markdown formatting but preserve spacing
+        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # Remove **bold** but keep text
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)      # Remove *italic* but keep text
+        text = re.sub(r'`([^`]+)`', r'\1', text)        # Remove `code` but keep text
+
+        # Remove emojis and problematic characters for TTS
+        text = sanitize_for_voice(text)
+
+        # Clean up extra whitespace but preserve sentence structure
+        text = re.sub(r'\s+', ' ', text)  # Multiple spaces to single
+        text = text.strip()
+
+        # Ensure proper spacing around punctuation for natural speech
+        # Add space after colon if followed by word (but not if it's a time like "1:30")
+        text = re.sub(r':(?=\w)', ': ', text)
+
+        # Add space after semicolon if followed by word
+        text = re.sub(r';(?=\w)', '; ', text)
+
+        # Clean up any double spaces that might have been created
+        text = re.sub(r'\s+', ' ', text)
+
+        return text
+
+    async def _delayed_release(self):
+        """Release text after timeout."""
+        try:
+            await asyncio.sleep(self._max_time)
+            if self._aggregation.strip():
+                await self._release_text()
+        except asyncio.CancelledError:
+            pass
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+
+        if isinstance(frame, InterimTranscriptionFrame):
+            return
+
+        # Handle interruptions
+        if isinstance(frame, (CancelFrame, InterruptionFrame, BotInterruptionFrame)):
+            self._aggregation = ""
+            if self._timer and not self._timer.done():
+                self._timer.cancel()
+                self._timer = None
+            await self.push_frame(frame, direction)
+            return
+
+        if isinstance(frame, TextFrame):
+            # Clean asterisks from incoming text
+            clean_text = frame.text.replace('*', '')
+            self._aggregation += clean_text
+
+            # Release if we have enough characters
+            if len(self._aggregation) >= self._min_chars:
+                await self._release_text()
+            else:
+                # Schedule release after timeout
+                if self._timer and not self._timer.done():
+                    self._timer.cancel()
+                self._timer = asyncio.create_task(self._delayed_release())
+
+        elif isinstance(frame, EndFrame):
+            if self._aggregation.strip():
+                await self._release_text()
+            await self.push_frame(frame)
+        else:
+            await self.push_frame(frame, direction)
+
+    async def cleanup(self):
+        if self._timer and not self._timer.done():
+            self._timer.cancel()
+        await super().cleanup()
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, IceServer
 
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 
-from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
+# TTS services imported from core directory
+from core.tts.kokoro_professional import ProfessionalKokoroTTSService
+from core.tts.kokoro_mlx import MLXKokoroTTSService
+
+# Import legacy TTS services for backward compatibility
+try:
+    from fastapi_streaming_tts import FastAPIStreamingTTS
+    FASTAPI_TTS_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"FastAPI TTS not available: {e}")
+    FASTAPI_TTS_AVAILABLE = False
 
 
-load_dotenv(override=True)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'), override=True)
 
 
 
@@ -66,6 +200,48 @@ async def get_initial_greeting() -> str:
 app = FastAPI()
 
 pcs_map: Dict[str, SmallWebRTCConnection] = {}
+
+# Connection monitoring
+CONNECTION_TIMEOUT = 30  # seconds
+connection_monitor_task = None
+
+async def monitor_connections():
+    """Monitor active connections and clean up stuck ones."""
+    while True:
+        try:
+            await asyncio.sleep(5)  # Check every 5 seconds
+            current_time = time.time()
+
+            for pc_id, connection in list(pcs_map.items()):
+                try:
+                    # Check if connection is stuck in connecting state
+                    if hasattr(connection, 'connection_state') and connection.connection_state == "connecting":
+                        if hasattr(connection, '_connection_start_time'):
+                            if current_time - connection._connection_start_time > CONNECTION_TIMEOUT:
+                                logger.warning(f"Connection {pc_id} stuck in connecting state for {CONNECTION_TIMEOUT}s, cleaning up")
+                                try:
+                                    await connection.close()
+                                except:
+                                    pass
+                                pcs_map.pop(pc_id, None)
+
+                    # Check if connection appears dead (no recent activity)
+                    if hasattr(connection, '_last_activity'):
+                        if current_time - connection._last_activity > CONNECTION_TIMEOUT * 2:
+                            logger.warning(f"Connection {pc_id} appears inactive, cleaning up")
+                            try:
+                                await connection.close()
+                            except:
+                                pass
+                            pcs_map.pop(pc_id, None)
+
+                except Exception as e:
+                    logger.error(f"Error monitoring connection {pc_id}: {e}")
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Error in connection monitor: {e}")
 
 ice_servers = [
     IceServer(
@@ -86,6 +262,11 @@ SYSTEM_INSTRUCTION =  """You are Locat, a personal assistant. You can remember t
 
 
 async def run_bot(webrtc_connection):
+    # Load centralized configuration
+    config = VoiceAgentConfig.from_env()
+    logger.info(f"Configuration loaded:\n{config.summary()}")
+
+    # VAD configuration with backward compatibility
     vad_confidence = float(os.getenv("VAD_CONFIDENCE", "0.7"))
     vad_start_secs = float(os.getenv("VAD_START_SECS", "0.2"))
     # Use a more forgiving default stop window so brief pauses do not end the turn
@@ -115,88 +296,111 @@ async def run_bot(webrtc_connection):
         ),
     )
 
-    # STT: Kyutai streaming by default, Whisper MLX as fallback
-    use_streaming_stt = os.getenv("USE_STREAMING_STT", "true").lower() == "true"
+    # STT: Use centralized configuration with Kyutai streaming as default
+    stt_config = config.get_component_config("stt")
 
-    if use_streaming_stt and KYUTAI_AVAILABLE:
+    if config.stt_engine == "kyutai" and KYUTAI_AVAILABLE:
         try:
-            hf_repo = os.getenv("KYUTAI_STT_REPO", "kyutai/stt-1b-en_fr-mlx")
+            # Use legacy env vars for Kyutai-specific settings with config defaults
+            hf_repo = os.getenv("KYUTAI_STT_REPO", stt_config.get("model", "kyutai/moshi-mlx"))
             enable_vad = os.getenv("KYUTAI_ENABLE_VAD", "false").lower() in ("1", "true", "yes")
-            max_steps = int(os.getenv("KYUTAI_MAX_STEPS", "4096"))
+            max_steps = int(os.getenv("KYUTAI_MAX_STEPS", "16384"))
 
-            logger.info(f"Initializing Kyutai streaming STT with repo: {hf_repo}")
+            logger.debug(f"Initializing Kyutai streaming STT with repo: {hf_repo}")
             stt = KyutaiStreamingSTT(
                 hf_repo=hf_repo,
                 enable_vad=enable_vad,
                 max_steps=max_steps
             )
-            logger.info(f"✅ Kyutai streaming STT initialized ({'MLX' if hf_repo.endswith('-mlx') else 'Candle'})")
+            logger.info(f"✅ Kyutai streaming STT ready ({'MLX' if hf_repo.endswith('-mlx') else 'Candle'})")
         except Exception as e:
             logger.error(f"❌ Kyutai STT failed: {e}", exc_info=True)
             logger.warning("Falling back to Whisper MLX batch mode")
             stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
+    elif config.stt_engine == "whisper_mlx":
+        logger.debug("Using Whisper MLX batch mode (backup)")
+        stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
     else:
         if not KYUTAI_AVAILABLE:
-            logger.warning("Kyutai STT not available")
+            logger.error("Kyutai STT not available, using Whisper MLX fallback")
         else:
-            logger.info("Streaming STT disabled via USE_STREAMING_STT=false")
-        logger.info("Using Whisper MLX batch mode (multilingual support)")
+            logger.warning(f"Unknown STT engine: {config.stt_engine}, using Whisper MLX fallback")
         stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
 
-    # Ultra-low latency TTS with optimized streaming
-    logger.info("Using ultra-low latency TTS mode (40-80ms TTFB)")
+    # TTS: Use centralized configuration with professional Kokoro as default
+    tts_config = config.get_component_config("tts")
 
-    # Get buffer size from environment (default 80ms for stability)
-    buffer_ms = int(os.getenv("KOKORO_BUFFER_MS", "80"))
+    if config.tts_engine == "kokoro_professional":
+        logger.debug("Using Professional Kokoro TTS (default optimized)")
+        tts = ProfessionalKokoroTTSService(
+            voice=tts_config["voice"],
+            speed=tts_config["speed"],
+            sample_rate=tts_config["sample_rate"],
+            fade_duration_ms=tts_config["fade_duration_ms"],
+            target_peak_db=tts_config["target_peak_db"],
+            enable_quality_logging=tts_config["enable_quality_logging"]
+        )
+        logger.info("✅ Professional Kokoro TTS ready")
+    elif config.tts_engine == "kokoro_mlx":
+        logger.debug("Using MLX Kokoro TTS (backup)")
+        tts = MLXKokoroTTSService(
+            voice=tts_config["voice"],
+            speed=tts_config["speed"],
+            sample_rate=tts_config["sample_rate"]
+        )
+        logger.info("✅ MLX Kokoro TTS ready")
+    elif config.tts_engine == "fastapi_streaming" and FASTAPI_TTS_AVAILABLE:
+        logger.debug("Using FastAPI Streaming TTS (legacy)")
+        tts = FastAPIStreamingTTS(
+            voice=tts_config["voice"],
+            speed=tts_config["speed"],
+            sample_rate=tts_config["sample_rate"],
+            socket_path="/tmp/fastapi-tts.sock"
+        )
+        logger.info("✅ FastAPI Streaming TTS ready")
+    else:
+        logger.warning(f"Unknown TTS engine: {config.tts_engine}, falling back to MLX Kokoro")
+        tts = MLXKokoroTTSService(
+            voice=tts_config["voice"],
+            speed=tts_config["speed"],
+            sample_rate=tts_config["sample_rate"]
+        )
+        logger.info("✅ MLX Kokoro TTS ready (fallback)")
 
-    tts = TTSMLXUltraLowLatency(
-        model="mlx-community/Kokoro-82M-bf16",
-        voice="af_heart",
-        sample_rate=24000,
-        speed=1.0,
-        buffer_ms=buffer_ms,
-        use_boundaries=True
-    )
-
-    try:
-        await tts._initialize_if_needed()
-    except Exception as e:
-        logger.warning(f"TTS prewarm failed: {e}")
 
 
-
-    # Enable LLM streaming for lower perceived latency
+    # LLM: Use centralized configuration
+    llm_config = config.get_component_config("llm")
     use_llm_streaming = os.getenv("USE_LLM_STREAMING", "true").lower() == "true"
 
     llm = OpenAILLMService(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        model=os.getenv("OPENAI_MODEL"),  # Small model. Uses ~4GB of RAM.
-        # model="google/gemma-3-12b",  # Medium-sized model. Uses ~8.5GB of RAM.
-        # model="mlx-community/Qwen3-235B-A22B-Instruct-2507-3bit-DWQ", # Large model. Uses ~110GB of RAM!
-        base_url=os.getenv("OPENAI_BASE_URL"),
-        max_tokens=4096,
+        api_key=llm_config["api_key"],
+        model=llm_config["model"],
+        base_url=llm_config["base_url"],
+        max_tokens=llm_config["max_tokens"],
         stream=use_llm_streaming,  # Enable streaming for faster response
         extra_body={
             "think": False,  # Disable thinking for main conversation model
             "stream": use_llm_streaming,  # Ensure streaming at API level
-            "options": {  # Ollama-specific optimizations
-                "num_predict": 4096,
-                "temperature": 0.7,
+            "options": {  # Ollama-specific optimizations tuned for latency
+                "num_predict": 768,
+                "temperature": llm_config["temperature"],
                 "top_k": 40,
                 "top_p": 0.9,
                 "repeat_penalty": 1.1,
                 "num_ctx": 4096,
-                "num_batch": 512,
+                "num_batch": 64,
                 "use_mlock": True,
-                "f16_kv": True
+                "f16_kv": True,
+                "keep_alive": "15m"
             }
         },
     )
 
     if use_llm_streaming:
-        logger.info("LLM streaming enabled for lower latency")
+        logger.debug("LLM streaming enabled for lower latency")
     else:
-        logger.info("LLM streaming disabled, using batch mode")
+        logger.debug("LLM streaming disabled, using batch mode")
 
     context = OpenAILLMContext(
         [
@@ -207,9 +411,9 @@ async def run_bot(webrtc_connection):
         ]
 
     )
-    default_timeout = "0.3" if use_streaming_stt else "0.25"
+    default_timeout = "0.12" if use_streaming_stt else "0.2"
     agg_timeout = float(os.getenv("LLM_AGGREGATION_TIMEOUT", default_timeout))
-    turn_timeout = float(os.getenv("LLM_TURN_EMULATED_VAD_TIMEOUT", "0.7"))
+    turn_timeout = float(os.getenv("LLM_TURN_EMULATED_VAD_TIMEOUT", "0.4"))
     agg_interruptions = os.getenv("LLM_ENABLE_EMULATED_VAD_INTERRUPTION", "true").lower() in ("1", "true", "yes")
 
     context_aggregator = llm.create_context_aggregator(
@@ -243,8 +447,11 @@ async def run_bot(webrtc_connection):
 
     # Optional mic probe
     if os.getenv("ENABLE_MIC_PROBE", "false").lower() in ("1", "true", "yes"):
-        logger.info("MicProbe enabled: logging mic input levels")
+        logger.debug("MicProbe enabled: logging mic input levels")
         stages.append(MicProbe())
+
+    # Use fast text aggregator for quicker TTS response (0.3s or 100 chars)
+    text_aggregator = FastTextAggregator(max_time=0.3, min_chars=100)
 
     stages += [
         stt,
@@ -252,6 +459,7 @@ async def run_bot(webrtc_connection):
         memory,  # Move HotMem BEFORE context_aggregator so it sees TranscriptionFrames
         context_aggregator.user(),
         llm,
+        text_aggregator,  # Fast text aggregation: 0.2s timeout or 60 chars for quick TTS response
         tts,
         transport.output(),
         context_aggregator.assistant(),
@@ -308,19 +516,54 @@ async def offer(request: dict, background_tasks: BackgroundTasks):
 
     if pc_id and pc_id in pcs_map:
         pipecat_connection = pcs_map[pc_id]
-        logger.info(f"Reusing existing connection for pc_id: {pc_id}")
-        await pipecat_connection.renegotiate(
-            sdp=request["sdp"],
-            type=request["type"],
-            restart_pc=request.get("restart_pc", False),
+        logger.debug(f"Reusing existing connection for pc_id: {pc_id}")
+
+        # Only renegotiate if explicitly requested AND connection is actually broken
+        # The voice-ui-kit sends restart_pc=true by default, so we ignore it for healthy connections
+        restart_requested = request.get("restart_pc", False)
+
+        # Check if connection appears healthy before deciding to renegotiate
+        connection_healthy = (
+            hasattr(pipecat_connection, 'connection_state') and
+            pipecat_connection.connection_state == "connected" and
+            hasattr(pipecat_connection, '_last_activity') and
+            time.time() - pipecat_connection._last_activity < 60  # Active in last minute
         )
+
+        if restart_requested and not connection_healthy:
+            logger.debug(f"Connection appears broken, renegotiating pc_id: {pc_id}")
+            await pipecat_connection.renegotiate(
+                sdp=request["sdp"],
+                type=request["type"],
+                restart_pc=True,
+            )
+        else:
+            # For normal conversation flow, just update the connection without renegotiation
+            logger.debug(f"Updating SDP for existing connection pc_id: {pc_id} (restart_pc={restart_requested}, healthy={connection_healthy})")
+            try:
+                # Try to update the connection without full renegotiation
+                await pipecat_connection.set_remote_description(request["sdp"], request["type"])
+                # Update activity timestamp
+                pipecat_connection._last_activity = time.time()
+                logger.debug(f"SDP updated successfully for pc_id: {pc_id}")
+            except Exception as e:
+                logger.warning(f"SDP update failed, falling back to renegotiation: {e}")
+                await pipecat_connection.renegotiate(
+                    sdp=request["sdp"],
+                    type=request["type"],
+                    restart_pc=False,
+                )
     else:
         pipecat_connection = SmallWebRTCConnection(ice_servers)
         await pipecat_connection.initialize(sdp=request["sdp"], type=request["type"])
 
+        # Track connection start time for monitoring
+        pipecat_connection._connection_start_time = time.time()
+        pipecat_connection._last_activity = time.time()
+
         @pipecat_connection.event_handler("closed")
         async def handle_disconnected(webrtc_connection: SmallWebRTCConnection):
-            logger.info(f"Discarding peer connection for pc_id: {webrtc_connection.pc_id}")
+            logger.debug(f"Discarding peer connection for pc_id: {webrtc_connection.pc_id}")
             pcs_map.pop(webrtc_connection.pc_id, None)
 
         # Run example function with SmallWebRTC transport arguments.
@@ -335,16 +578,31 @@ async def offer(request: dict, background_tasks: BackgroundTasks):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global connection_monitor_task
+
+    # Start connection monitoring
+    logger.debug("Starting connection monitor...")
+    connection_monitor_task = asyncio.create_task(monitor_connections())
+
     # Pre-warm models on startup
     try:
         from model_manager import initialize_models
-        logger.info("Pre-warming ML models for ultra-low latency...")
+        logger.debug("Pre-warming ML models for ultra-low latency...")
         await initialize_models()
-        logger.info("Model pre-warming complete")
+        logger.debug("Model pre-warming complete")
     except Exception as e:
         logger.warning(f"Model pre-warming failed: {e}")
 
     yield  # Run app
+
+    # Cleanup
+    logger.debug("Shutting down connection monitor...")
+    if connection_monitor_task:
+        connection_monitor_task.cancel()
+        try:
+            await connection_monitor_task
+        except asyncio.CancelledError:
+            pass
 
     # Cleanup on shutdown
     coros = [pc.disconnect() for pc in pcs_map.values()]

@@ -12,7 +12,7 @@ dependencies = [
     "opencv-python",
     "mlx-lm",
     "mlx-audio",
-    "pipecat-ai[openai,deepgram,rime,silero,mlx-whisper]>=0.0.81",
+    "pipecat-ai[deepgram,mlx-whisper,openai,rime,silero]==0.0.85",
     "pipecat-ai-small-webrtc-prebuilt",
     "aiortc",
     "nltk",
@@ -20,4 +20,8 @@ dependencies = [
     "pyobjc-framework-Quartz",
     "pyobjc-framework-Cocoa",
     "pyobjc-framework-ApplicationServices",
+    "kokoro-onnx>=0.4.9",
+    "kokoro>=0.9.4",
+    "soundfile>=0.13.1",
+    "httpx==0.28.1",
 ]

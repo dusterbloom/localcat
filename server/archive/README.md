@@ -1,45 +1,32 @@
-# Archive Directory
+# Archived TTS Implementation Files
 
-This directory contains archived experimental code, tests, and failed attempts from the HotMem development process.
+This directory contains TTS implementations and test files that were archived during the ultra-low latency TTS optimization project.
 
-## Structure
+## Archive Date
+September 20, 2025
 
-- **experimental/**: Experimental implementations, debug scripts, and comparative tests
-  - `debug_*.py`: Debug and development scripts
-  - `test_*.py`: Test files for different approaches and patterns
-  - `memory_extraction_*.py`: Different extraction approach attempts (USGS, v2, final)
-  - `memory_hotpath_*.py`: Backup versions of the hotpath implementation
-  - `test_ud_vs_mrebel.py`: Comparison testing between UD and mREBEL approaches
+## Context
+After extensive testing and optimization, we consolidated multiple TTS approaches into a single, optimal implementation using native Kokoro ONNX.
 
-## Development History
+## Archived Implementations
 
-### HotMem Implementation Journey (2025-09-05)
+### `tts_implementations/`
+- **Result**: 375ms TTFB achieved with native ONNX approach
+- **Decision**: Keep `tts_native_kokoro.py` as primary implementation
+- **Archived approaches**: MLX-based implementations (500-1500ms TTFB), worker processes, token chunking
 
-**Successful Implementation:**
-- `memory_hotpath.py`: Final working Universal Dependencies extraction engine
-- `memory_store.py`: Dual storage architecture (SQLite + LMDB)  
-- `hotpath_processor.py`: Pipecat-integrated processor with context injection
-- `ud_utils.py`: UD parsing utilities and pattern handlers
+### `development_tests/`
+- **Result**: Comprehensive testing revealed Kokoro's fundamental limitations
+- **Decision**: Keep `test_integration.py` and `test_native_kokoro.py`
+- **Archived tests**: Development/investigation scripts, performance tests, obsolete approaches
 
-**Key Learnings:**
-1. **UD vs mREBEL**: UD extraction (48ms, 100% patterns) vs mREBEL (17s, 0% success)
-2. **Pipecat Integration**: Direct context injection via `context.add_message()` 
-3. **Performance**: Achieved 3.8ms average processing time (<200ms p95 target)
-4. **Frame Processing**: Pipeline order critical - memory before context aggregator
+## Performance Summary
+- **Target**: 40-80ms TTFB (Kokoro FastAPI best practices)
+- **Achieved**: 375ms TTFB (5-10x improvement from original 2.8s)
+- **Conclusion**: Best possible with Kokoro ONNX on Apple Silicon
 
-**Archived Experiments:**
-- Multiple extraction approaches tested and evaluated
-- Various memory storage strategies explored  
-- Extensive testing against 27 USGS Grammar-to-Graph patterns
-- Comparison testing with transformer-based approaches
-- Frame processing integration attempts and fixes
-
-## Purpose
-
-These files are preserved for:
-- Understanding the development process and decision rationale
-- Reference for future improvements or alternative approaches
-- Documentation of what didn't work and why
-- Code archaeology for debugging or feature development
-
-Last archived: 2025-09-05
+## Key Findings
+1. MLX Kokoro generates complete audio (no true streaming)
+2. ONNX Kokoro is faster than MLX but still single-chunk
+3. 40-80ms TTFB requires different TTS model or server-side optimizations
+4. Phrase-level streaming provides best user experience within Kokoro limitations

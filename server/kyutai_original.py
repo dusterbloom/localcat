@@ -24,7 +24,7 @@ from moshi_mlx import models, utils
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--max-steps", type=int, default=4096)
+    parser.add_argument("--max-steps", type=int, default=40960)
     parser.add_argument("--hf-repo")
     parser.add_argument(
         "--vad", action="store_true", help="Enable VAD (Voice Activity Detection)."

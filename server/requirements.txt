@@ -2,6 +2,7 @@
 python-dotenv==1.0.1
 fastapi[all]==0.115.7
 uvicorn==0.35.0  # websockets warning is from uvicorn internals, not fixable
+httpx==0.28.1  # HTTP client for FastAPI streaming TTS
 openai>=1.74.0,<=1.99.1  # Compatible with pipecat-ai requirements
 
 # Computer vision and ML

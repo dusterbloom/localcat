@@ -7,6 +7,7 @@ import asyncio
 import numpy as np
 import sys
 import os
+import pytest
 from loguru import logger
 from dotenv import load_dotenv
 
@@ -22,7 +23,7 @@ for p in (_SERVER_ROOT, _PIPECAT_SRC):
 load_dotenv(override=True)
 
 
-async def test_streaming_stt():
+async def _test_streaming_stt():
     """Test the Kyutai streaming STT service."""
     logger.info("Testing Kyutai Streaming STT...")
 
@@ -56,7 +57,7 @@ async def test_streaming_stt():
         return False
 
 
-async def test_llm_streaming():
+async def _test_llm_streaming():
     """Test LLM streaming configuration."""
     logger.info("Testing LLM Streaming...")
 
@@ -99,7 +100,7 @@ async def test_llm_streaming():
         return False
 
 
-async def test_full_pipeline():
+async def _test_full_pipeline():
     """Test the full streaming pipeline integration."""
     logger.info("Testing Full Pipeline Integration...")
 
@@ -116,15 +117,36 @@ async def test_full_pipeline():
         from pipecat.frames.frames import AudioRawFrame, TranscriptionFrame
         logger.success("✓ Pipecat imports successful")
 
-        # Test TTS service
-        from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
-        logger.success("✓ TTS service import successful")
+        # Test TTS service - try Piper first, fall back to Kokoro
+        try:
+            from tts_piper_streaming import PiperStreamingTTS
+            logger.success("✓ Piper TTS service import successful")
+        except ImportError:
+            from tts_mlx_kokoro import MLXKokoroTTSService
+            logger.success("✓ Kokoro TTS service import successful")
 
         return True
 
     except Exception as e:
         logger.error(f"✗ Pipeline integration test failed: {e}")
         return False
+
+
+async def test_streaming_stt():
+    result = await _test_streaming_stt()
+    assert result is True
+
+
+async def test_llm_streaming():
+    result = await _test_llm_streaming()
+    if result is None:
+        pytest.skip("LLM configuration incomplete")
+    assert result is True
+
+
+async def test_full_pipeline():
+    result = await _test_full_pipeline()
+    assert result is True
 
 
 async def main():
@@ -134,9 +156,9 @@ async def main():
     logger.info("=" * 60)
 
     results = {
-        "STT Streaming": await test_streaming_stt(),
-        "LLM Streaming": await test_llm_streaming(),
-        "Pipeline Integration": await test_full_pipeline(),
+        "STT Streaming": await _test_streaming_stt(),
+        "LLM Streaming": await _test_llm_streaming(),
+        "Pipeline Integration": await _test_full_pipeline(),
     }
 
     logger.info("=" * 60)
