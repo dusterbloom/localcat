@@ -42,12 +42,12 @@ from config import VoiceAgentConfig
 
 # Import streaming STT service
 try:
-    from core.stt.kyutai_streaming import KyutaiStreamingSTT
+    from core.stt.parakeet_streaming import ParakeetStreamingSTT
     from mic_probe import MicProbe
-    KYUTAI_AVAILABLE = True
+    PARAKEET_AVAILABLE = True
 except ImportError as e:
-    logger.error(f"Failed to import KyutaiStreamingSTT: {e}")
-    KYUTAI_AVAILABLE = False
+    logger.error(f"Failed to import ParakeetStreamingSTT: {e}")
+    PARAKEET_AVAILABLE = False
 
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
@@ -65,19 +65,23 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 
 class FastTextAggregator(FrameProcessor):
-    """Simple text aggregator that releases text quickly for faster TTS response.
+    """Token-aware text aggregator optimized for Kokoro TTS.
 
-    Releases text based on time (0.2s) or character count (60 chars), whichever comes first.
-    Much faster than SentenceAggregator which waits for full sentences.
+    Releases text at natural phoneme boundaries for fluent speech,
+    similar to LiveKit's Kokoro implementation.
     """
 
-    def __init__(self, max_time: float = 0.2, min_chars: int = 60):
+    def __init__(self, min_tokens: int = 175, max_tokens: int = 250, max_time: float = 0.5):
         super().__init__()
-        self._max_time = max_time
-        self._min_chars = min_chars
+        self._min_tokens = min_tokens  # TARGET_MIN_TOKENS equivalent
+        self._max_tokens = max_tokens  # TARGET_MAX_TOKENS equivalent
+        self._max_time = max_time  # Fallback timeout
         self._aggregation = ""
         self._timer = None
         self._last_release_time = asyncio.get_event_loop().time()
+        # Sentence ending patterns
+        self._sentence_endings = {'.', '!', '?', '。', '！', '？'}
+        self._clause_endings = {',', ';', ':', '，', '；', '：'}
     async def _release_text(self):
         """Release accumulated text to TTS."""
         if self._aggregation.strip():
@@ -151,11 +155,55 @@ class FastTextAggregator(FrameProcessor):
             clean_text = frame.text.replace('*', '')
             self._aggregation += clean_text
 
-            # Release if we have enough characters
-            if len(self._aggregation) >= self._min_chars:
+            # Estimate token count (rough approximation: 1 token ≈ 4 chars for English)
+            estimated_tokens = len(self._aggregation) // 4
+
+            # Check for natural boundaries
+            should_release = False
+
+            # Check if we hit a sentence ending
+            if self._aggregation.rstrip() and self._aggregation.rstrip()[-1] in self._sentence_endings:
+                # Always release at sentence boundaries if we have minimum content
+                if estimated_tokens >= self._min_tokens // 2:  # Half minimum for sentence ends
+                    should_release = True
+            # Check if we hit max token limit - but try to find a good break point
+            elif estimated_tokens >= self._max_tokens:
+                # Look for the last good break point (sentence or clause ending)
+                text = self._aggregation.rstrip()
+                last_sentence_idx = -1
+                last_clause_idx = -1
+
+                # Find last sentence boundary
+                for i in range(len(text) - 1, -1, -1):
+                    if text[i] in self._sentence_endings:
+                        last_sentence_idx = i
+                        break
+                    elif text[i] in self._clause_endings:
+                        if last_clause_idx == -1:
+                            last_clause_idx = i
+
+                # Prefer sentence boundary, then clause, then word boundary
+                if last_sentence_idx > len(text) // 2:  # Found sentence boundary in second half
+                    self._aggregation = text[:last_sentence_idx + 1]
+                    should_release = True
+                elif last_clause_idx > len(text) // 2:  # Found clause boundary in second half
+                    self._aggregation = text[:last_clause_idx + 1]
+                    should_release = True
+                else:
+                    # Force release at word boundary to avoid cutting mid-word
+                    last_space = text.rfind(' ')
+                    if last_space > len(text) // 2:
+                        self._aggregation = text[:last_space]
+                    should_release = True
+            # Check if we have enough tokens and hit a clause boundary
+            elif estimated_tokens >= self._min_tokens:
+                if self._aggregation.rstrip() and self._aggregation.rstrip()[-1] in self._clause_endings:
+                    should_release = True
+
+            if should_release:
                 await self._release_text()
             else:
-                # Schedule release after timeout
+                # Schedule release after timeout as fallback
                 if self._timer and not self._timer.done():
                     self._timer.cancel()
                 self._timer = asyncio.create_task(self._delayed_release())
@@ -267,11 +315,11 @@ async def run_bot(webrtc_connection):
     logger.info(f"Configuration loaded:\n{config.summary()}")
 
     # VAD configuration with backward compatibility
-    vad_confidence = float(os.getenv("VAD_CONFIDENCE", "0.7"))
-    vad_start_secs = float(os.getenv("VAD_START_SECS", "0.2"))
+    vad_confidence = float(os.getenv("VAD_CONFIDENCE", "0.5"))
+    vad_start_secs = float(os.getenv("VAD_START_SECS", "0.1"))
     # Use a more forgiving default stop window so brief pauses do not end the turn
-    vad_stop_secs = float(os.getenv("VAD_STOP_SECS", "1.6"))
-    vad_min_volume = float(os.getenv("VAD_MIN_VOLUME", "0.6"))
+    vad_stop_secs = float(os.getenv("VAD_STOP_SECS", "4.0"))
+    vad_min_volume = float(os.getenv("VAD_MIN_VOLUME", "0.4"))
 
     vad_params = VADParams(
         confidence=vad_confidence,
@@ -296,33 +344,37 @@ async def run_bot(webrtc_connection):
         ),
     )
 
-    # STT: Use centralized configuration with Kyutai streaming as default
+    # STT: Use centralized configuration with Parakeet streaming as default
     stt_config = config.get_component_config("stt")
 
-    if config.stt_engine == "kyutai" and KYUTAI_AVAILABLE:
-        try:
-            # Use legacy env vars for Kyutai-specific settings with config defaults
-            hf_repo = os.getenv("KYUTAI_STT_REPO", stt_config.get("model", "kyutai/moshi-mlx"))
-            enable_vad = os.getenv("KYUTAI_ENABLE_VAD", "false").lower() in ("1", "true", "yes")
-            max_steps = int(os.getenv("KYUTAI_MAX_STEPS", "16384"))
+    logger.debug(f"STT Engine: {config.stt_engine}, PARAKEET_AVAILABLE: {PARAKEET_AVAILABLE}")
 
-            logger.debug(f"Initializing Kyutai streaming STT with repo: {hf_repo}")
-            stt = KyutaiStreamingSTT(
-                hf_repo=hf_repo,
-                enable_vad=enable_vad,
-                max_steps=max_steps
+    if config.stt_engine == "parakeet_streaming" and PARAKEET_AVAILABLE:
+        try:
+            # Use config defaults for Parakeet-specific settings
+            model_path = stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
+            language = stt_config.get("language", "en")
+            chunk_duration = float(os.getenv("PARAKEET_CHUNK_DURATION", "1.0"))
+            enable_vad = os.getenv("PARAKEET_ENABLE_VAD", "false").lower() in ("1", "true", "yes")
+
+            logger.debug(f"Initializing Parakeet streaming STT with model: {model_path}")
+            stt = ParakeetStreamingSTT(
+                model_path=model_path,
+                language=language,
+                chunk_duration=chunk_duration,
+                enable_vad=enable_vad
             )
-            logger.info(f"✅ Kyutai streaming STT ready ({'MLX' if hf_repo.endswith('-mlx') else 'Candle'})")
+            logger.info("✅ Parakeet streaming STT ready")
         except Exception as e:
-            logger.error(f"❌ Kyutai STT failed: {e}", exc_info=True)
+            logger.error(f"❌ Parakeet STT failed: {e}", exc_info=True)
             logger.warning("Falling back to Whisper MLX batch mode")
             stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
     elif config.stt_engine == "whisper_mlx":
         logger.debug("Using Whisper MLX batch mode (backup)")
         stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
     else:
-        if not KYUTAI_AVAILABLE:
-            logger.error("Kyutai STT not available, using Whisper MLX fallback")
+        if not PARAKEET_AVAILABLE:
+            logger.error("Parakeet STT not available, using Whisper MLX fallback")
         else:
             logger.warning(f"Unknown STT engine: {config.stt_engine}, using Whisper MLX fallback")
         stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
@@ -342,13 +394,16 @@ async def run_bot(webrtc_connection):
         )
         logger.info("✅ Professional Kokoro TTS ready")
     elif config.tts_engine == "kokoro_mlx":
-        logger.debug("Using MLX Kokoro TTS (backup)")
-        tts = MLXKokoroTTSService(
+        logger.debug("Using Ultra-Low Latency MLX Kokoro TTS")
+        from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
+        tts = TTSMLXUltraLowLatency(
+            model="mlx-community/Kokoro-82M-bf16",
             voice=tts_config["voice"],
             speed=tts_config["speed"],
-            sample_rate=tts_config["sample_rate"]
+            sample_rate=tts_config["sample_rate"],
+            buffer_ms=50  # 50ms buffer for optimal latency
         )
-        logger.info("✅ MLX Kokoro TTS ready")
+        logger.info("✅ Ultra-Low Latency MLX Kokoro TTS ready")
     elif config.tts_engine == "fastapi_streaming" and FASTAPI_TTS_AVAILABLE:
         logger.debug("Using FastAPI Streaming TTS (legacy)")
         tts = FastAPIStreamingTTS(
@@ -408,9 +463,12 @@ async def run_bot(webrtc_connection):
                 "role": "system",
                 "content": SYSTEM_INSTRUCTION,
             }
-        ]
 
+        ]
     )
+
+    # Determine if we're using streaming STT for timeout optimization
+    use_streaming_stt = config.stt_engine in ["parakeet_streaming"]
     default_timeout = "0.12" if use_streaming_stt else "0.2"
     agg_timeout = float(os.getenv("LLM_AGGREGATION_TIMEOUT", default_timeout))
     turn_timeout = float(os.getenv("LLM_TURN_EMULATED_VAD_TIMEOUT", "0.4"))
@@ -450,16 +508,13 @@ async def run_bot(webrtc_connection):
         logger.debug("MicProbe enabled: logging mic input levels")
         stages.append(MicProbe())
 
-    # Use fast text aggregator for quicker TTS response (0.3s or 100 chars)
-    text_aggregator = FastTextAggregator(max_time=0.3, min_chars=100)
-
+ 
     stages += [
         stt,
         rtvi,
         memory,  # Move HotMem BEFORE context_aggregator so it sees TranscriptionFrames
         context_aggregator.user(),
         llm,
-        text_aggregator,  # Fast text aggregation: 0.2s timeout or 60 chars for quick TTS response
         tts,
         transport.output(),
         context_aggregator.assistant(),

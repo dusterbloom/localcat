@@ -22,15 +22,15 @@ class VoiceAgentConfig:
     # ============================================================================
     # STT Configuration
     # ============================================================================
-    stt_engine: str = "kyutai"  # kyutai | whisper_mlx
-    stt_model: str = "kyutai/moshi-mlx"
+    stt_engine: str = "parakeet_streaming"  # parakeet_streaming | whisper_mlx
+    stt_model: str = "mlx-community/parakeet-tdt-0.6b-v3"
     stt_chunk_length_ms: int = 100
     stt_language: str = "en"
 
     # ============================================================================
     # TTS Configuration
     # ============================================================================
-    tts_engine: str = "kokoro_professional"  # kokoro_professional | kokoro_mlx
+    tts_engine: str = "kokoro_mlx"  # kokoro_professional | kokoro_mlx
     tts_voice: str = "af_heart"
     tts_speed: float = 1.0
     tts_sample_rate: int = 24000
@@ -171,7 +171,7 @@ class VoiceAgentConfig:
         errors = []
 
         # Validate STT engine
-        if self.stt_engine not in ["kyutai", "whisper_mlx"]:
+        if self.stt_engine not in ["parakeet_streaming", "whisper_mlx"]:
             errors.append(f"Invalid STT engine: {self.stt_engine}")
 
         # Validate TTS engine

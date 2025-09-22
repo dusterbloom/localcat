@@ -62,7 +62,7 @@ class VoiceAgentFactory:
         vad_confidence = float(os.getenv("VAD_CONFIDENCE", "0.7"))
         vad_start_secs = float(os.getenv("VAD_START_SECS", "0.2"))
         vad_stop_secs = float(os.getenv("VAD_STOP_SECS", "1.6"))
-        vad_min_volume = float(os.getenv("VAD_MIN_VOLUME", "0.6"))
+        vad_min_volume = float(os.getenv("VAD_MIN_VOLUME", "0.8"))
 
         vad_params = VADParams(
             confidence=vad_confidence,
@@ -107,7 +107,7 @@ class VoiceAgentFactory:
                     model_path=stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3"),
                     language=stt_config.get("language", "en"),
                     chunk_duration=float(os.getenv("PARAKEET_CHUNK_DURATION", "1.0")),
-                    enable_vad=True,
+                    enable_vad=os.getenv("PARAKEET_ENABLE_VAD", "false").lower() in ("1", "true", "yes"),
                     temperature=float(os.getenv("PARAKEET_TEMPERATURE", "0.0")),
                     confidence_threshold=float(os.getenv("PARAKEET_CONFIDENCE_THRESHOLD", "0.2")),
                     sentence_pause_threshold=float(os.getenv("PARAKEET_SENTENCE_PAUSE_THRESHOLD", "1.2")),
