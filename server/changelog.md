@@ -28,13 +28,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Human-readable recency suffixes on graph/convo/recency bullets (e.g., "(2d 3h ago)")
   - Background LLM summarizer (async) via `SUMMARIZER_*`; summary retrieval from stored notes
   - Turn-level observability: per-turn summary log with pre_injected/ready_signaled/source/bullets/total_ms
-- **STT/LLM/TTS Streaming Integration**: Complete end-to-end streaming pipeline achieving <500ms latency
-  - WhisperLiveKit with SimulStreaming backend for ultra-low latency STT (<100ms chunks)
-  - LLM streaming with token-by-token output for immediate response
-  - Verified existing TTS streaming with chunked audio delivery
-  - Environment variable configuration for easy enable/disable
-  - Automatic fallback to batch mode when streaming unavailable
-  - Comprehensive test suite with unit and integration tests
+- **Parakeet-MLX Streaming STT Integration**: Native Apple Silicon streaming speech-to-text achieving <100ms latency
+  - Complete implementation of `ParakeetStreamingSTT` service with proper Pipecat frame lifecycle integration
+  - Streaming transcriber context management with `transcribe_stream()` API for real-time audio processing
+  - Smart audio buffering with configurable chunk durations (1.0s optimal balance between latency and accuracy)
+  - Volume normalization with RMS target leveling and soft clipping to prevent audio distortion
+  - Proper VAD integration with `UserStartedSpeakingFrame`/`UserStoppedSpeakingFrame` handling
+  - Text accumulation tracking to prevent duplicate transcription and cross-turn contamination
+  - Context-aware transcriber resets with proper cleanup of streaming contexts
+  - Support for both internal VAD mode (volume thresholding) and external VAD mode (Silero VAD integration)
+  - Optimized for conversational AI with reduced sensitivity settings for natural speech detection
+- **Kokoro TTS Streaming Optimization**: Ultra-low latency text-to-speech with professional quality enhancements
+  - `ProfessionalKokoroTTSService` with real-time chunked audio delivery and fade transitions
+  - Audio pipeline optimization with proper gain staging and peak normalization (-3.0dB target)
+  - Configurable fade durations (50ms) for smooth audio transitions between chunks
+  - Quality monitoring with peak level logging and distortion detection
+  - Support for multiple Kokoro voices with speed and sample rate customization
+  - Process-isolated TTS service to prevent Metal framework threading conflicts on Apple Silicon
+  - Memory-efficient audio buffering with optimized chunk sizes for real-time delivery
+  - Backward compatibility with existing batch TTS services for fallback scenarios
+- **Audio Input Pipeline Optimization**: Complete overhaul of speech detection and preprocessing
+  - Sensitivity tuning for natural conversation with reduced VAD thresholds (0.4 min volume, 0.5 confidence)
+  - Faster speech detection with 10ms start time and optimized stop windows
+  - SmartTurn v3 integration with configurable pre-speech buffers and turn duration limits
+  - MicProbe integration for real-time audio level monitoring and debugging
+  - Audio normalization pipeline with RMS targeting and soft clipping to prevent distortion
+  - Configurable audio chunking strategies for different STT engines and latency requirements
 - **HotMem Ultra-Fast Memory System**: Complete local memory solution achieving <200ms p95 latency
   - Dual storage architecture: SQLite (persistence) + LMDB (O(1) memory-mapped lookups)
   - Universal Dependencies (UD) based extraction using spaCy
