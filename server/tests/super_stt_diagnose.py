@@ -38,7 +38,7 @@ if SERVER_DIR not in sys.path:
     sys.path.insert(0, SERVER_DIR)
 
 from kyutai_streaming_stt import KyutaiStreamingSTT, rustymimi, mx, models  # type: ignore
-from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
+from core.tts.tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
 
 
 @dataclass

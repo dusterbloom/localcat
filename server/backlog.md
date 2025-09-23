@@ -70,6 +70,10 @@
     - Professional Kokoro TTS as default with audio artifact fixes
     - Kyutai STT as default streaming option with Whisper MLX backup
     - All imports resolved and functionality validated
+- **Server Root Cleanup (2025-09-23)**: Moved active TTS files to core/ architecture
+    - Relocated `kokoro_worker_optimized.py` and `tts_mlx_ultra_low_latency.py` to `core/tts/`
+    - Updated imports in bot.py and test files to use new core/ paths
+    - Maintained all functionality while improving project organization
 
 - **Phase 1.6: DIET Intent Classification Discovery — COMPLETED (2025-09-19)**
   - **Research Completed**: Comprehensive analysis of DIET (Dual Intent and Entity Transformer) for voice agent intent classification

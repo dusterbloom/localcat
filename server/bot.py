@@ -395,7 +395,7 @@ async def run_bot(webrtc_connection):
         logger.info("✅ Professional Kokoro TTS ready")
     elif config.tts_engine == "kokoro_mlx":
         logger.debug("Using Ultra-Low Latency MLX Kokoro TTS")
-        from tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
+        from core.tts.tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
         tts = TTSMLXUltraLowLatency(
             model="mlx-community/Kokoro-82M-bf16",
             voice=tts_config["voice"],

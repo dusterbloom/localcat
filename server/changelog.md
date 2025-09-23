@@ -54,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - MicProbe integration for real-time audio level monitoring and debugging
   - Audio normalization pipeline with RMS targeting and soft clipping to prevent distortion
   - Configurable audio chunking strategies for different STT engines and latency requirements
+- **Server Root Organization**: Cleaned up server root by moving TTS files to core/ architecture
+  - Moved `kokoro_worker_optimized.py` and `tts_mlx_ultra_low_latency.py` to `core/tts/`
+  - Updated imports in `bot.py` and test files to use new paths
+  - Maintained functionality while improving project structure
 - **HotMem Ultra-Fast Memory System**: Complete local memory solution achieving <200ms p95 latency
   - Dual storage architecture: SQLite (persistence) + LMDB (O(1) memory-mapped lookups)
   - Universal Dependencies (UD) based extraction using spaCy

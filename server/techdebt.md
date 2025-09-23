@@ -26,6 +26,7 @@ Technical debt refers to the cost of additional rework caused by choosing an eas
 - ✅ **Documentation structure**: `docs/investigations/`, `docs/planning/` organization
 - ✅ **Import cleanup**: Fixed all relative imports and circular dependencies
 - ✅ **Server root cleanup**: Reduced from 67 to 33 items, eliminated duplicates
+- ✅ **TTS file organization**: Moved active TTS files to `core/tts/` with updated imports
 
 **Impact:** Clean, professional project structure enabling faster development and onboarding
 
