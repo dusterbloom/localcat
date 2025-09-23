@@ -47,7 +47,7 @@ class StreamingIntegrationTester:
             logger.info("Testing STT streaming compatibility...")
 
             # Test both streaming and batch modes
-            from kyutai_streaming_stt import KyutaiStreamingSTT
+            from core.stt.parakeet_streaming import ParakeetStreamingSTT as KyutaiStreamingSTT
             from pipecat.services.whisper.stt import WhisperSTTServiceMLX, MLXModel
 
             # Test streaming mode
@@ -95,7 +95,7 @@ class StreamingIntegrationTester:
             logger.info("Testing HotMem integration with streaming...")
 
             # Import HotMem processor
-            from hotpath_processor import HotPathMemoryProcessor
+            from core.memory.hotpath_processor import HotPathMemoryProcessor
             from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
             from pipecat.frames.frames import TranscriptionFrame, InterimTranscriptionFrame
 
@@ -148,16 +148,16 @@ class StreamingIntegrationTester:
             from pipecat.pipeline.task import PipelineParams, PipelineTask
 
             # Import all components
-            from kyutai_streaming_stt import KyutaiStreamingSTT
+            from core.stt.parakeet_streaming import ParakeetStreamingSTT as KyutaiStreamingSTT
             from pipecat.services.openai.llm import OpenAILLMService
             # TTS - try Piper first, fall back to Kokoro
             try:
                 from tts_piper_streaming import PiperStreamingTTS
                 USE_PIPER = True
             except ImportError:
-                from tts_mlx_kokoro import MLXKokoroTTSService
+                from core.tts.kokoro_mlx import MLXKokoroTTSService
                 USE_PIPER = False
-            from hotpath_processor import HotPathMemoryProcessor
+            from core.memory.hotpath_processor import HotPathMemoryProcessor
 
             # Create mock components
             stt = KyutaiStreamingSTT(
@@ -356,7 +356,7 @@ class StreamingIntegrationTester:
             measurements = {}
 
             # Test STT chunk processing
-            from kyutai_streaming_stt import KyutaiStreamingSTT
+            from core.stt.parakeet_streaming import ParakeetStreamingSTT as KyutaiStreamingSTT
             stt = KyutaiStreamingSTT(
                 hf_repo="kyutai/stt-1b-en_fr-mlx",
                 enable_vad=True,

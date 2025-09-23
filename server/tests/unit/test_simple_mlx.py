@@ -6,12 +6,18 @@ Test the simple MLX implementation vs ONNX.
 import asyncio
 import time
 import sys
+import os
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+_HERE = os.path.dirname(__file__)
+_SERVER_ROOT = os.path.normpath(os.path.join(_HERE, "..", ".."))
+_PIPECAT_SRC = os.path.join(_SERVER_ROOT, "pipecat", "src")
+for p in (_SERVER_ROOT, _PIPECAT_SRC):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
-from tts_native_kokoro import NativeKokoroTTSService
-from tts_mlx_simple import MLXKokoroSimple
+from core.tts.kokoro_professional import ProfessionalKokoroTTSService as NativeKokoroTTSService
+from core.tts.kokoro_mlx import MLXKokoroTTSService as MLXKokoroSimple
 
 
 async def test_simple_mlx():

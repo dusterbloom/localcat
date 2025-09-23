@@ -28,7 +28,7 @@ async def _test_streaming_stt():
     logger.info("Testing Kyutai Streaming STT...")
 
     try:
-        from kyutai_streaming_stt import KyutaiStreamingSTT
+        from core.stt.parakeet_streaming import ParakeetStreamingSTT as KyutaiStreamingSTT
 
         # Initialize streaming STT
         stt = KyutaiStreamingSTT(
@@ -122,7 +122,7 @@ async def _test_full_pipeline():
             from tts_piper_streaming import PiperStreamingTTS
             logger.success("✓ Piper TTS service import successful")
         except ImportError:
-            from tts_mlx_kokoro import MLXKokoroTTSService
+            from core.tts.kokoro_mlx import MLXKokoroTTSService
             logger.success("✓ Kokoro TTS service import successful")
 
         return True

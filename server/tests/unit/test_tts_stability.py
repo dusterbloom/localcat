@@ -6,9 +6,14 @@ import time
 import sys
 import os
 
-sys.path.append(os.path.dirname(__file__))
+_HERE = os.path.dirname(__file__)
+_SERVER_ROOT = os.path.normpath(os.path.join(_HERE, "..", ".."))
+_PIPECAT_SRC = os.path.join(_SERVER_ROOT, "pipecat", "src")
+for p in (_SERVER_ROOT, _PIPECAT_SRC):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
-from tts_native_kokoro import NativeKokoroTTSService
+from core.tts.kokoro_professional import ProfessionalKokoroTTSService as NativeKokoroTTSService
 from pipecat.frames.frames import TTSAudioRawFrame, TTSStartedFrame, TTSStoppedFrame
 
 

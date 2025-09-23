@@ -14,7 +14,7 @@ for path in (_SERVER_ROOT, _PIPECAT_SRC):
 
 from pipecat.frames.frames import TranscriptionFrame
 
-from hotpath_processor import HotPathMemoryProcessor
+from core.memory.hotpath_processor import HotPathMemoryProcessor
 
 
 async def run():

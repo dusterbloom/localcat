@@ -5,7 +5,17 @@ Test FastAPI Streaming TTS Service integration
 
 import asyncio
 import time
-from fastapi_streaming_tts import FastAPIStreamingTTS
+import sys
+import os
+
+_HERE = os.path.dirname(__file__)
+_SERVER_ROOT = os.path.normpath(os.path.join(_HERE, "..", ".."))
+_PIPECAT_SRC = os.path.join(_SERVER_ROOT, "pipecat", "src")
+for p in (_SERVER_ROOT, _PIPECAT_SRC):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+from core.tts.kokoro_mlx import MLXKokoroTTSService as FastAPIStreamingTTS
 
 
 async def test_fastapi_streaming_tts():

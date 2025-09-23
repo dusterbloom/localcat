@@ -18,7 +18,7 @@ for p in (_SERVER_ROOT, _PIPECAT_SRC):
         sys.path.insert(0, p)
 
 from pipecat.frames.frames import InterimTranscriptionFrame, TranscriptionFrame
-from hotpath_processor import HotPathMemoryProcessor
+from core.memory.hotpath_processor import HotPathMemoryProcessor
 
 
 async def run():

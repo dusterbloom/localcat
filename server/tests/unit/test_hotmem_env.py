@@ -16,7 +16,7 @@ for p in (_SERVER_ROOT, _PIPECAT_SRC):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from hotpath_processor import HotPathMemoryProcessor
+from core.memory.hotpath_processor import HotPathMemoryProcessor
 from pipecat.frames.frames import TranscriptionFrame
 
 
