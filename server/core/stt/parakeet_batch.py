@@ -120,7 +120,7 @@ class ParakeetBatchSTT(STTService):
             # Soft clipping if needed
             normalized = np.tanh(normalized * 1.2) * 0.8
 
-            logger.debug(f"Audio normalized: RMS {rms:.4f} -> {np.sqrt(np.mean(normalized**2)):.4f}, gain: {gain:.2f}")
+            # logger.debug(f"Audio normalized: RMS {rms:.4f} -> {np.sqrt(np.mean(normalized**2)):.4f}, gain: {gain:.2f}")
             return normalized
 
         return audio_np

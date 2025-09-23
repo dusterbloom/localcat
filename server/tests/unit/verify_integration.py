@@ -37,7 +37,7 @@ def test_imports():
         logger.success(f"✓ Pipecat {pipecat.__version__} imported")
 
         # STT imports
-        from kyutai_streaming_stt import KyutaiStreamingSTT
+        from core.stt.parakeet_streaming import ParakeetStreamingSTT as KyutaiStreamingSTT
         logger.success("✓ Kyutai streaming STT imported")
 
         from pipecat.services.whisper.stt import WhisperSTTServiceMLX
@@ -48,11 +48,11 @@ def test_imports():
             from tts_piper_streaming import PiperStreamingTTS
             logger.success("✓ Piper TTS service imported")
         except ImportError:
-            from tts_mlx_kokoro import MLXKokoroTTSService
+            from core.tts.kokoro_mlx import MLXKokoroTTSService
             logger.success("✓ Kokoro TTS service imported")
 
         # Memory imports
-        from hotpath_processor import HotPathMemoryProcessor
+        from core.memory.hotpath_processor import HotPathMemoryProcessor
         logger.success("✓ HotMem processor imported")
 
         # Pipeline imports
@@ -97,7 +97,7 @@ async def test_service_initialization():
         logger.info("\nTesting service initialization...")
 
         # Initialize STT
-        from kyutai_streaming_stt import KyutaiStreamingSTT
+        from core.stt.parakeet_streaming import ParakeetStreamingSTT as KyutaiStreamingSTT
 
         stt = KyutaiStreamingSTT(
             hf_repo="kyutai/stt-1b-en_fr-mlx",
@@ -115,7 +115,7 @@ async def test_service_initialization():
             )
             logger.success("✓ Piper TTS service initialized")
         except ImportError:
-            from tts_mlx_kokoro import MLXKokoroTTSService
+            from core.tts.kokoro_mlx import MLXKokoroTTSService
             tts = MLXKokoroTTSService(
                 voice="af_heart",
                 speed=1.0,
@@ -124,7 +124,7 @@ async def test_service_initialization():
             logger.success("✓ Kokoro TTS service initialized")
 
         # Initialize HotMem
-        from hotpath_processor import HotPathMemoryProcessor
+        from core.memory.hotpath_processor import HotPathMemoryProcessor
 
         memory = HotPathMemoryProcessor(
             sqlite_path=":memory:",
