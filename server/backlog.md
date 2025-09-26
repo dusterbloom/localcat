@@ -180,13 +180,28 @@
   - **Performance Results**: 75% improvement for skipped intents (150ms saved per casual conversation turn)
 
 ### Next Milestones
+- **Phase 1.9: Coreference Resolution Integration — IN PROGRESS (2025-09-26)**
+  - **Objective**: Enhance memory extraction accuracy from 70-85% to 85-95% with coreference resolution
+  - **Implementation**: Integrate `spacy-coref` library for pronoun and entity resolution
+  - **Key Components**:
+    - Add `spacy-coref>=0.3.1` dependency to pyproject.toml
+    - Create `CoreferenceResolver` component with 50ms timeout protection
+    - Integrate into memory processing pipeline between spaCy NLP and UD extraction
+    - Environment controls: `MEMORY_COREFERENCE_ENABLED`, `MEMORY_COREFERENCE_TIMEOUT_MS`
+  - **Performance Targets**:
+    - Accuracy improvement: 70-85% → 85-95% (15% boost)
+    - Latency budget: +10-30ms (stay within <200ms target)
+    - Graceful fallback: Always return original text on failure/timeout
+  - **Test Cases**: Cross-sentence entity linking, pronoun resolution, conversation context
+  - **Risk Mitigation**: Feature flag, timeout protection, fallback system
+
 - Phase 2 (Retrieval Quality; behind flags, no default cost)
   - Optional BM25 (SQLite FTS5) re‑rank for top‑K under strict budget
   - Optional vector re‑rank (LEANN) under tight time cap
   - Env flags: HOTMEM_USE_FTS, HOTMEM_USE_LEANN, HOTMEM_RETRIEVAL_BUDGET_MS
 
 - Phase 3 (Observability)
-  - Per‑turn “turn summary” logs: pre_injected, source=interim|final, injected_before_llm, bullets_count, update_count, timings
+  - Per‑turn "turn summary" logs: pre_injected, source=interim|final, injected_before_llm, bullets_count, update_count, timings
   - Add a simple metrics export hook for local dashboards (optional)
 
 - Phase 4 (DX & Config)
