@@ -13,6 +13,7 @@ from typing import List, Dict, Any
 from dataclasses import dataclass
 from loguru import logger
 from dotenv import load_dotenv
+import pytest
 
 # Add local pipecat to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "pipecat", "src"))
@@ -478,8 +479,19 @@ class StreamingIntegrationTester:
             logger.info("\nRecommendation: Fix issues before production deployment")
 
 
-async def main():
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.requires_models
+@pytest.mark.skip_ci
+async def test_e2e_streaming():
     """Run the comprehensive integration test"""
+    tester = StreamingIntegrationTester()
+    success = await tester.run_all_tests()
+    assert success, "E2E streaming tests failed"
+
+
+async def main():
+    """Run the comprehensive integration test standalone"""
     tester = StreamingIntegrationTester()
     success = await tester.run_all_tests()
 

@@ -11,6 +11,7 @@ import time
 import sys
 import os
 from pathlib import Path
+import pytest
 
 # Add server directory to path for imports
 _HERE = os.path.dirname(__file__)
@@ -24,6 +25,9 @@ from core.tts.kokoro_professional import ProfessionalKokoroTTSService as NativeK
 from core.tts.kokoro_mlx import MLXKokoroTTSService
 
 
+@pytest.mark.slow
+@pytest.mark.requires_models
+@pytest.mark.skip_ci
 async def test_tts_performance():
     """Compare ONNX vs MLX Kokoro TTS performance."""
 

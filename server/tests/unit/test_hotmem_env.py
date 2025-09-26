@@ -8,6 +8,7 @@ Unit tests for Phase 0.5 env controls:
 import os
 import sys
 from loguru import logger
+import pytest
 
 _HERE = os.path.dirname(__file__)
 _SERVER_ROOT = os.path.normpath(os.path.join(_HERE, "..", ".."))
@@ -20,6 +21,8 @@ from core.memory.hotpath_processor import HotPathMemoryProcessor
 from pipecat.frames.frames import TranscriptionFrame
 
 
+@pytest.mark.fast
+@pytest.mark.ci
 async def test_bullets_cap():
     os.environ["HOTMEM_BULLETS_MAX"] = "1"
     os.environ["ENABLE_MEMORY"] = "true"
@@ -31,6 +34,8 @@ async def test_bullets_cap():
     logger.info("HOTMEM_BULLETS_MAX cap respected")
 
 
+@pytest.mark.fast
+@pytest.mark.ci
 async def test_enable_memory_false():
     os.environ["ENABLE_MEMORY"] = "false"
     mem = HotPathMemoryProcessor(sqlite_path=":memory:", lmdb_dir=None, user_id="test-user", enable_metrics=False, context_aggregator=None)
@@ -40,6 +45,8 @@ async def test_enable_memory_false():
     logger.info("ENABLE_MEMORY=false disables processing")
 
 
+@pytest.mark.fast
+@pytest.mark.ci
 async def test_convo_index_and_retrieval():
     # Enable convo indexing and retrieval source
     os.environ["ENABLE_MEMORY"] = "true"

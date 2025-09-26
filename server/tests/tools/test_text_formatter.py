@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Test the text formatter to ensure contractions are handled correctly."""
 
+import sys
+import os
+# Add tools directory to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'tools'))
+
 from text_formatter import sanitize_for_voice
 
 
