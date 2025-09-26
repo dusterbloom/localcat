@@ -1,0 +1,28 @@
+2025-09-26 10:59:10.049 | DEBUG    | core.memory.memory_store:__post_init__:36 - Paths initialized: sqlite_path=':memory:', lmdb_dir='../data/graph.lmdb'
+2025-09-26 10:59:10.050 | DEBUG    | core.memory.memory_store:_init_databases:75 - Connecting to SQLite database at: ':memory:'
+2025-09-26 10:59:11.638 | INFO     | core.memory.memory_hotpath:_load_nlp:43 - Loaded spaCy model en_core_web_sm
+2025-09-26 10:59:11.639 | INFO     | core.memory.memory_hotpath:rebuild_from_store:678 - Rebuilding hot memory from store...
+2025-09-26 10:59:11.639 | INFO     | core.memory.memory_hotpath:rebuild_from_store:690 - Rebuilt 0 edges in 0.3ms
+2025-09-26 10:59:11.639 | DEBUG    | core.memory.hotpath_processor:__init__:194 - HotPathMemoryProcessor initialized for user: test-user
+2025-09-26 10:59:11.644 | DEBUG    | core.memory.hotpath_processor:_process_transcription:338 - [HotMem] Extracted 3 facts (showing up to 3): [('you', 'name', 'ana and i live in paris'), ('you', 'name', 'ana'), ('you', 'lives_in', 'paris')]
+2025-09-26 10:59:11.644 | DEBUG    | core.memory.hotpath_processor:_process_transcription:342 - [HotMem] Prepared 3 memory bullets for injection
+2025-09-26 10:59:11.644 | DEBUG    | core.memory.hotpath_processor:_process_transcription:365 - [HotMem] Summary: saved=3, pending_bullets=1, turn=1
+2025-09-26 10:59:11.645 | DEBUG    | core.memory.hotpath_processor:_process_transcription:370 - [HotMem TurnSummary] pre_injected=False ready_signaled=False source=final bullets=1 total_ms=5.3
+2025-09-26 10:59:11.645 | INFO     | __main__:test_bullets_cap:31 - HOTMEM_BULLETS_MAX cap respected
+2025-09-26 10:59:11.645 | DEBUG    | core.memory.memory_store:__post_init__:36 - Paths initialized: sqlite_path=':memory:', lmdb_dir='../data/graph.lmdb'
+2025-09-26 10:59:11.645 | DEBUG    | core.memory.memory_store:_init_databases:75 - Connecting to SQLite database at: ':memory:'
+2025-09-26 10:59:11.647 | INFO     | core.memory.memory_hotpath:rebuild_from_store:678 - Rebuilding hot memory from store...
+2025-09-26 10:59:11.647 | INFO     | core.memory.memory_hotpath:rebuild_from_store:690 - Rebuilt 0 edges in 0.2ms
+2025-09-26 10:59:11.647 | DEBUG    | core.memory.hotpath_processor:__init__:194 - HotPathMemoryProcessor initialized for user: test-user
+2025-09-26 10:59:11.647 | INFO     | __main__:test_enable_memory_false:40 - ENABLE_MEMORY=false disables processing
+2025-09-26 10:59:11.647 | DEBUG    | core.memory.memory_store:__post_init__:36 - Paths initialized: sqlite_path=':memory:', lmdb_dir='../data/graph.lmdb'
+2025-09-26 10:59:11.647 | DEBUG    | core.memory.memory_store:_init_databases:75 - Connecting to SQLite database at: ':memory:'
+2025-09-26 10:59:11.648 | INFO     | core.memory.memory_hotpath:rebuild_from_store:678 - Rebuilding hot memory from store...
+2025-09-26 10:59:11.648 | INFO     | core.memory.memory_hotpath:rebuild_from_store:690 - Rebuilt 0 edges in 0.1ms
+2025-09-26 10:59:11.648 | DEBUG    | core.memory.hotpath_processor:__init__:194 - HotPathMemoryProcessor initialized for user: test-user
+2025-09-26 10:59:11.652 | DEBUG    | core.memory.hotpath_processor:_process_transcription:338 - [HotMem] Extracted 2 facts (showing up to 3): [('you', 'live_on', 'east side'), ('you', 'live_near', 'river')]
+2025-09-26 10:59:11.652 | DEBUG    | core.memory.hotpath_processor:_process_transcription:365 - [HotMem] Summary: saved=2, pending_bullets=0, turn=1
+2025-09-26 10:59:11.652 | DEBUG    | core.memory.hotpath_processor:_process_transcription:370 - [HotMem TurnSummary] pre_injected=False ready_signaled=False source=final bullets=0 total_ms=3.6
+2025-09-26 10:59:11.654 | DEBUG    | core.memory.hotpath_processor:_process_transcription:365 - [HotMem] Summary: saved=0, pending_bullets=0, turn=2
+2025-09-26 10:59:11.654 | DEBUG    | core.memory.hotpath_processor:_process_transcription:370 - [HotMem TurnSummary] pre_injected=False ready_signaled=False source=final bullets=0 total_ms=2.4
+2025-09-26 10:59:11.655 | INFO     | __main__:test_convo_index_and_retrieval:61 - Convo retrieval executed (bullets may be empty depending on FTS tokenizer)
