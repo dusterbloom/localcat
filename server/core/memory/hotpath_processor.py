@@ -152,21 +152,14 @@ class HotPathMemoryProcessor(BaseProcessor):
             self._summary_max_messages = int(os.getenv("SUMMARIZER_MAX_MESSAGES", "10"))
         except Exception:
             self._summary_max_messages = 10
+        # Turn-based summarization controls
+        self._window_mode = os.getenv("SUMMARIZER_WINDOW_MODE", "turn_pairs").lower()
+        try:
+            self._turn_pairs = int(os.getenv("SUMMARIZER_TURN_PAIRS", "5"))
+        except Exception:
+            self._turn_pairs = 5
+        self._last_summarized_turn = 0
         self._summary_task: Optional[asyncio.Task] = None
-        # Summary controls
-        self._summary_enabled = (
-            os.getenv("MEMORY_SUMMARY_ENABLED", "false").lower() in ("1", "true", "yes") or
-            os.getenv("SUMMARIZER_ENABLED", "false").lower() in ("1", "true", "yes")
-        )
-        try:
-            self._summary_interval_ms = int(float(os.getenv("SUMMARIZER_INTERVAL_SECS", "60")) * 1000)
-        except Exception:
-            self._summary_interval_ms = 60000
-        try:
-            self._summary_max_messages = int(os.getenv("SUMMARIZER_MAX_MESSAGES", "10"))
-        except Exception:
-            self._summary_max_messages = 10
-        self._last_summary_ms = 0
         
         # Store context aggregator reference for direct context injection
         self._context_aggregator = context_aggregator
@@ -179,13 +172,6 @@ class HotPathMemoryProcessor(BaseProcessor):
 
         # Performance tracking
         self._last_metrics_log = time.time()
-        # Summary controls
-        self._summary_enabled = os.getenv("MEMORY_SUMMARY_ENABLED", "false").lower() in ("1", "true", "yes")
-        try:
-            self._summary_interval_ms = int(float(os.getenv("SUMMARIZER_INTERVAL_SECS", "60")) * 1000)
-        except Exception:
-            self._summary_interval_ms = 60000
-        self._last_summary_ms = 0
         
         stats = None
         if self._session_tracker:
@@ -211,13 +197,15 @@ class HotPathMemoryProcessor(BaseProcessor):
 
         # REQUIRED: handle StartFrame immediately
         if isinstance(frame, StartFrame):
-            # Start background summarizer (non-blocking)
-            if self._summary_enabled and self._summary_task is None:
+            # Start background summarizer only for delta mode (time-based)
+            if self._summary_enabled and self._window_mode == "delta" and self._summary_task is None:
                 try:
                     self._summary_task = asyncio.create_task(self._summary_loop())
-                    logger.debug("[HotMem] Background summarizer started")
+                    logger.debug("[HotMem] Background summarizer started (delta mode)")
                 except Exception as e:
                     logger.warning(f"[HotMem] Could not start summarizer: {e}")
+            elif self._summary_enabled and self._window_mode == "turn_pairs":
+                logger.debug(f"[HotMem] Turn-based summarization enabled (every {self._turn_pairs} turns)")
             await self.push_frame(frame, direction)
             return
 
@@ -354,8 +342,12 @@ class HotPathMemoryProcessor(BaseProcessor):
             except Exception as e:
                 logger.warning(f"[HotMem] Convo index failed: {e}")
 
-            # LLM summarizer runs in background; no inline summary work here
-            
+            # Trigger turn-based summary if configured
+            if self._summary_enabled and self._window_mode == "turn_pairs":
+                if self._turn_id > 0 and self._turn_id % self._turn_pairs == 0:
+                    logger.debug(f"[HotMem] Triggering turn-based summary at turn {self._turn_id}")
+                    asyncio.create_task(self._generate_turn_summary())
+
             # Track performance
             elapsed_ms = (time.perf_counter() - start) * 1000
             
@@ -541,12 +533,20 @@ class HotPathMemoryProcessor(BaseProcessor):
     async def cleanup(self):
         """Cleanup when processor is destroyed"""
         try:
+            # Generate final summary if we have unsummarized turns
+            if (self._summary_enabled and
+                self._turn_id > 1 and
+                self._turn_id > self._last_summarized_turn):
+                logger.debug(f"[HotMem] Generating final summary for session (turns {self._last_summarized_turn+1} to {self._turn_id})")
+                await self._generate_turn_summary()
+
             # Final flush to ensure all data is persisted
             self.store.flush()
             logger.debug("HotPathMemoryProcessor cleanup complete")
         except Exception as e:
             logger.error(f"Cleanup error: {e}")
-        # Stop summarizer task
+
+        # Stop summarizer task (for delta mode)
         try:
             if self._summary_task is not None:
                 self._summary_task.cancel()
@@ -563,13 +563,79 @@ class HotPathMemoryProcessor(BaseProcessor):
     # Background summarizer
     # ---------------------
 
-    async def _summary_loop(self):
-        """Periodic background task that generates LLM summaries and stores them as 'summary' notes."""
+    async def _call_summarizer_llm(self, text: str) -> Optional[str]:
+        """Call the summarizer LLM and return the summary content"""
         import json
         import urllib.request
         import urllib.error
 
         sys_prompt = "You are a concise summarizer. Summarize the user's recent utterances as helpful context bullets. Keep it under 400 characters. Provide ONLY the final summary."
+
+        # Build OpenAI-compatible chat request
+        payload = {
+            "model": self._summary_model,
+            "messages": [
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": text},
+            ],
+            "max_tokens": self._summary_max_tokens,
+            "temperature": 0.2,
+            "stream": False,
+        }
+
+        url = f"{self._summary_base_url}/chat/completions"
+        req = urllib.request.Request(url, method="POST")
+        req.add_header("Content-Type", "application/json")
+        if self._summary_api_key:
+            req.add_header("Authorization", f"Bearer {self._summary_api_key}")
+
+        data = json.dumps(payload).encode("utf-8")
+        try:
+            timeout = getattr(self, '_summary_interval_secs', 30)
+            with urllib.request.urlopen(req, data=data, timeout=timeout) as resp:
+                resp_data = resp.read().decode("utf-8")
+            j = json.loads(resp_data)
+            content = j.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            return content if content else None
+        except urllib.error.URLError as e:
+            logger.warning(f"[HotMem] Summarizer LLM call failed: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"[HotMem] Summarizer LLM error: {e}")
+            return None
+
+    async def _generate_turn_summary(self):
+        """Generate summary for recent turns"""
+        try:
+            # Calculate how many messages to summarize
+            messages_to_get = self._turn_pairs * 2  # Each turn has user + assistant
+
+            # Get recent messages
+            recent = self.store.get_recent_chunks_by_eid(self._session_id, limit=messages_to_get)
+            if not recent:
+                logger.debug("[HotMem] No recent messages to summarize")
+                return
+
+            # Combine text (limit to 1200 chars)
+            text = "; ".join(t for (t, _ts) in recent if t)[:1200]
+            if not text.strip():
+                logger.debug("[HotMem] No text content to summarize")
+                return
+
+            # Call LLM to generate summary
+            content = await self._call_summarizer_llm(text)
+            if content:
+                now_ms = int(time.time() * 1000)
+                note = f"Summary: {content}"
+                self.store.enqueue_mention("summary", note, now_ms, self._session_id, self._turn_id)
+                self.store.flush_if_needed()
+                logger.debug(f"[HotMem] Stored turn-based summary at turn {self._turn_id}")
+                self._last_summarized_turn = self._turn_id
+        except Exception as e:
+            logger.warning(f"[HotMem] Turn summary generation failed: {e}")
+
+    async def _summary_loop(self):
+        """Periodic background task for delta mode - generates LLM summaries periodically."""
         while True:
             try:
                 await asyncio.sleep(self._summary_interval_secs)
@@ -580,39 +646,15 @@ class HotPathMemoryProcessor(BaseProcessor):
                 text = "; ".join(t for (t, _ts) in recent if t)[:1200]
                 if not text.strip():
                     continue
-                # Build OpenAI-compatible chat request
-                payload = {
-                    "model": self._summary_model,
-                    "messages": [
-                        {"role": "system", "content": sys_prompt},
-                        {"role": "user", "content": text},
-                    ],
-                    "max_tokens": self._summary_max_tokens,
-                    "temperature": 0.2,
-                    "stream": False,
-                }
-                url = f"{self._summary_base_url}/chat/completions"
-                req = urllib.request.Request(url, method="POST")
-                req.add_header("Content-Type", "application/json")
-                if self._summary_api_key:
-                    req.add_header("Authorization", f"Bearer {self._summary_api_key}")
-                data = json.dumps(payload).encode("utf-8")
-                try:
-                    with urllib.request.urlopen(req, data=data, timeout=self._summary_interval_secs) as resp:
-                        resp_data = resp.read().decode("utf-8")
-                    j = json.loads(resp_data)
-                    content = j.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                    if not content:
-                        continue
+
+                # Call LLM to generate summary
+                content = await self._call_summarizer_llm(text)
+                if content:
                     now_ms = int(time.time() * 1000)
                     note = f"Summary: {content}"
                     self.store.enqueue_mention("summary", note, now_ms, self._session_id, self._turn_id)
                     self.store.flush_if_needed()
-                    logger.debug("[HotMem] Stored LLM summary note")
-                except urllib.error.URLError as e:
-                    logger.warning(f"[HotMem] Summarizer call failed: {e}")
-                except Exception as e:
-                    logger.warning(f"[HotMem] Summarizer error: {e}")
+                    logger.debug("[HotMem] Stored time-based summary (delta mode)")
             except asyncio.CancelledError:
                 break
             except Exception as e:
