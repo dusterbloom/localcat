@@ -23,7 +23,7 @@ from .session_tracker import SessionTracker
 
 # Import intent service for smart processing
 try:
-    from ..intent import get_intent_service
+    from ..intent import get_intent_service, IntentExceptionHandler
     INTENT_SERVICE_AVAILABLE = True
 except ImportError:
     INTENT_SERVICE_AVAILABLE = False
@@ -340,33 +340,41 @@ class HotPathMemoryProcessor(BaseProcessor):
 
         start = time.perf_counter()
 
-        # Intent classification for smart processing (following guide approach)
+        # Intent classification for smart processing (using refactored service)
         intent_result = None
         if self._intent_aware_processing and self.intent_service:
             try:
                 intent_result = await self.intent_service.classify_intent(text)
-                logger.info(f"[HotMem] Intent classified: {intent_result['intent']} (confidence: {intent_result['confidence']:.2f})")
+                logger.info(f"[HotMem] Intent classified: {intent_result['intent']} "
+                           f"(confidence: {intent_result['confidence']:.2f}, "
+                           f"strategy: {intent_result.get('strategy', 'unknown')}, "
+                           f"skip: {intent_result.get('skip_memory', False)})")
             except Exception as e:
                 logger.warning(f"[HotMem] Intent classification failed: {e}")
+                # Use exception handler for graceful fallback if available
+                if INTENT_SERVICE_AVAILABLE:
+                    intent_result = IntentExceptionHandler.handle_classification_error(e, text)
 
-        # Smart processing based on intent (following guide lines 432-455)
-        if intent_result and not intent_result['fallback']:
+        # Smart processing based on intent (using new routing decisions)
+        if intent_result and not intent_result.get('fallback', False):
             intent_name = intent_result['intent']
+            strategy = intent_result.get('strategy', 'standard')
+            skip_memory = intent_result.get('skip_memory', False)
 
-            # Skip memory processing for casual conversation
-            if self.intent_service.should_skip_memory_processing(intent_name):
-                logger.info(f"[HotMem] Skipping memory processing for intent: {intent_name}")
+            # Skip memory processing if routing decision says so
+            if skip_memory:
+                logger.info(f"[HotMem] Skipping memory processing for intent: {intent_name} "
+                           f"(reasoning: {intent_result.get('routing_reasoning', 'not provided')})")
                 elapsed_ms = (time.perf_counter() - start) * 1000
                 self._record_turn_metrics(elapsed_ms)
                 # Clear any pending bullets since we're skipping memory
                 self._pending_bullets = []
                 return
 
-            # Get memory processing strategy
-            strategy = self.intent_service.get_memory_processing_strategy(intent_name)
+            # Apply strategy-based processing
             logger.debug(f"[HotMem] Using {strategy} strategy for intent: {intent_name}")
 
-            # Enhanced processing for different intents
+            # Enhanced processing for different strategies
             if strategy == 'storage_focused':
                 bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='storage')
             elif strategy == 'retrieval_focused':
@@ -379,12 +387,21 @@ class HotPathMemoryProcessor(BaseProcessor):
                 # Minimal processing - just retrieve context without extraction
                 bullets = self.hot.retrieve_bullets(text, read_only=True)
                 triples = []
+            elif strategy == 'contextual':
+                # Contextual processing - focus on recent context
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='context')
+            elif strategy == 'recent_context':
+                # Recent context processing - for corrections
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='recent')
             else:
-                # Standard processing for other intents
+                # Standard processing for other strategies
                 bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id)
         else:
-            # Fallback to standard processing if no intent or low confidence
-            logger.debug("[HotMem] Using standard processing (no intent classification or fallback)")
+            # Fallback to standard processing if no intent classification or fallback result
+            fallback_reason = "no intent classification"
+            if intent_result:
+                fallback_reason = f"fallback classification ({intent_result.get('reason', 'unknown')})"
+            logger.debug(f"[HotMem] Using standard processing ({fallback_reason})")
             bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id)
 
         try:
