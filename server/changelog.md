@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **VoiceAgentFactory Pattern**: Centralized service creation with dependency injection
+  - Created `core/factory.py` implementing factory pattern for all voice agent services
+  - Single source of truth for service configuration and initialization
+  - Support for all service types: STT, TTS, LLM, Memory, Transport, RTVI
+  - Proper dependency injection enabling better testability
+- **Test Infrastructure Overhaul**: Complete pytest integration for CI/CD reliability
+  - `pytest.ini` configuration with async mode support and test markers
+  - `conftest.py` with fixtures, mocks, and automatic test skipping
+  - Test categorization: `@pytest.mark.ci`, `@pytest.mark.slow`, `@pytest.mark.requires_models`
+  - Updated `run_all_tests.py` with test categories (ci, fast, slow, unit, integration)
+  - CI tests now complete in 6 seconds for fast PR feedback
+- **FastTextAggregator Module**: Token-aware text aggregation for optimal TTS chunking
+  - Moved to `core/aggregators/fast_text.py` for better organization
+  - Natural phoneme boundary detection for fluent speech synthesis
+  - Configurable token limits (175-250) matching Kokoro TTS requirements
 - Phase 0: Streaming memory pre-injection and final refresh
   - Interim pre-injection (retrieval-only, once/turn) to ensure bullets exist before LLM starts
   - Final refresh on TranscriptionFrame with extract+persist+retrieve
@@ -70,6 +85,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive technical debt documentation and cleanup guidelines
 
 ### Changed
+- **bot.py Refactoring**: Massive simplification through factory pattern
+  - Reduced from 679 to 266 lines (60% reduction)
+  - `run_bot()` function simplified from 200+ to 17 lines
+  - All service creation logic moved to VoiceAgentFactory
+  - Eliminated 400+ lines of duplicate configuration code
 - HotMem processor now injects memory before forwarding frames and (optionally) signals readiness
 - Test runner logs improved; tests hard-exit to avoid macOS framework teardown crashes
 - LMDB usage made optional in store operations to support in-memory testing
@@ -82,6 +102,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Performance Monitoring**: Real-time metrics tracking with p95 latency goals
 
 ### Fixed
+- **Test Suite Compatibility**: All tests now work with pytest
+  - Fixed async test execution with proper pytest configuration
+  - Resolved import path issues in test files
+  - Fixed duplicate test file naming conflicts
+  - Added proper markers for test categorization
+  - Corrected context_aggregator attribute access in bot.py event handlers
 - Punctuation-induced question misclassification mitigated (prevents question gating from blocking writes)
 - LMDB None handling in `observe_edge`, `negate_edge`, and `flush` (no crashes on in-memory tests)
 - Intermittent teardown exceptions in tests by forcing process hard-exit in test scripts
