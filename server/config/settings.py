@@ -41,8 +41,8 @@ class VoiceAgentConfig:
     # ============================================================================
     # LLM Configuration
     # ============================================================================
-    llm_base_url: str = "http://localhost:1234/v1"
-    llm_model: str = "gemma3n-4b"
+    llm_base_url: str = "http://localhost:11434/v1"
+    llm_model: str = "gemma3n:e2b"
     llm_api_key: str = "not-needed"
     llm_max_tokens: int = 1024
     llm_temperature: float = 0.7

@@ -24,7 +24,7 @@ from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, IceServer
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
-from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIProcessor
+from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIProcessor, RTVIObserver
 
 # Local imports
 from config import VoiceAgentConfig
@@ -59,10 +59,11 @@ class VoiceAgentFactory:
     def create_transport(self, webrtc_connection: SmallWebRTCConnection) -> SmallWebRTCTransport:
         """Create WebRTC transport with VAD and turn detection."""
         # VAD configuration with backward compatibility
-        vad_confidence = float(os.getenv("VAD_CONFIDENCE", "0.7"))
-        vad_start_secs = float(os.getenv("VAD_START_SECS", "0.2"))
-        vad_stop_secs = float(os.getenv("VAD_STOP_SECS", "1.6"))
-        vad_min_volume = float(os.getenv("VAD_MIN_VOLUME", "0.8"))
+        vad_confidence = float(os.getenv("VAD_CONFIDENCE", "0.5"))
+        vad_start_secs = float(os.getenv("VAD_START_SECS", "0.1"))
+        # Use a more forgiving default stop window so brief pauses do not end the turn
+        vad_stop_secs = float(os.getenv("VAD_STOP_SECS", "4.0"))
+        vad_min_volume = float(os.getenv("VAD_MIN_VOLUME", "0.4"))
 
         vad_params = VADParams(
             confidence=vad_confidence,
@@ -98,7 +99,7 @@ class VoiceAgentFactory:
         """Create STT service based on configuration."""
         stt_config = self.config.get_component_config("stt")
 
-        if self.config.stt_engine == "parakeet":
+        if self.config.stt_engine == "parakeet_streaming":
             try:
                 # Try Parakeet streaming first (ultra-low latency)
                 from core.stt.parakeet_streaming import ParakeetStreamingSTT
@@ -135,6 +136,22 @@ class VoiceAgentFactory:
                     # Final fallback to Whisper MLX
                     logger.warning("Using Whisper MLX as final fallback")
                     stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
+        elif self.config.stt_engine == "parakeet":
+            # Support legacy "parakeet" name for backward compatibility
+            try:
+                from core.stt.parakeet_streaming import ParakeetStreamingSTT
+                logger.debug("Using Parakeet streaming STT (legacy name)")
+                stt = ParakeetStreamingSTT(
+                    model_path=stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3"),
+                    language=stt_config.get("language", "en"),
+                    chunk_duration=float(os.getenv("PARAKEET_CHUNK_DURATION", "1.0")),
+                    enable_vad=os.getenv("PARAKEET_ENABLE_VAD", "false").lower() in ("1", "true", "yes")
+                )
+                logger.info("✅ Parakeet streaming STT ready")
+            except Exception as e:
+                logger.error(f"❌ Parakeet STT failed: {e}", exc_info=True)
+                logger.warning("Falling back to Whisper MLX batch mode")
+                stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
         elif self.config.stt_engine == "whisper_mlx":
             logger.debug("Using Whisper MLX batch mode")
             stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
@@ -161,13 +178,16 @@ class VoiceAgentFactory:
             )
             logger.info("✅ Professional Kokoro TTS ready")
         elif self.config.tts_engine == "kokoro_mlx":
-            logger.debug("Using MLX Kokoro TTS (backup)")
-            tts = MLXKokoroTTSService(
+            logger.debug("Using Ultra-Low Latency MLX Kokoro TTS")
+            from core.tts.tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
+            tts = TTSMLXUltraLowLatency(
+                model="mlx-community/Kokoro-82M-bf16",
                 voice=tts_config["voice"],
                 speed=tts_config["speed"],
-                sample_rate=tts_config["sample_rate"]
+                sample_rate=tts_config["sample_rate"],
+                buffer_ms=50  # 50ms buffer for optimal latency
             )
-            logger.info("✅ MLX Kokoro TTS ready")
+            logger.info("✅ Ultra-Low Latency MLX Kokoro TTS ready")
         elif self.config.tts_engine == "fastapi_streaming" and FASTAPI_TTS_AVAILABLE:
             logger.debug("Using FastAPI Streaming TTS (legacy)")
             tts = FastAPIStreamingTTS(
@@ -246,7 +266,7 @@ class VoiceAgentFactory:
         context = OpenAILLMContext([{"role": "system", "content": system_instruction}])
 
         # Determine timeouts based on STT streaming capability
-        use_streaming_stt = self.config.stt_engine == "parakeet"
+        use_streaming_stt = self.config.stt_engine in ["parakeet_streaming", "parakeet"]
         default_timeout = "0.12" if use_streaming_stt else "0.2"
         agg_timeout = float(os.getenv("LLM_AGGREGATION_TIMEOUT", default_timeout))
         turn_timeout = float(os.getenv("LLM_TURN_EMULATED_VAD_TIMEOUT", "0.4"))
@@ -261,6 +281,8 @@ class VoiceAgentFactory:
             ),
         )
 
+        # Store both context and aggregator for access in event handlers
+        self._services_cache['context'] = context
         self._services_cache['context_aggregator'] = context_aggregator
         return context_aggregator
 
@@ -287,9 +309,8 @@ class VoiceAgentFactory:
 
     def create_text_aggregator(self) -> Any:
         """Create fast text aggregator for fluid speech."""
-        # Import here to avoid circular imports
-        from bot import FastTextAggregator
-        aggregator = FastTextAggregator(max_time=0.2, min_chars=3)
+        from core.aggregators import FastTextAggregator
+        aggregator = FastTextAggregator(min_tokens=175, max_tokens=250, max_time=0.5)
         self._services_cache['text_aggregator'] = aggregator
         return aggregator
 
@@ -309,7 +330,6 @@ class VoiceAgentFactory:
             services['memory'],
             services['context_aggregator'].user(),
             services['llm'],
-            services['text_aggregator'],
             services['tts'],
             transport.output(),
             services['context_aggregator'].assistant(),
@@ -319,15 +339,21 @@ class VoiceAgentFactory:
         self._services_cache['pipeline'] = pipeline
         return pipeline
 
-    def create_pipeline_task(self, pipeline: Pipeline) -> PipelineTask:
+    def create_pipeline_task(self, pipeline: Pipeline, rtvi_processor: Optional[RTVIProcessor] = None) -> PipelineTask:
         """Create pipeline task with appropriate parameters."""
+        params = PipelineParams(
+            enable_metrics=True,
+            enable_usage_metrics=True,
+        )
+
+        observers = []
+        if rtvi_processor:
+            observers.append(RTVIObserver(rtvi_processor))
+
         task = PipelineTask(
             pipeline,
-            params=PipelineParams(
-                allow_interruptions=True,
-                enable_metrics=True,
-                enable_usage_metrics=True,
-            )
+            params=params,
+            observers=observers
         )
         self._services_cache['pipeline_task'] = task
         return task
@@ -339,3 +365,62 @@ class VoiceAgentFactory:
     def clear_cache(self):
         """Clear the services cache."""
         self._services_cache.clear()
+
+    def create_voice_agent(self, webrtc_connection: SmallWebRTCConnection, system_instruction: str) -> Dict[str, Any]:
+        """Create complete voice agent with all services configured.
+
+        This is the main entry point that assembles all components.
+        Returns a dictionary with all created services and the pipeline task.
+        """
+        # Create transport
+        transport = self.create_transport(webrtc_connection)
+
+        # Create STT service
+        stt = self.create_stt_service()
+
+        # Create TTS service
+        tts = self.create_tts_service()
+
+        # Create LLM service
+        llm = self.create_llm_service()
+
+        # Create context aggregator with system instruction
+        context_aggregator = self.create_context_aggregator(llm, system_instruction)
+
+        # Create session tracker
+        session_tracker = self.create_session_tracker()
+
+        # Create memory processor
+        memory = self.create_memory_processor(context_aggregator, session_tracker)
+
+        # Create RTVI processor
+        rtvi = self.create_rtvi_processor()
+
+        # Create optional mic probe
+        mic_probe = self.create_mic_probe()
+
+        # Assemble all services
+        services = {
+            'transport': transport,
+            'stt': stt,
+            'tts': tts,
+            'llm': llm,
+            'context': self._services_cache.get('context'),  # Include context for event handlers
+            'context_aggregator': context_aggregator,
+            'session_tracker': session_tracker,
+            'memory': memory,
+            'rtvi': rtvi,
+            'mic_probe': mic_probe
+        }
+
+        # Create pipeline
+        pipeline = self.create_pipeline(transport, services)
+
+        # Create pipeline task
+        task = self.create_pipeline_task(pipeline, rtvi)
+
+        return {
+            **services,
+            'pipeline': pipeline,
+            'task': task
+        }
