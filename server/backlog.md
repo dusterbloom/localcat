@@ -70,12 +70,82 @@
     - Professional Kokoro TTS as default with audio artifact fixes
     - Kyutai STT as default streaming option with Whisper MLX backup
     - All imports resolved and functionality validated
+
+- **Phase 1.8: Summarization System Implementation — COMPLETED (2025-09-26)**
+  - **Audio Artifacts Investigation**: Comprehensive analysis and fix for Kokoro TTS sentence ending artifacts
+    - Investigated 200+ amplitude spikes in problematic sentence endings
+    - Disproved hypothesis that space before punctuation was the cause
+    - Implemented professional audio processing with fade-out, limiting, and DC offset removal
+    - Created ProfessionalKokoroTTSService with artifact-free audio quality
+  - **Project Architecture Overhaul**: Complete restructuring based on agent analysis of 105+ files
+    - Created `core/` directory with production-ready TTS/STT services
+    - Organized `experiments/` with systematic categorization of research
+    - Established centralized `config/` system with VoiceAgentConfig dataclass
+    - Moved large binary files (259MB) to organized `models/` directory structure
+  - **Server Root Cleanup**: Eliminated clutter and duplicate files
+    - Removed 15+ duplicate files from server root
+    - Organized documentation into `docs/` with investigations and planning subdirectories
+    - Consolidated legacy `memory/` and `utils/` directories into experiments
+    - Clean separation between production code, experiments, and legacy implementations
+  - **Centralized Configuration**: Professional configuration management
+    - VoiceAgentConfig dataclass with optimization-based defaults (<800ms latency target)
+    - Three preset configurations: minimal, default, advanced
+    - Environment variable overrides with backward compatibility
+    - Integration with bot.py for streamlined service initialization
+  - **Updated Integration**: All components working with new structure
+    - bot.py imports from core/ directories
+    - Professional Kokoro TTS as default with audio artifact fixes
+    - Kyutai STT as default streaming option with Whisper MLX backup
+    - All imports resolved and functionality validated
+  - **Turn-Based Summarization**: Fixed contaminated summaries and implemented proper turn-based system
+    - Identified and removed 67 contaminated summaries with `<think>` tags from database
+    - Switched to non-thinking model `google/gemma-3n-e4b` to prevent contamination
+    - Implemented configurable turn-based summary generation (every N turn pairs)
+    - Added final summary generation at session cleanup for unsummarized turns
+    - Created comprehensive integration test suite with progressive scenarios (5, 10, 20 turns)
+  - **Configuration and Control**: Full control over summarization behavior
+    - `SUMMARIZER_WINDOW_MODE`: Supports `turn_pairs` and `delta` modes
+    - `SUMMARIZER_TURN_PAIRS`: Configurable N-turn summary intervals (default: 5)
+    - `SUMMARIZER_MODEL`: Uses non-thinking model to avoid contamination
+    - Extracted LLM call logic into reusable `_call_summarizer_llm()` method
+  - **Pipeline Integration**: Proper async task management and frame handling
+    - Fixed message storage to always save with session_id for summarization retrieval
+    - Implemented proper asyncio.create_task for turn-based summary generation
+    - Added comprehensive logging for debugging and monitoring
+    - Created extensive integration test coverage with edge cases
+  - **Test Coverage**: Full integration test suite for summarization
+    - Progressive test scenarios: 5, 10, 20 turn conversations with topic shifts
+    - Edge cases: single turn (no summary), incomplete final group (7 turns)
+    - Proper pipeline setup with asyncio.gather() for concurrent execution
+    - Content validation for key concepts in generated summaries
+    - Clean setup/teardown with temp database and automatic resource management
+
 - **Server Root Cleanup (2025-09-23)**: Moved active TTS files to core/ architecture
     - Relocated `kokoro_worker_optimized.py` and `tts_mlx_ultra_low_latency.py` to `core/tts/`
     - Updated imports in bot.py and test files to use new core/ paths
     - Maintained all functionality while improving project organization
 
-- **Phase 1.6: DIET Intent Classification Discovery — COMPLETED (2025-09-19)**
+- **Phase 1.6: Factory Pattern & Test Infrastructure — COMPLETED (2025-09-26)**
+  - **VoiceAgentFactory Implementation**: Centralized service creation with dependency injection
+    - Created `core/factory.py` implementing factory pattern for all services
+    - Single source of truth for service configuration and initialization
+    - Support for all service types: STT, TTS, LLM, Memory, Transport, RTVI
+    - Reduced bot.py from 679 to 266 lines (60% reduction)
+    - `run_bot()` function simplified from 200+ to 17 lines
+  - **Test Infrastructure Overhaul**: Complete pytest integration for CI/CD reliability
+    - Created `pytest.ini` with async mode support and test markers
+    - Added `conftest.py` with fixtures, mocks, and automatic test skipping
+    - Test categorization: `@pytest.mark.ci`, `@pytest.mark.slow`, `@pytest.mark.requires_models`
+    - Updated `run_all_tests.py` with test categories (ci, fast, slow, unit, integration)
+    - CI tests now complete in 6 seconds for fast PR feedback
+  - **Test Compatibility Fixes**: All tests now work with pytest
+    - Fixed async test execution with proper pytest configuration
+    - Resolved import path issues in all test files
+    - Fixed duplicate test file naming conflicts
+    - Added proper markers for test categorization
+    - Corrected context_aggregator attribute access in bot.py event handlers
+
+- **Phase 1.7: DIET Intent Classification Discovery — COMPLETED (2025-09-19)**
   - **Research Completed**: Comprehensive analysis of DIET (Dual Intent and Entity Transformer) for voice agent intent classification
   - **Key Findings**:
     - DIET provides 6x faster training than BERT with comparable accuracy

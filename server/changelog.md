@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Turn-Based Summarization System**: Implemented configurable turn-based summary generation
+  - Added `SUMMARIZER_WINDOW_MODE` configuration supporting `turn_pairs` and `delta` modes
+  - Implemented `SUMMARIZER_TURN_PAIRS` for configurable N-turn summary intervals (default: 5)
+  - Created `_generate_turn_summary()` method for on-demand summary generation
+  - Added automatic final summary generation at session cleanup for unsummarized turns
+  - Extracted LLM call logic into reusable `_call_summarizer_llm()` method
+  - Fixed message storage to always save with session_id for summarization retrieval
+  - Configured to use non-thinking model `google/gemma-3n-e4b` to avoid contamination
+  - Cleaned database of 67 contaminated summaries containing `<think>` tags
+- **Comprehensive Summarization Integration Test**: Full pipeline test suite for turn-based summaries
+  - Created `tests/integration/test_summarization_integration.py` with progressive test scenarios
+  - Test scenarios: 5, 10, 20 turn conversations with topic shifts
+  - Edge cases: single turn (no summary), incomplete final group (7 turns)
+  - Proper pipeline setup with asyncio.gather() for concurrent execution
+  - Content validation for key concepts in generated summaries
+  - Clean setup/teardown with temp database and automatic resource management
+
+### Fixed
+- **Summary Contamination Issue**: Resolved thinking tags appearing in stored summaries
+  - Updated summarizer prompt to explicitly request final summary only
+  - Switched from thinking-capable to non-thinking model (`google/gemma-3n-e4b`)
+  - Fixed 500-character truncation causing incomplete summaries
+- **Turn-Based Triggering**: Fixed summary generation not triggering at correct intervals
+  - Corrected window mode configuration reading from environment
+  - Fixed message storage to use session_id as entity_id for retrieval
+  - Added proper async task creation for turn-based summary generation
+
+### Added
 - **VoiceAgentFactory Pattern**: Centralized service creation with dependency injection
   - Created `core/factory.py` implementing factory pattern for all voice agent services
   - Single source of truth for service configuration and initialization

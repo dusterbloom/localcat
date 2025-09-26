@@ -438,7 +438,22 @@ self._enable_vad = os.getenv("ENABLE_VAD", "true").lower() in ("1", "true", "yes
 - ✅ **Better testability** - Services can be tested in isolation
 - ✅ **Easier maintenance** - Changes only needed in one place
 
-### 7. **Dependency Version Conflicts**
+### 7. **Summarization System Issues** ✅ **RESOLVED (2025-09-26)**
+
+**Resolution Approach**: Complete turn-based summarization implementation
+- **Fixed**: Contamination with `<think>` tags appearing in stored summaries
+- **Implemented**: Turn-based triggering (every N turn pairs, configurable)
+- **Added**: Final summary generation at session cleanup
+- **Created**: Comprehensive integration test suite with progressive scenarios
+
+**Results Achieved**:
+- ✅ **Clean summaries** - Switched to non-thinking model `google/gemma-3n-e4b`
+- ✅ **Turn-based system** - `SUMMARIZER_WINDOW_MODE=turn_pairs` with configurable intervals
+- ✅ **Complete test coverage** - 5, 10, 20 turn scenarios with edge cases
+- ✅ **Database cleaned** - Removed 67 contaminated summaries
+- ✅ **Proper async handling** - Pipeline-based execution with task management
+
+### 8. **Dependency Version Conflicts**
 **File**: `/Users/peppi/Dev/localcat-streaming/server/requirements.txt`
 **Impact**: Medium - Compatibility issues, deployment failures
 **Issues**:
@@ -447,7 +462,7 @@ self._enable_vad = os.getenv("ENABLE_VAD", "true").lower() in ("1", "true", "yes
 - Missing dependency constraints for new Kyutai-related packages
 - No vulnerability scanning or update automation
 
-### 8. **Insufficient Integration Testing** ✅ **RESOLVED (2025-09-26)**
+### 9. **Insufficient Integration Testing** ✅ **RESOLVED (2025-09-26)**
 
 **Resolution Approach**: Complete test infrastructure overhaul
 - **Created**: `pytest.ini` with async configuration and markers
