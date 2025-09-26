@@ -569,7 +569,7 @@ class HotPathMemoryProcessor(BaseProcessor):
         import urllib.request
         import urllib.error
 
-        sys_prompt = "You are a concise summarizer. Summarize the user's recent utterances as helpful context bullets. Keep it short."
+        sys_prompt = "You are a concise summarizer. Summarize the user's recent utterances as helpful context bullets. Keep it under 400 characters. Provide ONLY the final summary."
         while True:
             try:
                 await asyncio.sleep(self._summary_interval_secs)
