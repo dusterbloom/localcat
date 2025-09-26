@@ -114,48 +114,47 @@ class HotPathMemoryProcessor(BaseProcessor):
         self._last_injected_bullets: List[str] = []
         self._turn_ready_signaled: bool = False
         # Env-driven controls (Phase 0.5)
-        self._enabled: bool = os.getenv("ENABLE_MEMORY", "true").lower() in ("1", "true", "yes")
+        self._enabled: bool = os.getenv("MEMORY_ENABLED", "true").lower() in ("1", "true", "yes")
         try:
-            self._bullets_max: int = int(os.getenv("HOTMEM_BULLETS_MAX", "3"))
+            self._bullets_max: int = int(os.getenv("MEMORY_BULLETS_MAX", "3"))
         except Exception:
             self._bullets_max = 3
         try:
-            self._interim_min_words: int = int(os.getenv("HOTMEM_INTERIM_MIN_WORDS", "6"))
+            self._interim_min_words: int = int(os.getenv("MEMORY_INTERIM_MIN_WORDS", "6"))
         except Exception:
             self._interim_min_words = 6
-        self._inject_role = os.getenv("HOTMEM_INJECT_ROLE", "user").strip().lower()
+        self._inject_role = os.getenv("MEMORY_INJECT_ROLE", "user").strip().lower()
         if self._inject_role not in ("user", "system"):
             self._inject_role = "user"
-        self._inject_header = os.getenv("HOTMEM_INJECT_HEADER", "[Memory context]")
-        self._trace_frames = os.getenv("HOTMEM_TRACE_FRAMES", "false").lower() in ("1", "true", "yes")
-        self._handshake_enabled = os.getenv("HOTMEM_ENABLE_HANDSHAKE", "true").lower() in ("1", "true", "yes")
+        self._inject_header = os.getenv("MEMORY_INJECT_HEADER", "[Memory context]")
+        self._trace_frames = os.getenv("MEMORY_TRACE_FRAMES", "false").lower() in ("1", "true", "yes")
+        self._handshake_enabled = os.getenv("MEMORY_ENABLE_HANDSHAKE", "true").lower() in ("1", "true", "yes")
         # Retrieval source controls (Phase 2-ready; used now for convo indexing)
         self._memory_sources = [s.strip() for s in os.getenv("MEMORY_SOURCES", "graph").split(",") if s.strip()]
         self._convo_index_enabled = os.getenv("MEMORY_CONVO_INDEX", "false").lower() in ("1", "true", "yes")
         # LLM Summarizer controls (background)
         self._summary_enabled = (
-            os.getenv("MEMORY_SUMMARY_ENABLED", "false").lower() in ("1", "true", "yes") or
-            os.getenv("SUMMARIZER_ENABLED", "false").lower() in ("1", "true", "yes")
+            os.getenv("MEMORY_SUMMARIZER_ENABLED", "false").lower() in ("1", "true", "yes")
         )
-        self._summary_base_url = os.getenv("SUMMARIZER_BASE_URL", "http://127.0.0.1:1234/v1").rstrip("/")
-        self._summary_api_key = os.getenv("SUMMARIZER_API_KEY", "")
-        self._summary_model = os.getenv("SUMMARIZER_MODEL", "qwen3:4b")
+        self._summary_base_url = os.getenv("MEMORY_SUMMARIZER_BASE_URL", "http://127.0.0.1:1234/v1").rstrip("/")
+        self._summary_api_key = os.getenv("MEMORY_SUMMARIZER_API_KEY", "")
+        self._summary_model = os.getenv("MEMORY_SUMMARIZER_MODEL", "qwen3:4b")
         try:
-            self._summary_interval_secs = float(os.getenv("SUMMARIZER_INTERVAL_SECS", "60"))
+            self._summary_interval_secs = float(os.getenv("MEMORY_SUMMARIZER_INTERVAL_SECS", "60"))
         except Exception:
             self._summary_interval_secs = 60.0
         try:
-            self._summary_max_tokens = int(os.getenv("SUMMARIZER_MAX_TOKENS", "160"))
+            self._summary_max_tokens = int(os.getenv("MEMORY_SUMMARIZER_MAX_TOKENS", "160"))
         except Exception:
             self._summary_max_tokens = 160
         try:
-            self._summary_max_messages = int(os.getenv("SUMMARIZER_MAX_MESSAGES", "10"))
+            self._summary_max_messages = int(os.getenv("MEMORY_SUMMARIZER_MAX_MESSAGES", "10"))
         except Exception:
             self._summary_max_messages = 10
         # Turn-based summarization controls
-        self._window_mode = os.getenv("SUMMARIZER_WINDOW_MODE", "turn_pairs").lower()
+        self._window_mode = os.getenv("MEMORY_SUMMARIZER_WINDOW_MODE", "turn_pairs").lower()
         try:
-            self._turn_pairs = int(os.getenv("SUMMARIZER_TURN_PAIRS", "5"))
+            self._turn_pairs = int(os.getenv("MEMORY_SUMMARIZER_TURN_PAIRS", "5"))
         except Exception:
             self._turn_pairs = 5
         self._last_summarized_turn = 0
@@ -189,6 +188,9 @@ class HotPathMemoryProcessor(BaseProcessor):
         """
         # REQUIRED: call parent to set initialization state
         await super().process_frame(frame, direction)
+
+        # Log all frames for debugging
+        # logger.debug(f"[HotMem] process_frame called: {type(frame).__name__}")
 
         # If memory is disabled, simply forward
         if not self._enabled:
@@ -269,10 +271,10 @@ class HotPathMemoryProcessor(BaseProcessor):
         if isinstance(frame, TranscriptionFrame):
             is_final = getattr(frame, 'is_final', None)
             text = getattr(frame, 'text', '') or ''
-            logger.debug(f"[HotMem] TranscriptionFrame received: is_final={is_final} text_len={len(text)} text='{text[:120]}'")
+            logger.info(f"[HotMem] TranscriptionFrame received: is_final={is_final} text_len={len(text)} text='{text[:120]}'")
             # WhisperSTTServiceMLX doesn't set is_final, so treat None as final (non-streaming)
             if is_final is True or is_final is None:
-                logger.debug(f"[HotMem] Processing transcription (is_final={is_final}): '{text}'")
+                logger.info(f"[HotMem] Processing transcription (is_final={is_final}): '{text}'")
                 # Process: extract+persist+retrieve for final
                 await self._process_transcription(frame, direction)
 
@@ -311,6 +313,7 @@ class HotPathMemoryProcessor(BaseProcessor):
             return
         self._turn_id += 1
         text = frame.text or ""
+        logger.info(f"[HotMem] _process_transcription called: turn_id={self._turn_id}, text='{text[:50]}...'")
         
         if not text.strip():
             return
@@ -333,20 +336,26 @@ class HotPathMemoryProcessor(BaseProcessor):
             else:
                 self._pending_bullets = []
 
-            # Optional: index conversation text into FTS for convo retrieval
+            # Store conversation text for retrieval (needed for summarization and optional FTS)
             try:
-                if self._convo_index_enabled and text.strip():
+                if text.strip():
                     now_ts = int(time.time() * 1000)
-                    self.store.enqueue_mention(self._user_id, text.strip(), now_ts, self._session_id, self._turn_id)
+                    # Always store with session_id for summarization
+                    self.store.enqueue_mention(self._session_id, text.strip(), now_ts, self._session_id, self._turn_id)
+                    # Additionally store with user_id if convo indexing is enabled
+                    if self._convo_index_enabled:
+                        self.store.enqueue_mention(self._user_id, text.strip(), now_ts, self._session_id, self._turn_id)
                     self.store.flush_if_needed()
             except Exception as e:
-                logger.warning(f"[HotMem] Convo index failed: {e}")
+                logger.warning(f"[HotMem] Storing conversation failed: {e}")
 
             # Trigger turn-based summary if configured
             if self._summary_enabled and self._window_mode == "turn_pairs":
                 if self._turn_id > 0 and self._turn_id % self._turn_pairs == 0:
-                    logger.debug(f"[HotMem] Triggering turn-based summary at turn {self._turn_id}")
+                    logger.info(f"[HotMem] Triggering turn-based summary at turn {self._turn_id}")
                     asyncio.create_task(self._generate_turn_summary())
+                else:
+                    logger.debug(f"[HotMem] Not triggering summary: turn={self._turn_id}, pairs={self._turn_pairs}, mod={self._turn_id % self._turn_pairs}")
 
             # Track performance
             elapsed_ms = (time.perf_counter() - start) * 1000
@@ -478,7 +487,7 @@ class HotPathMemoryProcessor(BaseProcessor):
             lines = [
                 self._session_header_tag,
                 f"System date: {system_date}",
-                f"User ID: {self._session_id}",
+                f"User ID: {self._user_id}",
                 f"Agent ID: {self._agent_id}",
                 f"Session #: {int(stats.get('current_session', total_sessions))}",
                 f"Session start: {session_start}",
@@ -537,8 +546,11 @@ class HotPathMemoryProcessor(BaseProcessor):
             if (self._summary_enabled and
                 self._turn_id > 1 and
                 self._turn_id > self._last_summarized_turn):
-                logger.debug(f"[HotMem] Generating final summary for session (turns {self._last_summarized_turn+1} to {self._turn_id})")
-                await self._generate_turn_summary()
+                logger.info(f"[HotMem] Generating final summary for session (turns {self._last_summarized_turn+1} to {self._turn_id})")
+                try:
+                    await asyncio.wait_for(self._generate_turn_summary(), timeout=3.0)
+                except asyncio.TimeoutError:
+                    logger.warning("[HotMem] Final summary generation timed out")
 
             # Final flush to ensure all data is persisted
             self.store.flush()
@@ -591,7 +603,7 @@ class HotPathMemoryProcessor(BaseProcessor):
 
         data = json.dumps(payload).encode("utf-8")
         try:
-            timeout = getattr(self, '_summary_interval_secs', 30)
+            timeout = 5  # Use a short timeout for LLM calls
             with urllib.request.urlopen(req, data=data, timeout=timeout) as resp:
                 resp_data = resp.read().decode("utf-8")
             j = json.loads(resp_data)
@@ -606,20 +618,24 @@ class HotPathMemoryProcessor(BaseProcessor):
 
     async def _generate_turn_summary(self):
         """Generate summary for recent turns"""
+        logger.info(f"[HotMem] _generate_turn_summary started")
         try:
             # Calculate how many messages to summarize
             messages_to_get = self._turn_pairs * 2  # Each turn has user + assistant
+            logger.info(f"[HotMem] Getting {messages_to_get} recent messages for session {self._session_id}")
 
             # Get recent messages
             recent = self.store.get_recent_chunks_by_eid(self._session_id, limit=messages_to_get)
+            logger.debug(f"[HotMem] Found {len(recent)} messages to summarize")
             if not recent:
                 logger.debug("[HotMem] No recent messages to summarize")
                 return
 
             # Combine text (limit to 1200 chars)
             text = "; ".join(t for (t, _ts) in recent if t)[:1200]
+            logger.info(f"[HotMem] Combined text for summary ({len(text)} chars): {text[:100]}...")
             if not text.strip():
-                logger.debug("[HotMem] No text content to summarize")
+                logger.info("[HotMem] No text content to summarize")
                 return
 
             # Call LLM to generate summary

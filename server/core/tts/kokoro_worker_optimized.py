@@ -28,12 +28,12 @@ class OptimizedKokoroWorker:
     """Ultra-low latency Kokoro TTS worker with token-based chunking."""
 
     # Token chunk size configuration (from Kokoro FastAPI best practices)
-    TARGET_MIN_TOKENS = int(os.getenv("KOKORO_MIN_TOKENS", "175"))
-    TARGET_MAX_TOKENS = int(os.getenv("KOKORO_MAX_TOKENS", "250"))
-    ABSOLUTE_MAX_TOKENS = int(os.getenv("KOKORO_ABSOLUTE_MAX_TOKENS", "450"))
+    TARGET_MIN_TOKENS = int(os.getenv("TTS_MIN_TOKENS", "175"))
+    TARGET_MAX_TOKENS = int(os.getenv("TTS_MAX_TOKENS", "250"))
+    ABSOLUTE_MAX_TOKENS = int(os.getenv("TTS_ABSOLUTE_MAX_TOKENS", "450"))
 
     # Audio buffer size for streaming (40-80ms target latency)
-    AUDIO_BUFFER_MS = int(os.getenv("KOKORO_BUFFER_MS", "50"))  # 50ms buffer
+    AUDIO_BUFFER_MS = int(os.getenv("TTS_BUFFER_MS", "50"))  # 50ms buffer
 
     def __init__(self):
         self.model = None
@@ -176,6 +176,23 @@ class OptimizedKokoroWorker:
 def main():
     """Main worker loop - reads commands from stdin, writes responses to stdout."""
     worker = OptimizedKokoroWorker()
+
+    # Prewarm the model for ultra-low latency (40-80ms TTFB)
+    prewarm = os.getenv("TTS_PREWARM", "true").lower() in ("true", "1", "yes")
+    if prewarm:
+        sys.stderr.write("Prewarming Kokoro model for ultra-low latency...\n")
+        try:
+            # Initialize with default model and voice
+            model_name = os.getenv("TTS_MODEL", "mlx-community/Kokoro-82M-bf16")
+            voice = os.getenv("TTS_VOICE", "af_heart")
+            result = worker.initialize(model_name, voice)
+            if result.get("status") == "ready":
+                sys.stderr.write(f"✅ Model prewarmed successfully\n")
+                # Generate a small test to fully warm up
+                worker.generate("Test", 1.0)
+                sys.stderr.write("✅ Model fully warmed with test generation\n")
+        except Exception as e:
+            sys.stderr.write(f"⚠️ Could not prewarm model: {e}\n")
 
     for line in sys.stdin:
         try:

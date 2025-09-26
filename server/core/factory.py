@@ -30,6 +30,12 @@ from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIProcessor, RTVIOb
 from config import VoiceAgentConfig
 from core.memory.hotpath_processor import HotPathMemoryProcessor
 from core.memory.session_tracker import SessionTracker
+# Import database session tracker if available
+try:
+    from core.memory.db_session_tracker import DatabaseSessionTracker
+    DB_TRACKER_AVAILABLE = True
+except ImportError:
+    DB_TRACKER_AVAILABLE = False
 from core.tts.kokoro_professional import ProfessionalKokoroTTSService
 from core.tts.kokoro_mlx import MLXKokoroTTSService
 
@@ -212,7 +218,7 @@ class VoiceAgentFactory:
     def create_llm_service(self) -> OpenAILLMService:
         """Create LLM service with streaming configuration."""
         llm_config = self.config.get_component_config("llm")
-        use_llm_streaming = os.getenv("USE_LLM_STREAMING", "true").lower() == "true"
+        use_llm_streaming = os.getenv("LLM_USE_STREAMING", "true").lower() == "true"
 
         llm = OpenAILLMService(
             api_key=llm_config["api_key"],
@@ -249,8 +255,8 @@ class VoiceAgentFactory:
     def create_memory_processor(self, context_aggregator: Any, session_tracker: SessionTracker) -> HotPathMemoryProcessor:
         """Create HotMem memory processor."""
         memory = HotPathMemoryProcessor(
-            sqlite_path=os.getenv("HOTMEM_SQLITE", ":memory:"),
-            lmdb_dir=os.getenv("HOTMEM_LMDB_DIR", None),
+            sqlite_path=os.getenv("MEMORY_SQLITE_PATH", ":memory:"),
+            lmdb_dir=os.getenv("MEMORY_LMDB_PATH", None),
             user_id=os.getenv("USER_ID", "default-user"),
             enable_metrics=True,
             context_aggregator=context_aggregator,
@@ -288,7 +294,16 @@ class VoiceAgentFactory:
 
     def create_session_tracker(self) -> SessionTracker:
         """Create session tracker."""
-        tracker = SessionTracker()
+        # Use database tracker if configured and available
+        use_db = os.getenv("SESSION_USE_DATABASE", "false").lower() in ("true", "1", "yes")
+
+        if use_db and DB_TRACKER_AVAILABLE:
+            logger.info("Using database-backed SessionTracker")
+            tracker = DatabaseSessionTracker()
+        else:
+            logger.info("Using JSON-based SessionTracker")
+            tracker = SessionTracker()
+
         self._services_cache['session_tracker'] = tracker
         return tracker
 

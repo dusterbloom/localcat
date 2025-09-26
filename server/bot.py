@@ -30,7 +30,7 @@ from pipecat.frames.frames import TextFrame
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, IceServer
 
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'), override=True)
+load_dotenv(override=True)  # Load from local server/.env
 
 
 
