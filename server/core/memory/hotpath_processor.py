@@ -21,6 +21,14 @@ from .memory_hotpath import HotMemory
 from .context import format_bullets as _fmt_bullets, build_message as _build_msg, MemoryContextFrame
 from .session_tracker import SessionTracker
 
+# Import intent service for smart processing
+try:
+    from ..intent import get_intent_service
+    INTENT_SERVICE_AVAILABLE = True
+except ImportError:
+    INTENT_SERVICE_AVAILABLE = False
+    logger.warning("Intent service not available - using standard memory processing")
+
 # Ensure we only add a file sink once per process
 _HOTMEM_LOG_SINK_ADDED = False
 
@@ -166,6 +174,18 @@ class HotPathMemoryProcessor(BaseProcessor):
         self._agent_id = agent_id or os.getenv("AGENT_ID", "locat")
         self._session_header_tag = "[Session Context]"
 
+        # Initialize intent service for smart processing
+        self._intent_aware_processing = INTENT_SERVICE_AVAILABLE and os.getenv("INTENT_CLASSIFICATION_ENABLED", "true").lower() == "true"
+        if self._intent_aware_processing:
+            try:
+                self.intent_service = get_intent_service()
+                logger.info("[HotMem] Intent-aware processing enabled")
+            except Exception as e:
+                logger.warning(f"[HotMem] Failed to initialize intent service: {e}")
+                self._intent_aware_processing = False
+        else:
+            self.intent_service = None
+
         if self._trace_frames:
             logger.debug(f"[HotMem] Frame tracing ENABLED - will log all frames flowing through processor")
 
@@ -308,21 +328,66 @@ class HotPathMemoryProcessor(BaseProcessor):
         await self.push_frame(frame, direction)
     
     async def _process_transcription(self, frame: TranscriptionFrame, direction: FrameDirection):
-        """Process final user transcription"""
+        """Process final user transcription with intent awareness"""
         if not getattr(self, "_enabled", True):
             return
         self._turn_id += 1
         text = frame.text or ""
         logger.info(f"[HotMem] _process_transcription called: turn_id={self._turn_id}, text='{text[:50]}...'")
-        
+
         if not text.strip():
             return
-        
+
         start = time.perf_counter()
-        
-        try:
-            # Extract facts and retrieve relevant memories
+
+        # Intent classification for smart processing (following guide approach)
+        intent_result = None
+        if self._intent_aware_processing and self.intent_service:
+            try:
+                intent_result = await self.intent_service.classify_intent(text)
+                logger.info(f"[HotMem] Intent classified: {intent_result['intent']} (confidence: {intent_result['confidence']:.2f})")
+            except Exception as e:
+                logger.warning(f"[HotMem] Intent classification failed: {e}")
+
+        # Smart processing based on intent (following guide lines 432-455)
+        if intent_result and not intent_result['fallback']:
+            intent_name = intent_result['intent']
+
+            # Skip memory processing for casual conversation
+            if self.intent_service.should_skip_memory_processing(intent_name):
+                logger.info(f"[HotMem] Skipping memory processing for intent: {intent_name}")
+                elapsed_ms = (time.perf_counter() - start) * 1000
+                self._record_turn_metrics(elapsed_ms)
+                # Clear any pending bullets since we're skipping memory
+                self._pending_bullets = []
+                return
+
+            # Get memory processing strategy
+            strategy = self.intent_service.get_memory_processing_strategy(intent_name)
+            logger.debug(f"[HotMem] Using {strategy} strategy for intent: {intent_name}")
+
+            # Enhanced processing for different intents
+            if strategy == 'storage_focused':
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='storage')
+            elif strategy == 'retrieval_focused':
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='retrieval')
+            elif strategy == 'deletion_focused':
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='deletion')
+            elif strategy == 'lookup_focused':
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='lookup')
+            elif strategy == 'minimal':
+                # Minimal processing - just retrieve context without extraction
+                bullets = self.hot.retrieve_bullets(text, read_only=True)
+                triples = []
+            else:
+                # Standard processing for other intents
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id)
+        else:
+            # Fallback to standard processing if no intent or low confidence
+            logger.debug("[HotMem] Using standard processing (no intent classification or fallback)")
             bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id)
+
+        try:
             
             # Log what we extracted
             if triples:

@@ -30,6 +30,14 @@ from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIProcessor, RTVIOb
 from config import VoiceAgentConfig
 from core.memory.hotpath_processor import HotPathMemoryProcessor
 from core.memory.session_tracker import SessionTracker
+
+# Import intent service for smart processing
+try:
+    from core.intent import get_intent_service
+    INTENT_SERVICE_AVAILABLE = True
+except ImportError:
+    INTENT_SERVICE_AVAILABLE = False
+    logger.warning("Intent service not available in factory")
 # Import database session tracker if available
 try:
     from core.memory.db_session_tracker import DatabaseSessionTracker
@@ -267,6 +275,25 @@ class VoiceAgentFactory:
         self._services_cache['memory'] = memory
         return memory
 
+    def create_intent_service(self) -> Optional[Any]:
+        """Create intent classification service for smart memory processing."""
+        if not INTENT_SERVICE_AVAILABLE:
+            logger.debug("Intent service not available - skipping creation")
+            return None
+
+        if not os.getenv("INTENT_CLASSIFICATION_ENABLED", "true").lower() == "true":
+            logger.debug("Intent classification disabled via environment variable")
+            return None
+
+        try:
+            intent_service = get_intent_service()
+            logger.info("✅ Intent classification service ready")
+            self._services_cache['intent'] = intent_service
+            return intent_service
+        except Exception as e:
+            logger.error(f"Failed to create intent service: {e}")
+            return None
+
     def create_context_aggregator(self, llm_service: OpenAILLMService, system_instruction: str) -> Any:
         """Create LLM context aggregator."""
         context = OpenAILLMContext([{"role": "system", "content": system_instruction}])
@@ -405,6 +432,9 @@ class VoiceAgentFactory:
         # Create session tracker
         session_tracker = self.create_session_tracker()
 
+        # Create intent service for smart processing (optional)
+        intent_service = self.create_intent_service()
+
         # Create memory processor
         memory = self.create_memory_processor(context_aggregator, session_tracker)
 
@@ -425,7 +455,8 @@ class VoiceAgentFactory:
             'session_tracker': session_tracker,
             'memory': memory,
             'rtvi': rtvi,
-            'mic_probe': mic_probe
+            'mic_probe': mic_probe,
+            'intent': intent_service  # Intent classification service (optional)
         }
 
         # Create pipeline

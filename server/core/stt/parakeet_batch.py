@@ -23,7 +23,7 @@ from pipecat.frames.frames import (
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame
 )
-from pipecat.services.ai_services import STTService
+from pipecat.services.stt_service import STTService
 from pipecat.utils.tracing.service_decorators import traced_stt
 
 try:
@@ -257,7 +257,6 @@ class ParakeetBatchSTT(STTService):
             except:
                 pass
 
-    @traced_stt
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame, None]:
         """Process audio and yield transcription frames"""
         try:
