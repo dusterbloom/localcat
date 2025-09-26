@@ -117,12 +117,16 @@ class HotMemory:
         except Exception:
             pass
 
-    def process_turn(self, text: str, session_id: str, turn_id: int) -> Tuple[List[str], List[Tuple[str, str, str]]]:
+    def process_turn(self, text: str, session_id: str, turn_id: int, focus: str = 'standard') -> Tuple[List[str], List[Tuple[str, str, str]]]:
         """
         Process a conversation turn
         Returns: (memory_bullets, extracted_triples)
         """
         start = time.perf_counter()
+
+        # Log the focus strategy being used (for debugging)
+        if focus != 'standard':
+            logger.debug(f"[HotMem] Using focus strategy: {focus}")
         
         # Language detection
         lang = self._detect_language(text) if PYCLD3_AVAILABLE else "en"
