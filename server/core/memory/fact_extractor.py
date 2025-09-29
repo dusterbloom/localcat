@@ -24,23 +24,18 @@ except ImportError:
     PYCLD3_AVAILABLE = False
     logger.info("pycld3 not available, defaulting to English")
 
-# Singleton NLP model cache
-_nlp_cache = {}
-
+# DEPRECATED: Legacy NLP loading - migrating to SharedNLPManager
+# This function is kept for backward compatibility during migration
 def _load_nlp(lang: str = "en"):
-    """Load spaCy model (cached singleton)"""
-    if lang not in _nlp_cache:
-        try:
-            if lang == "en":
-                nlp = spacy.load("en_core_web_sm", disable=["ner", "textcat"])
-            else:
-                nlp = spacy.load(f"{lang}_core_news_sm", disable=["ner", "lemmatizer", "textcat"])
-            _nlp_cache[lang] = nlp
-            logger.info(f"Loaded spaCy model {lang}_core_web_sm")
-        except:
-            _nlp_cache[lang] = None
-            logger.warning(f"Could not load spaCy model for {lang}")
-    return _nlp_cache[lang]
+    """
+    DEPRECATED: Load spaCy model (cached singleton)
+
+    This function is deprecated in favor of SharedNLPManager.
+    Use get_nlp_model(lang) instead for new code.
+    """
+    from .nlp_manager import get_nlp_model
+    logger.debug(f"Using SharedNLPManager for language: {lang}")
+    return get_nlp_model(lang)
 
 def _norm(text: str) -> str:
     """Fast normalization"""
