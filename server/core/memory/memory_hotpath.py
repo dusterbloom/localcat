@@ -19,6 +19,12 @@ from spacy.tokens import Token
 from .memory_store import MemoryStore
 from .extractors.ud import UDExtractor
 from .retrieval import Retrieval
+from .confidence_strategy import (
+    ConfidenceStrategy,
+    RelationTypeConfidence,
+    Edge,
+    Context
+)
 
 # Try to import language detection
 try:
@@ -89,15 +95,19 @@ class HotMemory:
     All operations target <200ms p95
     """
     
-    def __init__(self, store: MemoryStore, max_recency: int = 50):
+    def __init__(self, store: MemoryStore, max_recency: int = 50,
+                 confidence_strategy: Optional[ConfidenceStrategy] = None):
         self.store = store
         self.user_eid = "you"
-        
+
+        # Confidence scoring strategy (dependency injection)
+        self.confidence = confidence_strategy or RelationTypeConfidence()
+
         # Hot indices (RAM)
         self.entity_index = defaultdict(set)  # entity -> set of (s,r,d) triples
         self.recency_buffer = deque(maxlen=max_recency)  # Recent interactions
         self.entity_cache = {}  # Canonical entity mapping
-        
+
         # Performance tracking
         self.metrics = defaultdict(list)
         self.max_metric_size = 1000
@@ -146,6 +156,10 @@ class HotMemory:
 
         update_start = time.perf_counter()
         now_ts = int(time.time() * 1000)
+
+        # Store the conversation turn FIRST (before edge extraction) for provenance
+        turn_id_hash = self.store.enqueue_turn(text, session_id, turn_id, now_ts)
+
         if not self._is_question(text):
             for s, r, d in triples:
                 # Demote conflicting facts before observing new evidence
@@ -160,13 +174,38 @@ class HotMemory:
                         self.entity_index[old_d].discard((_s, _r, old_d))
                     self._prune_recency_item(s, r, old_d)
 
-                # Determine confidence weights based on relation type
-                if r == "name":
-                    conf = 0.95
-                elif r.startswith("v:"):
-                    conf = 0.85
+                # Compute confidence using injected strategy
+                edge_id = self.store.edge_id(s, r, d)
+
+                # Get edge data for confidence calculation
+                # (pos/neg come from existing edge if it exists)
+                cur = self.store.sql.cursor()
+                edge_data = cur.execute(
+                    "SELECT pos, neg, updated_at FROM edge WHERE id = ?",
+                    (edge_id,)
+                ).fetchone()
+
+                if edge_data:
+                    pos, neg, updated_at = edge_data
                 else:
-                    conf = 0.9
+                    pos, neg, updated_at = 0, 0, now_ts
+
+                # Create Edge object for strategy
+                edge_obj = Edge(
+                    src=s, rel=r, dst=d,
+                    pos=pos, neg=neg,
+                    updated_at=updated_at,
+                    id=edge_id
+                )
+                context_obj = Context(
+                    store=self.store,
+                    text=text,
+                    session_id=session_id,
+                    turn_id=turn_id
+                )
+
+                # Score confidence
+                conf = self.confidence.score(edge_obj, context_obj)
 
                 if neg_count > 0 and r.startswith("v:"):
                     try:
@@ -175,6 +214,11 @@ class HotMemory:
                         logger.warning(f"HotMem negation failed for ({s}, {r}, {d}): {e}")
                 else:
                     self.store.observe_edge(s, r, d, conf, now_ts)
+
+                # Link edge to conversation turn (provenance)
+                edge_id = self.store.edge_id(s, r, d)
+                self.store.enqueue_edge_source(edge_id, turn_id_hash, now_ts)
+
                 # Update hot indices
                 self.entity_index[s].add((s, r, d))
                 self.entity_index[d].add((s, r, d))
