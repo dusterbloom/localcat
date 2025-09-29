@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SOLID/DRY Coreference Resolution Architecture** (2025-09-27): Complete implementation following software engineering best practices
+  - **SharedNLPManager**: Eliminated 3 duplicate spaCy model loading patterns, thread-safe caching
+  - **TextProcessor Strategy Pattern**: Extensible text processing pipeline following OCP + DIP principles
+  - **CoreferenceProcessor**: Single-responsibility coreference resolution with 50ms timeout protection
+  - **Enhanced UDExtractor**: Composition-based architecture using ISP, maintains full backward compatibility
+  - **Type-Safe Configuration**: Comprehensive dataclass-based configuration with validation and environment integration
+  - **Integration Layer**: Factory functions with graceful degradation strategies and status monitoring
+  - **Comprehensive Test Suite**: Unit and integration tests covering all SOLID principles
+  - **Documentation**: Complete integration guide with migration strategies and troubleshooting
 - **Turn-Based Summarization System**: Implemented configurable turn-based summary generation
   - Added `SUMMARIZER_WINDOW_MODE` configuration supporting `turn_pairs` and `delta` modes
   - Implemented `SUMMARIZER_TURN_PAIRS` for configurable N-turn summary intervals (default: 5)
