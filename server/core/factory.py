@@ -30,6 +30,7 @@ from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIProcessor, RTVIOb
 from config import VoiceAgentConfig
 from core.memory.hotpath_processor import HotPathMemoryProcessor
 from core.memory.session_tracker import SessionTracker
+from core.memory import HotMemService
 
 # Import intent service for smart processing
 try:
@@ -47,13 +48,13 @@ except ImportError:
 from core.tts.kokoro_professional import ProfessionalKokoroTTSService
 from core.tts.kokoro_mlx import MLXKokoroTTSService
 
-# Import legacy TTS services for backward compatibility
-try:
-    from fastapi_streaming_tts import FastAPIStreamingTTS
-    FASTAPI_TTS_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"FastAPI TTS not available: {e}")
-    FASTAPI_TTS_AVAILABLE = False
+# # Import legacy TTS services for backward compatibility
+# try:
+#     from fastapi_streaming_tts import FastAPIStreamingTTS
+#     FASTAPI_TTS_AVAILABLE = True
+# except ImportError as e:
+#     logger.warning(f"FastAPI TTS not available: {e}")
+#     FASTAPI_TTS_AVAILABLE = False
 
 # Import optional components
 try:
@@ -275,6 +276,39 @@ class VoiceAgentFactory:
         self._services_cache['memory'] = memory
         return memory
 
+    def create_hotmem_service(self, session_tracker: Optional[SessionTracker] = None) -> HotMemService:
+        """Create HotMemService (Pipecat-compatible memory service)."""
+        # Create confidence strategy based on configuration
+        confidence_strategy = self._create_confidence_strategy()
+
+        hotmem_service = HotMemService(
+            user_id=os.getenv("USER_ID", "default-user"),
+            agent_id=os.getenv("AGENT_ID", "locat"),
+            run_id=f"session_{os.getenv('USER_ID', 'default')}",
+            sqlite_path=os.getenv("MEMORY_SQLITE_PATH"),
+            lmdb_dir=os.getenv("MEMORY_LMDB_PATH"),
+            session_tracker=session_tracker,
+            confidence_strategy=confidence_strategy
+        )
+
+        self._services_cache['hotmem_service'] = hotmem_service
+        logger.info(f"✅ HotMemService created with {type(confidence_strategy).__name__ if confidence_strategy else 'default'} confidence strategy")
+        return hotmem_service
+
+    def _create_confidence_strategy(self):
+        """Create confidence strategy from environment configuration."""
+        from core.memory.confidence_strategy import create_confidence_strategy
+
+        strategy_name = os.getenv("CONFIDENCE_STRATEGY", "relation_type")
+
+        try:
+            strategy = create_confidence_strategy(strategy_name)
+            logger.debug(f"Using confidence strategy: {strategy_name}")
+            return strategy
+        except ValueError as e:
+            logger.warning(f"Invalid confidence strategy '{strategy_name}', using default: {e}")
+            return None  # Will use default in HotMemory
+
     def create_intent_service(self) -> Optional[Any]:
         """Create intent classification service for smart memory processing."""
         if not INTENT_SERVICE_AVAILABLE:
@@ -435,8 +469,18 @@ class VoiceAgentFactory:
         # Create intent service for smart processing (optional)
         intent_service = self.create_intent_service()
 
-        # Create memory processor
-        memory = self.create_memory_processor(context_aggregator, session_tracker)
+        # Create memory service based on configuration
+        memory_backend = os.getenv("MEMORY_BACKEND", "hotpath").lower()
+        logger.debug(f"[Factory] MEMORY_BACKEND from env: '{memory_backend}'")
+
+        if memory_backend == "hotmem":
+            # Use HotMemService (Pipecat-compatible service)
+            memory = self.create_hotmem_service(session_tracker)
+            logger.info("Using HotMemService (Pipecat-compatible memory)")
+        else:
+            # Use HotPathMemoryProcessor (current processor)
+            memory = self.create_memory_processor(context_aggregator, session_tracker)
+            logger.info("Using HotPathMemoryProcessor (current memory processor)")
 
         # Create RTVI processor
         rtvi = self.create_rtvi_processor()
