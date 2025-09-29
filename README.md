@@ -14,7 +14,6 @@ A production-ready voice assistant server built for Apple Silicon, featuring sub
 - 🎤 **Ultra-Low Latency Voice**: <800ms end-to-end response time with WebRTC transport
 - 🧠 **Intelligent Memory System**: SOLID-compliant architecture with coreference resolution (85-95% accuracy)
 - 🏠 **Fully Local**: Works with Ollama/LM Studio, zero cloud dependencies
-- ⚡ **Intent-Aware Processing**: Smart routing reduces casual conversation latency by 75%
 - 🎛️ **Professional Audio**: Artifact-free TTS with professional audio processing
 - 🔧 **Enterprise Architecture**: SOLID principles, comprehensive testing, type-safe configuration
 
@@ -22,9 +21,9 @@ A production-ready voice assistant server built for Apple Silicon, featuring sub
 
 ```
 ┌─ Voice Pipeline ────────────────────────────────────┐
-│  Silero VAD → Smart Turn → MLX Whisper → Gemma3    │
+│  Silero VAD → Smart Turn → Parakeet → Ollama LLM    │
 │                                             ↓       │
-│  Professional TTS ← Intent Classification ←─┘      │
+│  Kokoro TTS ← Memory injection / query    ←─┘       │
 └─────────────────────────────────────────────────────┘
 
 ┌─ Memory System (SOLID Architecture) ────────────────┐
@@ -36,19 +35,17 @@ A production-ready voice assistant server built for Apple Silicon, featuring sub
 
 ### Core Components
 
-- **Voice Processing**: Pipecat-based pipeline with professional TTS/STT
+- **Voice Processing**: Pipecat-based pipeline with Parakeet STT and kokoro TTS
 - **Memory System**: SOLID-compliant architecture with coreference resolution
-- **Intent Classification**: Falconsai-based smart routing (17.5ms avg latency)
 - **Configuration**: Type-safe, environment-driven configuration management
 
 ### Model Pipeline
 
 1. **Voice Activity Detection**: Silero VAD for precise speech detection
-2. **Speech-to-Text**: MLX Whisper (Apple Silicon optimized)
-3. **Intent Classification**: Falconsai model with 75% performance improvement
-4. **Memory Processing**: SharedNLPManager → Coreference → UD extraction
-5. **Language Model**: Gemma3n 4B via OpenAI-compatible server
-6. **Text-to-Speech**: Kokoro/Marvis TTS with artifact-free processing
+2. **Speech-to-Text**: MLX Parakeet streaming (Apple Silicon optimized)
+3. **Memory Processing**: SharedNLPManager → Coreference → UD extraction
+4. **Language Model**: Any local llm via OpenAI-compatible server
+5. **Text-to-Speech**: Kokoro TTS with artifact-free processing
 
 ## 🚀 Quick Start
 
@@ -59,7 +56,7 @@ A production-ready voice assistant server built for Apple Silicon, featuring sub
 - **Ollama** for LLM hosting
 - **LM Studio** (optional, for memory extraction models)
 
-### Installation
+### Server Installation
 
 1. **Clone and setup environment:**
 ```bash
@@ -115,6 +112,7 @@ HF_HUB_OFFLINE=1 python bot.py
 OPENAI_BASE_URL=http://127.0.0.1:11434/v1  # Ollama endpoint
 OPENAI_MODEL=gemma3n:4b                     # Main conversation model
 AGENT_ID=localcat                           # Agent identifier
+USER_ID=your-user-id                        # User identifiers
 
 # === Memory System ===
 MEMORY_ENABLED=true                         # Enable/disable memory
@@ -122,9 +120,7 @@ MEMORY_BULLETS_MAX=3                        # Max memory bullets per turn
 MEMORY_COREFERENCE_ENABLED=true             # Enable coreference resolution
 MEMORY_COREFERENCE_TIMEOUT_MS=50            # Coreference timeout protection
 
-# === Intent Classification ===
-INTENT_CLASSIFICATION_ENABLED=true         # Smart routing
-INTENT_MODEL_PATH=Falconsai/intent_classification  # Classification model
+
 
 # === Performance Tuning ===
 TTS_ULTRA_LOW_LATENCY=true                 # Enable ultra-low latency TTS
@@ -135,19 +131,164 @@ PREWARM_MODELS=true                        # Cache models on startup
 ### Advanced Configuration
 
 ```bash
-# === Memory Advanced ===
-MEMORY_SOURCES=graph,summary               # Memory retrieval sources
-MEMORY_SUMMARIZER_ENABLED=true             # Turn-based summarization
-MEMORY_SUMMARIZER_TURN_PAIRS=5             # Summary every N turns
+# LocalCat Voice Agent Configuration
+# Single source of truth - consolidated from dual .env files
+# Generated: 2025-09-26
 
-# === Audio Processing ===
-KOKORO_BUFFER_MS=40                        # TTS chunk size
-WHISPER_MODEL=base                         # STT model size
-SMART_TURN_STOP_SECS=1.5                  # Turn detection timeout
+#########################
+# Core Agent Settings
+#########################
+USER_ID=your-name
+AGENT_ID=agent-name
 
-# === Development ===
-MEMORY_PROCESSOR_METRICS=true             # Enable metrics collection
-HOTMEM_LOG_LEVEL=DEBUG                    # Memory system logging
+#########################
+# Speech-to-Text (STT)
+#########################
+STT_ENGINE=parakeet
+STT_CONFIDENCE_THRESHOLD=0.1
+STT_CHUNK_DURATION=1.0
+STT_ENABLE_VAD=false
+
+
+#########################
+# Text-to-Speech (TTS)
+#########################
+TTS_ENGINE=kokoro_mlx
+TTS_VOICE=af_heart
+TTS_SPEED=1.0
+
+# Ultra-low latency settings (40-80ms TTFB)
+TTS_PREWARM=true
+TTS_BUFFER_MS=50
+TTS_MIN_TOKENS=175
+TTS_MAX_TOKENS=250
+TTS_MODEL=mlx-community/Kokoro-82M-bf16
+
+# Audio quality
+TTS_FADE_DURATION_MS=50.0
+TTS_TARGET_PEAK_DB=-3.0
+TTS_ENABLE_QUALITY_LOGGING=true
+
+#########################
+# Language Model (LLM)
+#########################
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_API_KEY=not-needed
+LLM_MODEL=llama3.2:1b
+LLM_TEMPERATURE=0.7
+LLM_EMBEDDING_MODEL=nomic-embed-text:latest
+
+# Turn management
+LLM_AGGREGATION_TIMEOUT=0.2
+LLM_TURN_EMULATED_VAD_TIMEOUT=0.5
+LLM_ENABLE_EMULATED_VAD_INTERRUPTION=true
+
+#########################
+# Voice Activity Detection (VAD)
+#########################
+VAD_CONFIDENCE=0.5
+VAD_START_SECS=0.1
+VAD_STOP_SECS=0.8
+VAD_MIN_VOLUME=0.4
+
+# Smart turn detection
+VAD_SMART_TURN_MODEL_PATH=pipecat-ai/smart-turn-v2
+VAD_SMART_TURN_STOP_SECS=1.5
+VAD_SMART_TURN_PRE_SPEECH_MS=300.0
+VAD_SMART_TURN_MAX_DURATION_SECS=16.0
+
+#########################
+# Memory System
+#########################
+MEMORY_ENABLED=true
+MEMORY_HOTPATH_ENABLED=true
+# Memory backend: 'hotpath' (current processor) or 'hotmem' (Pipecat-compatible service)
+MEMORY_BACKEND=hotpath
+MEMORY_BULLETS_MAX=3
+MEMORY_INTERIM_MIN_WORDS=6
+MEMORY_ENABLE_HANDSHAKE=true
+MEMORY_SOURCES=graph,convo,summary
+MEMORY_CONVO_INDEX=true
+
+# Coreference
+MEMORY_COREFERENCE_ENABLED=true
+MEMORY_COREFERENCE_TIMEOUT_MS=50
+MEMORY_COREFERENCE_MIN_LENGTH=10
+
+# Storage paths (relative to server/)
+MEMORY_SQLITE_PATH=../data/memory.db
+MEMORY_LMDB_PATH=../data/graph.lmdb
+
+# Semantic retrieval (LEANN)
+MEMORY_USE_LEANN=true
+MEMORY_LEANN_INDEX_PATH=../data/memory_vectors.leann
+MEMORY_LEANN_BACKEND=hnsw
+MEMORY_LEANN_COMPLEXITY=16
+MEMORY_REBUILD_LEANN_ON_SESSION_END=true
+
+# Extraction settings
+MEMORY_DECOMPOSE_CLAUSES=false
+MEMORY_EXTRA_CONFIDENCE=false
+MEMORY_CONFIDENCE_THRESHOLD=0.3
+MEMORY_BYPASS_CONFIDENCE_FOR_BASIC=true
+MEMORY_CONFIDENCE_FLOOR_BASIC=0.6
+
+# Injection formatting
+MEMORY_INJECT_ROLE=system
+MEMORY_INJECT_HEADER=Use the following factual context if helpful.
+
+# Logging
+MEMORY_LOG_FILE=.logs/hotmem.log
+MEMORY_CONSOLE_DEBUG=true
+MEMORY_LOG_LEVEL=WARNING
+MEMORY_TRACE_FRAMES=false
+
+#########################
+# Session Management
+#########################
+SESSION_USE_DATABASE=true
+SESSION_DB_PATH=data/sessions.db
+SESSION_PERSISTENCE=true
+
+#########################
+# Summarization (DISABLED)
+#########################
+MEMORY_SUMMARIZER_ENABLED=false
+
+# Settings if re-enabling summarizer
+# MEMORY_SUMMARIZER_MODEL=google/gemma-3n-e4b
+# MEMORY_SUMMARIZER_BASE_URL=http://127.0.0.1:1234/v1
+# MEMORY_SUMMARIZER_API_KEY=
+# MEMORY_SUMMARIZER_MAX_TOKENS=120
+# MEMORY_SUMMARIZER_WINDOW_MODE=turn_pairs
+# MEMORY_SUMMARIZER_TURN_PAIRS=10
+# MEMORY_SUMMARIZER_INTERVAL_SECS=300
+
+#########################
+# Performance & Debug
+#########################
+TARGET_LATENCY_MS=800
+DEBUG_MODE=false
+LOG_LEVEL=WARNING
+ENABLE_PERFORMANCE_LOGGING=false
+
+#########################
+# Parakeet STT Settings
+#########################
+PARAKEET_CONFIDENCE_THRESHOLD=0.1
+PARAKEET_TEMPERATURE=0.0
+PARAKEET_SENTENCE_PAUSE_THRESHOLD=1.2
+PARAKEET_MAX_CHUNK_DURATION=4.0
+PARAKEET_CONTEXT_SIZE=256,256
+PARAKEET_DEPTH=3
+PARAKEET_VOLUME_THRESHOLD=0.001
+
+# Legacy/Deprecated (kept for reference)
+# VOICE_AGENT_* prefixes deprecated - use domain-specific prefixes above
+# HOTMEM_* prefixes deprecated - use MEMORY_* prefix
+# KOKORO_* individual settings deprecated - use TTS_* prefix
+# SUMMARIZER_ENABLED deprecated - use MEMORY_SUMMARIZER_ENABLED
+
 ```
 
 ## 🧠 Memory System Features
@@ -271,7 +412,6 @@ python scripts/monitor_performance.py
 |-----------|--------|----------|
 | End-to-End Latency | <800ms | ~400-600ms |
 | Memory Processing | <200ms | ~150-170ms |
-| Intent Classification | <20ms | ~17.5ms |
 | TTS First Token | <80ms | ~40-80ms |
 | Memory Accuracy | 85%+ | 85-95% |
 
@@ -289,7 +429,6 @@ python scripts/monitor_performance.py
 Every major component follows SOLID principles:
 
 - **Memory System**: Strategy pattern, dependency injection, single responsibilities
-- **Intent Classification**: Modular architecture, clean interfaces
 - **Configuration**: Type-safe, validated, hierarchical structure
 - **Audio Processing**: Composition-based, extensible pipeline
 
@@ -392,8 +531,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ### Latest Features (September 2025)
 
 - ✅ **SOLID/DRY Coreference Architecture**: Complete rewrite following software engineering best practices
-- ✅ **Intent-Aware Processing**: 75% performance improvement for casual conversations
-- ✅ **Professional Audio**: Artifact-free TTS with ultra-low latency
+- ✅ **Professional Audio**: Artifact-free STT/TTS with ultra-low latency
 - ✅ **Type-Safe Configuration**: Comprehensive environment-driven configuration
 - ✅ **Comprehensive Testing**: Full test suite covering SOLID principles
 
