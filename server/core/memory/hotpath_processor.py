@@ -146,7 +146,7 @@ class HotPathMemoryProcessor(BaseProcessor):
         )
         self._summary_base_url = os.getenv("MEMORY_SUMMARIZER_BASE_URL", "http://127.0.0.1:1234/v1").rstrip("/")
         self._summary_api_key = os.getenv("MEMORY_SUMMARIZER_API_KEY", "")
-        self._summary_model = os.getenv("MEMORY_SUMMARIZER_MODEL", "qwen3:4b")
+        self._summary_model = os.getenv("MEMORY_SUMMARIZER_MODEL", "llama-3.2-3b-instruct")
         try:
             self._summary_interval_secs = float(os.getenv("MEMORY_SUMMARIZER_INTERVAL_SECS", "60"))
         except Exception:
@@ -265,7 +265,8 @@ class HotPathMemoryProcessor(BaseProcessor):
                     wcount = 0
                 if wcount >= self._interim_min_words:
                     try:
-                        preview = self.hot.retrieve_bullets(text, read_only=True)
+                        # Note: Interim doesn't have intent yet (happens in _process_transcription)
+                        preview = self.hot.retrieve_bullets(text, read_only=True, intent=None)
                     except Exception as e:
                         logger.error(f"[HotMem] Interim retrieval failed: {e}")
                         preview = []
@@ -374,35 +375,35 @@ class HotPathMemoryProcessor(BaseProcessor):
             # Apply strategy-based processing
             logger.debug(f"[HotMem] Using {strategy} strategy for intent: {intent_name}")
 
-            # Enhanced processing for different strategies
+            # Enhanced processing for different strategies - ALWAYS pass intent for routing
             if strategy == 'storage_focused':
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='storage')
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='storage', intent=intent_result)
             elif strategy == 'retrieval_focused':
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='retrieval')
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='retrieval', intent=intent_result)
             elif strategy == 'deletion_focused':
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='deletion')
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='deletion', intent=intent_result)
             elif strategy == 'lookup_focused':
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='lookup')
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='lookup', intent=intent_result)
             elif strategy == 'minimal':
                 # Minimal processing - just retrieve context without extraction
-                bullets = self.hot.retrieve_bullets(text, read_only=True)
+                bullets = self.hot.retrieve_bullets(text, read_only=True, intent=intent_result)
                 triples = []
             elif strategy == 'contextual':
                 # Contextual processing - focus on recent context
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='context')
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='context', intent=intent_result)
             elif strategy == 'recent_context':
                 # Recent context processing - for corrections
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='recent')
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='recent', intent=intent_result)
             else:
                 # Standard processing for other strategies
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id)
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, intent=intent_result)
         else:
             # Fallback to standard processing if no intent classification or fallback result
             fallback_reason = "no intent classification"
             if intent_result:
                 fallback_reason = f"fallback classification ({intent_result.get('reason', 'unknown')})"
             logger.debug(f"[HotMem] Using standard processing ({fallback_reason})")
-            bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id)
+            bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, intent=None)
 
         try:
             

@@ -141,9 +141,15 @@ class HotMemory:
         except Exception:
             pass
 
-    def process_turn(self, text: str, session_id: str, turn_id: int, focus: str = 'standard') -> Tuple[List[str], List[Tuple[str, str, str]]]:
+    def process_turn(self, text: str, session_id: str, turn_id: int, focus: str = 'standard', intent: Optional[Dict] = None) -> Tuple[List[str], List[Tuple[str, str, str]]]:
         """
         Process a conversation turn
+        Args:
+            text: User input text
+            session_id: Current session ID
+            turn_id: Current turn ID
+            focus: Processing focus strategy
+            intent: Optional intent classification for smart retrieval routing
         Returns: (memory_bullets, extracted_triples)
         """
         start = time.perf_counter()
@@ -285,9 +291,9 @@ class HotMemory:
                     self.entity_index[base_d].add((s, r, d))
         self.metrics['update_ms'].append((time.perf_counter() - update_start) * 1000)
         
-        # Stage 3: Retrieve relevant memories
+        # Stage 3: Retrieve relevant memories with intent-aware routing
         retrieve_start = time.perf_counter()
-        bullets = self._retrieve_context(text, entities, turn_id)
+        bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
         self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
         
         # Update recency with extracted triples
@@ -879,10 +885,10 @@ class HotMemory:
                     entities.add(oprd)
                 break
     
-    def _retrieve_context(self, query: str, entities: List[str], turn_id: int) -> List[str]:
-        """Compatibility shim: delegate to retriever (no behavior change)."""
+    def _retrieve_context(self, query: str, entities: List[str], turn_id: int, intent: Optional[Dict] = None) -> List[str]:
+        """Compatibility shim: delegate to retriever with optional intent routing."""
         try:
-            return self.retriever.retrieve(query, entities, turn_id)
+            return self.retriever.retrieve(query, entities, turn_id, intent=intent)
         except Exception:
             return []
     
@@ -1048,12 +1054,13 @@ class HotMemory:
         return {"entities": entities, "bullets": bullets}
 
     # Phase 0: unified retrieval entry point (read-only or normal)
-    def retrieve_bullets(self, text: str, read_only: bool = True, lang: str = "en") -> List[str]:
+    def retrieve_bullets(self, text: str, read_only: bool = True, lang: str = "en", intent: Optional[Dict] = None) -> List[str]:
         """
         Retrieve bullets for the given text.
 
         - read_only=True: does not perform any store updates or recency changes; uses extraction + retrieval only.
         - read_only=False: behaves like normal retrieval path after extraction/persist (callers should have persisted if needed).
+        - intent: Optional intent classification result for smart routing
         """
         if read_only:
             try:
@@ -1061,7 +1068,7 @@ class HotMemory:
                 entities = self.extractor.refine_entities(text, entities)
             except Exception:
                 entities = []
-            return self.retriever.retrieve(text, entities, turn_id=-1)
+            return self.retriever.retrieve(text, entities, turn_id=-1, intent=intent)
         else:
             # Non read-only: reuse preview path for now; callers may have called process_turn before this.
             try:
@@ -1069,7 +1076,7 @@ class HotMemory:
                 entities = self.extractor.refine_entities(text, entities)
             except Exception:
                 entities = []
-            return self.retriever.retrieve(text, entities, turn_id=-1)
+            return self.retriever.retrieve(text, entities, turn_id=-1, intent=intent)
 
     # ---------- Refinement helpers (quality without large perf cost) ----------
     def _is_question(self, text: str) -> bool:
