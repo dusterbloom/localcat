@@ -474,7 +474,15 @@ class HotPathMemoryProcessor(BaseProcessor):
             memory_message = _build_msg(self._inject_role, self._inject_header, bullets)
 
             logger.debug(f"[HotMem] Injecting {len(bullets)} memory bullets directly into context")
-            logger.debug(f"[HotMem] Memory bullets: {bullets[:2]}")
+            try:
+                if len(bullets) <= 5:
+                    preview = ", ".join(bullets)
+                else:
+                    preview = ", ".join(bullets[:3]) + f" ... (+{len(bullets) - 3} more)"
+                logger.debug(f"[HotMem] Memory bullets: {preview}")
+            except Exception:
+                # Fallback to previous logging behavior on any error
+                logger.debug(f"[HotMem] Memory bullets: {bullets[:2]}")
 
             target_idx = self._find_context_message(messages, self._inject_header)
             if bullets:

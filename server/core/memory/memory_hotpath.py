@@ -1113,7 +1113,14 @@ class HotMemory:
             "think",
             "ask",
             "quality",
+            "quantity",
             "tell_about",
+            "talk",
+            "talk_about",
+            "delete",
+            "remove",
+            "known",
+            "known_as",
         }
         if r_norm in stop_relations:
             return False

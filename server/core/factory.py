@@ -151,6 +151,22 @@ class VoiceAgentFactory:
                     # Final fallback to Whisper MLX
                     logger.warning("Using Whisper MLX as final fallback")
                     stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
+        elif self.config.stt_engine == "parakeet_batch":
+            # Explicit batch mode for quality comparison
+            try:
+                from core.stt.parakeet_batch import ParakeetBatchSTT
+                logger.debug("Using Parakeet batch STT (explicit)")
+                stt = ParakeetBatchSTT(
+                    model_path=stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3"),
+                    language=stt_config.get("language", "en"),
+                    confidence_threshold=float(os.getenv("PARAKEET_BATCH_CONFIDENCE_THRESHOLD", "0.3")),
+                    temperature=float(os.getenv("PARAKEET_TEMPERATURE", "0.0"))
+                )
+                logger.info("✅ Parakeet batch STT ready")
+            except Exception as e:
+                logger.error(f"❌ Parakeet batch STT failed: {e}", exc_info=True)
+                logger.warning("Falling back to Whisper MLX batch mode")
+                stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
         elif self.config.stt_engine == "parakeet":
             # Support legacy "parakeet" name for backward compatibility
             try:

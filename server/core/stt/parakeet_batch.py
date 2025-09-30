@@ -182,40 +182,13 @@ class ParakeetBatchSTT(STTService):
             # Convert to temporary WAV file
             audio_path = self._audio_bytes_to_wav(audio_bytes)
 
-            # Prepare generation parameters
-            generate_kwargs = {}
-
-            # Add temperature if supported
-            if self._temperature != 0.0:
-                # Try common temperature parameter names
-                for temp_param in ["temperature", "temp", "sampling_temperature"]:
-                    try:
-                        # Test if the parameter is accepted
-                        test_kwargs = generate_kwargs.copy()
-                        test_kwargs[temp_param] = self._temperature
-                        if PARAKEET_OLD_FORMAT:
-                            result = self._model.generate(audio_path, **test_kwargs)
-                        else:
-                            from parakeet_mlx.audio import load_audio
-                            audio_array = load_audio(audio_path, self._model.preprocessor_config.sample_rate)
-                            result = self._model.generate(audio_array, **test_kwargs)
-                        generate_kwargs = test_kwargs
-                        logger.debug(f"Using temperature parameter '{temp_param}' with value {self._temperature}")
-                        break
-                    except TypeError:
-                        continue
-                else:
-                    logger.debug("Temperature parameter not supported by Parakeet model, using default")
-
-            # Generate transcription
+            # Generate transcription (use model's transcribe API to avoid shape issues)
             if PARAKEET_OLD_FORMAT:
-                # Legacy mlx_audio API
-                result = self._model.generate(audio_path, **generate_kwargs)
+                # Legacy mlx_audio API may expect raw path for generate
+                result = self._model.generate(audio_path)
             else:
-                # New parakeet_mlx API
-                from parakeet_mlx.audio import load_audio
-                audio_array = load_audio(audio_path, self._model.preprocessor_config.sample_rate)
-                result = self._model.generate(audio_array, **generate_kwargs)
+                # New parakeet_mlx API exposes transcribe(path) → AlignedResult
+                result = self._model.transcribe(audio_path)
 
             # Extract text and confidence from result
             text = ""

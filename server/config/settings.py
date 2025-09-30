@@ -22,7 +22,7 @@ class VoiceAgentConfig:
     # ============================================================================
     # STT Configuration
     # ============================================================================
-    stt_engine: str = "parakeet_streaming"  # parakeet_streaming | whisper_mlx
+    stt_engine: str = "parakeet_streaming"  # parakeet_streaming | parakeet_batch | whisper_mlx
     stt_model: str = "mlx-community/parakeet-tdt-0.6b-v3"
     stt_chunk_length_ms: int = 100
     stt_language: str = "en"
@@ -171,7 +171,7 @@ class VoiceAgentConfig:
         errors = []
 
         # Validate STT engine
-        if self.stt_engine not in ["parakeet_streaming", "whisper_mlx"]:
+        if self.stt_engine not in ["parakeet_streaming", "parakeet_batch", "whisper_mlx"]:
             errors.append(f"Invalid STT engine: {self.stt_engine}")
 
         # Validate TTS engine

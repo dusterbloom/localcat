@@ -10,7 +10,7 @@ This adapter is behavior-preserving: it reads from the host's indices and
 store exactly as the previous implementation did.
 """
 
-from typing import List, Tuple, Any
+from typing import List, Tuple, Any, Dict
 import time
 
 
@@ -64,24 +64,61 @@ class Retrieval:
             "has": 60,
         }
 
+        WEIGHT_MIN = 0.25  # Align with status thresholding used by store
+        # Stricter minimum positive support for noisy relations
+        REL_MIN_POS: Dict[str, int] = {
+            "also_known_as": 2,
+        }
+
         for entity in query_entities:
             if entity in self.host.entity_index:
                 candidates = list(self.host.entity_index[entity])
-                scored: List[Tuple[int, int, str, str, str]] = []
+                scored: List[Tuple[float, int, str, str, str]] = []
+
+                # Build quick lookup for (s,r)-> dst meta once per relation
+                meta_cache: Dict[Tuple[str, str], Dict[str, Tuple[float, int, int, int, int]]] = {}
+
                 for s, r, d in candidates:
-                    ts = 0
-                    try:
-                        neigh = self.host.store.neighbors(s, r)
-                        for (dst, _w, nts, _p, _n, _st) in neigh:
-                            if dst == d:
-                                ts = int(nts)
-                                break
-                    except Exception:
-                        ts = 0
+                    # Retrieve neighbor meta for this (s,r) only once
+                    key = (s, r)
+                    if key not in meta_cache:
+                        try:
+                            neigh = self.host.store.neighbors(s, r)
+                            meta_cache[key] = {
+                                dst: (float(w), int(nts), int(pos), int(neg), int(st))
+                                for (dst, w, nts, pos, neg, st) in neigh
+                            }
+                        except Exception:
+                            meta_cache[key] = {}
+
+                    w, ts, pos, neg, status = 1.0, 0, 0, 0, 1
+                    meta = meta_cache.get(key, {}).get(d)
+                    if meta is not None:
+                        w, ts, pos, neg, status = meta
+
+                    # Skip edges that are stale/negated/weak
+                    if status <= 0:
+                        continue
+                    if pos <= neg:
+                        continue
+                    if w < WEIGHT_MIN:
+                        continue
+                    # Per‑relation support requirements
+                    min_pos = REL_MIN_POS.get(r, 1)
+                    if pos < min_pos:
+                        # Additional guard for families of noisy relations
+                        if ("happen" in r or "feel" in r) and pos < 2:
+                            continue
+                        if r in ("quality", "quantity"):
+                            continue
+
                     pri = pred_pri.get(r, 50)
-                    scored.append((pri, ts, s, r, d))
+                    # Composite score: priority × weight × support, tie-break by recency
+                    support = 1.0 + min(max(pos, 0), 5) * 0.1  # dampen large pos
+                    score = float(pri) * float(max(w, 0.01)) * support
+                    scored.append((score, ts, s, r, d))
                 scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
-                for _pri, _ts, s, r, d in scored:
+                for _score, _ts, s, r, d in scored:
                     fact = f"{s} {r} {d}"
                     if fact not in seen:
                         suffix = self._ago_suffix(_ts)
@@ -170,8 +207,16 @@ class Retrieval:
             return ""
 
     def _humanize_fact(self, s: str, r: str, d: str) -> str:
+        """Convert (s,r,d) to a compact English fragment.
+
+        Applies conservative filtering for conversational/command relations and
+        fixes common agreement issues for second-person subjects.
+        """
         meaningless_entities = {"it", "this", "that", "there", "here", "been"}
+        wh_words = {"what", "who", "when", "where", "why", "how", "which"}
         if s.lower() in meaningless_entities or d.lower() in meaningless_entities:
+            return ""
+        if s.lower() in wh_words or d.lower() in wh_words:
             return ""
 
         stop_relations = {
@@ -183,7 +228,15 @@ class Retrieval:
             "think",
             "ask",
             "quality",
+            "quantity",
             "tell_about",
+            "talk",
+            "talk_about",
+            "delete",
+            "remove",
+            # keep also_known_as with support gating; suppress generic variants
+            "known",
+            "known_as",
         }
         if r in stop_relations:
             return ""
@@ -196,10 +249,23 @@ class Retrieval:
             if s.lower() == "you":
                 return f"you have {d}"
             return f"{s} has {d}"
+        if r == "also_known_as":
+            return f"{s} aka {d}"
         if r == "is":
             if s.lower() in meaningless_entities or d.lower().startswith("what "):
                 return ""
+            if s.lower() == "you":
+                return f"you are {d}"
             return f"{s} is {d}"
         if r.startswith("v:"):
             return f"{s} {r[2:]} {d}"
+        # Common relation fixes for second person
+        if s.lower() == "you":
+            if r == "lives_in":
+                return f"you live in {d}"
+            if r == "works_at":
+                return f"you work at {d}"
+            if r == "works_in":
+                return f"you work in {d}"
+
         return f"{s} {r.replace('_', ' ')} {d}"
