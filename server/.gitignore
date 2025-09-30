@@ -65,3 +65,8 @@ graph.lmdb/
 *.lmdb/
 memory.db
 test_*.db*
+
+# Log files
+*.log
+.logs/
+server/core/memory/.logs/

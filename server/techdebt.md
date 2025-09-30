@@ -166,6 +166,29 @@ core/memory/
 - Priority: Medium
 - Effort: 2–4 hours
 
+### 🧠 Contextual Extraction Follow-ups (NEW - 2025-09-30)
+
+**Alias Heuristic Coverage**
+- Issue: `_extract_base_entity()` still relies on coarse first/last-word heuristics
+- Impact: Multi-token entities with uncommon structures (e.g., "out of office") may index under incorrect base keys
+- Solution: Gather edge cases from logs and unit tests; refine heuristic or persist explicit base alias alongside enriched form
+- Priority: Medium
+- Effort: 3–4 hours
+
+**Retrieval Regression Guard**
+- Issue: Manual testing verifies alias fan-out, but no automated assertion yet
+- Impact: Future extractor edits could silently drop base entities from retrieval results
+- Solution: Formalize regression in integration tests (e.g., enforce `entity_index[base]` contains enriched edge for fixtures)
+- Priority: Medium
+- Effort: 2 hours
+
+**Metadata Roadmap**
+- Issue: Modifiers currently stay in enriched text; no structured storage for location/time metadata
+- Impact: Limits query precision and downstream reasoning
+- Solution: Design JSON column / edge context payload, plus backfill strategy (Phase 4 of contextual plan)
+- Priority: Medium
+- Effort: 1–2 days (pending product need)
+
 ### ⚠️ Remaining Startup Warnings
 
 **WebSockets Legacy API Deprecation**

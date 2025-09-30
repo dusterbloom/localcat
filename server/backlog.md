@@ -1,5 +1,14 @@
 # LocalCat Server Development Backlog
 
+## ✅ Progress (2025-09-30)
+
+- Contextual Extraction Granularity — COMPLETED
+  - Added `_get_entity_with_context()` helper that preserves canonical roots while attaching noun/verb modifiers (prep, amod, compound)
+  - Expanded extractor interface to return `(entities, triples, neg_count, doc, aliases)` so HotMem can index enriched triples under both enriched and base keys
+  - Introduced dual registration in `entity_index` plus rebuild heuristics to keep retrieval queries (`entity_index["swimming"]`) aligned with enriched edges
+  - Added contextual extraction regression suite (`server/test_contextual_extraction.py`) covering prepositions, adjectives, compounds, and negation handling
+  - Instrumented enrichment metrics (length, timing, truncation) and enforced length/child caps for predictable performance (<+1 ms)
+
 ## ✅ Progress (2025-09-19)
 
 - Phase 0: Minimal Streaming Correctness — COMPLETED

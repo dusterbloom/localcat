@@ -125,6 +125,7 @@ class HotMemService(FrameProcessor):
         lmdb_dir: Optional[str] = None,
         session_tracker: Optional[SessionTracker] = None,
         confidence_strategy: Optional[ConfidenceStrategy] = None,
+        enable_dspy_extraction: Optional[bool] = None,
         **kwargs
     ):
         """
@@ -161,7 +162,11 @@ class HotMemService(FrameProcessor):
             lmdb_dir=lmdb_dir
         )
         self.store = MemoryStore(paths)
-        self.hot = HotMemory(self.store, confidence_strategy=confidence_strategy)
+        self.hot = HotMemory(
+            self.store,
+            confidence_strategy=confidence_strategy,
+            enable_dspy_extraction=enable_dspy_extraction
+        )
 
         # Pre-warm NLP to avoid first-turn latency
         try:

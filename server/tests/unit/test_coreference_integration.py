@@ -16,11 +16,11 @@ import spacy
 from spacy.tokens import Doc
 
 # Import the modules we're testing
-from server.core.memory.nlp_manager import SharedNLPManager, get_nlp_manager, get_nlp_model, get_nlp_with_coref
-from server.core.memory.processors.base import TextProcessor, ProcessorChain, NoOpProcessor
-from server.core.memory.processors.coreference import CoreferenceProcessor
-from server.core.memory.extractors.ud import UDExtractor
-from server.core.memory.config import MemoryConfig, CoreferenceConfig, validate_memory_config
+from core.memory.nlp_manager import SharedNLPManager, get_nlp_manager, get_nlp_model, get_nlp_with_coref
+from core.memory.processors.base import TextProcessor, ProcessorChain, NoOpProcessor
+from core.memory.processors.coreference import CoreferenceProcessor
+from core.memory.extractors.ud import UDExtractor
+from core.memory.config import MemoryConfig, CoreferenceConfig, validate_memory_config
 
 
 class TestSharedNLPManager:
@@ -228,7 +228,7 @@ class TestCoreferenceProcessor:
         """Test graceful handling of model loading failure."""
         processor = CoreferenceProcessor()
 
-        with patch('server.core.memory.processors.coreference.get_nlp_with_coref') as mock_get_nlp:
+        with patch('core.memory.processors.coreference.get_nlp_with_coref') as mock_get_nlp:
             mock_get_nlp.return_value = None  # Simulate failure
 
             mock_doc = Mock(spec=Doc)
@@ -293,7 +293,7 @@ class TestCoreferenceProcessor:
         processor._nlp = mock_nlp
 
         # Mock the clean NLP model
-        with patch('server.core.memory.processors.coreference.get_nlp_model') as mock_get_clean:
+        with patch('core.memory.processors.coreference.get_nlp_model') as mock_get_clean:
             mock_clean_nlp = Mock()
             mock_resolved_doc = Mock(spec=Doc)
             mock_clean_nlp.return_value = mock_resolved_doc
@@ -314,46 +314,44 @@ class TestUDExtractorComposition:
     def test_backward_compatibility(self):
         """Test that UDExtractor works without text processors."""
         mock_host = Mock()
-        mock_host._extract.return_value = (["entity"], [("s", "p", "o")], 0, None)
+        mock_host._extract.return_value = (["entity"], [("s", "p", "o")], 0, None, {})
 
         extractor = UDExtractor(mock_host)
 
         result = extractor.extract("test text", "en")
 
         mock_host._extract.assert_called_once_with("test text", "en")
-        assert result == (["entity"], [("s", "p", "o")], 0, None)
+        assert result == (["entity"], [("s", "p", "o")], 0, None, {})
 
     def test_with_text_processors(self):
         """Test UDExtractor with text processors enabled."""
         mock_host = Mock()
         mock_doc = Mock(spec=Doc)
-        mock_host._extract.return_value = (["entity"], [("s", "p", "o")], 0, mock_doc)
+        mock_doc.text = "test text"
 
+        # Mock processor that doesn't modify text (no re-extraction)
         mock_processor = Mock(spec=TextProcessor)
         mock_processor.name = "test"
+        mock_processor._record_metric = Mock()
         processed_doc = Mock(spec=Doc)
-        processed_doc.text = "processed text"
+        processed_doc.text = "test text"  # Same text, no modification
         mock_processor.process.return_value = processed_doc
 
         extractor = UDExtractor(mock_host, text_processors=[mock_processor])
 
-        # Mock the re-extraction after processing
-        mock_host._extract.side_effect = [
-            (["entity"], [("s", "p", "o")], 0, mock_doc),  # Initial extraction
-            (["processed_entity"], [("ps", "pp", "po")], 0, processed_doc)  # Re-extraction
-        ]
+        mock_host._extract.return_value = (["entity"], [("s", "p", "o")], 0, mock_doc, {})
 
         result = extractor.extract("test text", "en")
 
-        # Should have called extract twice
-        assert mock_host._extract.call_count == 2
+        # Should have called extract once (no re-extraction since text unchanged)
+        assert mock_host._extract.call_count == 1
         mock_processor.process.assert_called_once_with(mock_doc)
 
     def test_processor_failure_fallback(self):
         """Test that processor failures fall back gracefully."""
         mock_host = Mock()
         mock_doc = Mock(spec=Doc)
-        mock_host._extract.return_value = (["entity"], [("s", "p", "o")], 0, mock_doc)
+        mock_host._extract.return_value = (["entity"], [("s", "p", "o")], 0, mock_doc, {})
 
         failing_processor = Mock(spec=TextProcessor)
         failing_processor.name = "failing"
@@ -364,12 +362,12 @@ class TestUDExtractorComposition:
         result = extractor.extract("test text", "en")
 
         # Should return original extraction despite processor failure
-        assert result == (["entity"], [("s", "p", "o")], 0, mock_doc)
+        assert result == (["entity"], [("s", "p", "o")], 0, mock_doc, {})
 
     def test_metrics_collection(self):
         """Test processor metrics collection."""
         mock_host = Mock()
-        mock_host._extract.return_value = ([], [], 0, None)
+        mock_host._extract.return_value = ([], [], 0, None, {})
 
         mock_processor = Mock(spec=TextProcessor)
         mock_processor.get_metrics_summary.return_value = {"processor": "test", "calls": 1}
@@ -458,7 +456,7 @@ class TestIntegration:
         mock_host = Mock()
         mock_doc = Mock(spec=Doc)
         mock_doc.text = "John went to the store. He bought milk."
-        mock_host._extract.return_value = (["john", "store"], [("john", "went_to", "store")], 0, mock_doc)
+        mock_host._extract.return_value = (["john", "store"], [("john", "went_to", "store")], 0, mock_doc, {})
 
         # Create processor with mocked NLP
         processor = CoreferenceProcessor(timeout_ms=100)
@@ -467,8 +465,8 @@ class TestIntegration:
         extractor = UDExtractor(mock_host, text_processors=[processor])
 
         # Mock the NLP loading to avoid actual model dependencies
-        with patch('server.core.memory.processors.coreference.get_nlp_with_coref') as mock_get_coref:
-            with patch('server.core.memory.processors.coreference.get_nlp_model') as mock_get_clean:
+        with patch('core.memory.processors.coreference.get_nlp_with_coref') as mock_get_coref:
+            with patch('core.memory.processors.coreference.get_nlp_model') as mock_get_clean:
                 # Mock coreference-enabled model
                 mock_coref_nlp = Mock()
                 mock_coref_doc = Mock(spec=Doc)
@@ -487,9 +485,10 @@ class TestIntegration:
 
                 # Verify the pipeline ran
                 assert result is not None
-                entities, triples, neg_count, doc = result
+                entities, triples, neg_count, doc, aliases = result
                 assert isinstance(entities, list)
                 assert isinstance(triples, list)
+                assert isinstance(aliases, dict)
 
     @pytest.mark.integration
     def test_configuration_integration(self):

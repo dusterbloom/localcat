@@ -562,24 +562,29 @@ class HotPathMemoryProcessor(BaseProcessor):
             )
             session_elapsed = float(stats.get("session_elapsed", time.time() - self._session_start))
             total_time = float(stats.get("total_time_seconds", session_elapsed))
-            system_date = time.strftime("%Y-%m-%d %H:%M:%S")
-            context_obj = self._context_aggregator.user().context if self._context_aggregator else None
-            current_context = len(context_obj.get_messages()) if context_obj else 0
-            available_context = int(os.getenv("CONTEXT_MAX_MESSAGES", "50"))
+            # Use coarse-grained values to preserve LLM KV cache
+            # Only show date without time to avoid cache invalidation
+            system_date = time.strftime("%Y-%m-%d")
+
+            # Round session durations to nearest 5 minutes to reduce cache invalidation
+            session_minutes = int(session_elapsed / 60)
+            session_minutes_rounded = (session_minutes // 5) * 5  # Round to nearest 5min
+            total_minutes = int(total_time / 60)
+            total_minutes_rounded = (total_minutes // 5) * 5
+
             lines = [
                 self._session_header_tag,
-                f"System date: {system_date}",
-                f"User ID: {self._user_id}",
-                f"Agent ID: {self._agent_id}",
-                f"Session #: {int(stats.get('current_session', total_sessions))}",
-                f"Session start: {session_start}",
-                f"Current turn: {current_turn}",
-                f"Total turns: {total_turns}",
-                f"Total sessions with user: {total_sessions}",
-                f"Session duration: {self._format_duration(session_elapsed)}",
-                f"Total time with user: {self._format_duration(total_time)}",
-                f"Context usage: {current_context}/{available_context}",
+                f"Date: {system_date}",
+                f"User: {self._user_id}",
+                f"Session #{int(stats.get('current_session', total_sessions))}",
+                f"Total sessions: {total_sessions}",
             ]
+
+            # Only add timing info if significant (>= 5 min)
+            if session_minutes_rounded >= 5:
+                lines.append(f"Session: ~{session_minutes_rounded}min")
+            if total_minutes_rounded >= 5 and total_minutes_rounded != session_minutes_rounded:
+                lines.append(f"Total time: ~{total_minutes_rounded}min")
             return {"role": "system", "content": "\n".join(lines)}
         except Exception as e:
             logger.warning(f"[HotMem] Failed to build session header: {e}")
