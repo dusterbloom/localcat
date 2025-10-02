@@ -19,8 +19,11 @@ class DatabaseSessionTracker:
     """
 
     def __init__(self, *, db_path: str | None = None):
-        default_path = Path(os.getenv("SESSIONS_DB_PATH", "data/sessions.db"))
+        # Single source of truth: SESSION_DB_PATH (relative to server/)
+        env_path = os.getenv("SESSION_DB_PATH")
+        default_path = Path(env_path) if env_path else Path("data/sessions.db")
         self._db_path = Path(db_path) if db_path else default_path
+        logger.info(f"Session DB path resolved to: {self._db_path}")
 
         # Ensure directory exists
         if not self._db_path.parent.exists():
