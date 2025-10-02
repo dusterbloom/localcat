@@ -558,6 +558,36 @@ class MemoryStore:
         ):
             results.append((str(text), str(eid), int(ts)))
         return results
+
+    def search_fts_scoped(self, query: str, eids: List[str], limit: int = 10) -> List[Tuple[str, str, int]]:
+        """FTS search restricted to specific eids (user/session scoped)."""
+        if not eids:
+            return self.search_fts(query, limit)
+        cur = self.sql.cursor()
+        results: List[Tuple[str, str, int]] = []
+        try:
+            placeholders = ",".join(["?"] * len(eids))
+            sql = f"SELECT text, eid, ts FROM chunks_fts WHERE chunks_fts MATCH ? AND eid IN ({placeholders}) ORDER BY rank LIMIT ?"
+            params = [query, *eids, int(limit)]
+            for (text, eid, ts) in cur.execute(sql, params):
+                results.append((str(text), str(eid), int(ts)))
+        except Exception as e:
+            logger.warning(f"search_fts_scoped failed: {e}")
+        return results
+
+    def is_session_owned_by_user(self, session_id: str, user_id: str) -> bool:
+        """Return True if there is at least one mention for (eid=user_id, session_id=session_id)."""
+        if not session_id or not user_id:
+            return False
+        try:
+            cur = self.sql.cursor()
+            row = cur.execute(
+                "SELECT 1 FROM mention WHERE session_id = ? AND eid = ? LIMIT 1",
+                (session_id, user_id),
+            ).fetchone()
+            return bool(row)
+        except Exception:
+            return False
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get performance metrics"""

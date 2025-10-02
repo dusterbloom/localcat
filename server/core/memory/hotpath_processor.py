@@ -121,6 +121,15 @@ class HotPathMemoryProcessor(BaseProcessor):
         self._turn_has_preinjected_bullets: bool = False
         self._last_injected_bullets: List[str] = []
         self._turn_ready_signaled: bool = False
+        # Ephemeral mode: when enabled, bypass all storage, extraction, and retrieval
+        self._ephemeral: bool = False
+        # Excluded phrases (not stored or injected); defaults to enrollment fixed-phrase
+        ex_phr = os.getenv("EXCLUDED_MEMORY_PHRASES", "").strip()
+        fixed = os.getenv("ENROLLMENT_FIXED_PHRASE", "").strip()
+        items = [p.strip() for p in ex_phr.split("||") if p.strip()]
+        if fixed:
+            items.append(fixed)
+        self._excluded_phrases = [p.lower() for p in items]
         # Env-driven controls (Phase 0.5)
         self._enabled: bool = os.getenv("MEMORY_ENABLED", "true").lower() in ("1", "true", "yes")
         try:
@@ -212,21 +221,21 @@ class HotPathMemoryProcessor(BaseProcessor):
         # Log all frames for debugging
         # logger.debug(f"[HotMem] process_frame called: {type(frame).__name__}")
 
-        # If memory is disabled, simply forward
-        if not self._enabled:
+        # If memory is disabled or ephemeral, simply forward
+        if not self._enabled or self._ephemeral:
             await self.push_frame(frame, direction)
             return
 
         # REQUIRED: handle StartFrame immediately
         if isinstance(frame, StartFrame):
             # Start background summarizer only for delta mode (time-based)
-            if self._summary_enabled and self._window_mode == "delta" and self._summary_task is None:
+            if (not self._ephemeral) and self._summary_enabled and self._window_mode == "delta" and self._summary_task is None:
                 try:
                     self._summary_task = asyncio.create_task(self._summary_loop())
                     logger.debug("[HotMem] Background summarizer started (delta mode)")
                 except Exception as e:
                     logger.warning(f"[HotMem] Could not start summarizer: {e}")
-            elif self._summary_enabled and self._window_mode == "turn_pairs":
+            elif (not self._ephemeral) and self._summary_enabled and self._window_mode == "turn_pairs":
                 logger.debug(f"[HotMem] Turn-based summarization enabled (every {self._turn_pairs} turns)")
             await self.push_frame(frame, direction)
             return
@@ -255,6 +264,10 @@ class HotPathMemoryProcessor(BaseProcessor):
 
         # Phase 0: Interim pre-injection (retrieval-only; once per turn)
         if isinstance(frame, InterimTranscriptionFrame):
+            if self._ephemeral:
+                # Do not inject any memory in ephemeral mode
+                await self.push_frame(frame, direction)
+                return
             text = getattr(frame, 'text', '') or ''
             # Basic length threshold; no intent gating in Phase 0
             if not self._turn_has_preinjected_bullets:
@@ -265,6 +278,12 @@ class HotPathMemoryProcessor(BaseProcessor):
                     wcount = 0
                 if wcount >= self._interim_min_words:
                     try:
+                        # Provide identity scope to retriever
+                        try:
+                            self.hot.current_session_id = self._session_id
+                            self.hot.current_user_id = self._user_id
+                        except Exception:
+                            pass
                         # Note: Interim doesn't have intent yet (happens in _process_transcription)
                         preview = self.hot.retrieve_bullets(text, read_only=True, intent=None)
                     except Exception as e:
@@ -290,11 +309,25 @@ class HotPathMemoryProcessor(BaseProcessor):
 
         # Process final transcriptions (compute bullets, update store)
         if isinstance(frame, TranscriptionFrame):
+            if self._ephemeral:
+                # In ephemeral mode, do not process/store/inject; forward only
+                await self.push_frame(frame, direction)
+                return
             is_final = getattr(frame, 'is_final', None)
             text = getattr(frame, 'text', '') or ''
             logger.info(f"[HotMem] TranscriptionFrame received: is_final={is_final} text_len={len(text)} text='{text[:120]}'")
+            if self._is_excluded(text):
+                logger.debug("[HotMem] Skipping excluded phrase from memory processing")
+                await self.push_frame(frame, direction)
+                return
             # WhisperSTTServiceMLX doesn't set is_final, so treat None as final (non-streaming)
             if is_final is True or is_final is None:
+                # Provide identity scope to retriever
+                try:
+                    self.hot.current_session_id = self._session_id
+                    self.hot.current_user_id = self._user_id
+                except Exception:
+                    pass
                 logger.info(f"[HotMem] Processing transcription (is_final={is_final}): '{text}'")
                 # Process: extract+persist+retrieve for final
                 await self._process_transcription(frame, direction)
@@ -327,6 +360,50 @@ class HotPathMemoryProcessor(BaseProcessor):
 
         # REQUIRED: always forward the original frame
         await self.push_frame(frame, direction)
+
+    def set_ephemeral_mode(self, enabled: bool) -> None:
+        """Enable/disable ephemeral mode (no storage/extraction/retrieval)."""
+        self._ephemeral = bool(enabled)
+        if self._ephemeral:
+            logger.info("[HotMem] Ephemeral mode ENABLED: memory storage and retrieval are bypassed for this session")
+        else:
+            logger.info("[HotMem] Ephemeral mode DISABLED: normal memory processing restored")
+        # Refresh header to reflect anonymous display if needed
+        try:
+            self._ensure_session_header()
+        except Exception:
+            pass
+
+    def _is_excluded(self, text: str) -> bool:
+        if not text or not self._excluded_phrases:
+            return False
+        tl = text.lower()
+        for p in self._excluded_phrases:
+            if p and p in tl:
+                return True
+        return False
+
+    def set_user_identity(self, user_id: str) -> None:
+        """Switch the active user identity for headers and future indexing."""
+        try:
+            user_id = (user_id or "").strip() or self._user_id
+            if user_id != self._user_id:
+                self._user_id = user_id
+                logger.info(f"[HotMem] User identity set to: {self._user_id}")
+                # Namespaced 'you' so future facts are user-scoped
+                try:
+                    self.hot.user_eid = f"you:{self._user_id}"
+                except Exception:
+                    pass
+                # Provide scope for retrieval
+                try:
+                    self.hot.current_user_id = self._user_id
+                    self.hot.current_session_id = self._session_id
+                except Exception:
+                    pass
+                self._ensure_session_header()
+        except Exception as e:
+            logger.warning(f"[HotMem] Failed to set user identity: {e}")
     
     async def _process_transcription(self, frame: TranscriptionFrame, direction: FrameDirection):
         """Process final user transcription with intent awareness"""
@@ -581,10 +658,13 @@ class HotPathMemoryProcessor(BaseProcessor):
             total_minutes = int(total_time / 60)
             total_minutes_rounded = (total_minutes // 5) * 5
 
+            # Show anonymous label in ephemeral mode
+            display_user = "anonymous" if getattr(self, "_ephemeral", False) else self._user_id
+
             lines = [
                 self._session_header_tag,
                 f"Date: {system_date}",
-                f"User: {self._user_id}",
+                f"User: {display_user}",
                 f"Session #{int(stats.get('current_session', total_sessions))}",
                 f"Total sessions: {total_sessions}",
             ]

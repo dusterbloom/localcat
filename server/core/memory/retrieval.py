@@ -141,6 +141,10 @@ class Retrieval:
 
     def _graph_retrieve(self, query: str, entities: List[str], turn_id: int, max_bullets: int, seen: set, allowed_relations: Optional[Set[str]] = None) -> List[str]:
         out: List[str] = []
+        # Identity scope
+        current_user = getattr(self.host, 'current_user_id', None)
+        current_session = getattr(self.host, 'current_session_id', None)
+        edge_scope_cache: Dict[str, bool] = {}
         # Prefer fact bullets based on query entities
         ent_set = [e for e in entities if e]
         non_you = [e for e in ent_set if e != "you"]
@@ -176,6 +180,28 @@ class Retrieval:
                 meta_cache: Dict[Tuple[str, str], Dict[str, Tuple[float, int, int, int, int]]] = {}
 
                 for s, r, d in candidates:
+                    # Provenance scope: keep only edges that belong to current user (or current session)
+                    edge_id = self.host.store.edge_id(s, r, d)
+                    allowed_edge = edge_scope_cache.get(edge_id)
+                    if allowed_edge is None:
+                        allowed_edge = False
+                        try:
+                            prov = self.host.store.get_edge_provenance(edge_id)  # List[(text, session_id, turn_id, ts)]
+                        except Exception:
+                            prov = []
+                        # If we know the current user, require any provenance session to belong to them
+                        if current_user:
+                            for (_text, sess_id, _turn, _ts) in prov:
+                                if self.host.store.is_session_owned_by_user(sess_id, current_user):
+                                    allowed_edge = True
+                                    break
+                        # Fallback: if no user scope available, allow edges from current session only
+                        elif current_session:
+                            allowed_edge = any(sess_id == current_session for (_text, sess_id, _turn, _ts) in prov)
+                        edge_scope_cache[edge_id] = allowed_edge
+                    if not allowed_edge:
+                        continue
+
                     # Retrieve neighbor meta for this (s,r) only once
                     key = (s, r)
                     if key not in meta_cache:
@@ -253,25 +279,66 @@ class Retrieval:
     def _convo_retrieve(self, query: str, max_bullets: int, seen: set) -> List[str]:
         out: List[str] = []
         try:
-            # Simple FTS search over prior mentions; limit small to keep latency predictable
-            hits = self.host.store.search_fts(query, limit=max_bullets * 2)
-        except Exception:
+            # Sanitize query for FTS5: remove punctuation and special chars
+            # FTS5 syntax errors on: , . ? ! ( ) " ' - and other special chars
+            import re
+            sanitized = re.sub(r'[^\w\s]', ' ', query)  # Keep only alphanumeric and spaces
+            sanitized = ' '.join(sanitized.split())  # Normalize whitespace
+
+            if not sanitized.strip():
+                logger.debug(f"[Retrieval._convo] Query sanitized to empty string")
+                return []
+
+            # Prefer user/session-scoped FTS to prevent cross-user leakage
+            user_id = getattr(self.host, 'current_user_id', None)
+            session_id = getattr(self.host, 'current_session_id', None)
+            allowed = [e for e in [user_id, session_id] if e]
+            if allowed and hasattr(self.host.store, 'search_fts_scoped'):
+                hits = self.host.store.search_fts_scoped(sanitized, allowed, limit=max_bullets * 2)
+            else:
+                # Fallback to global FTS
+                hits = self.host.store.search_fts(sanitized, limit=max_bullets * 2)
+            logger.debug(f"[Retrieval._convo] FTS returned {len(hits)} hits for query='{sanitized[:30]}'")
+        except Exception as e:
+            logger.warning(f"[Retrieval._convo] FTS search failed: {e}")
             hits = []
+        # Exclude enrollment/fixed phrases from retrieval context
+        excluded = []
+        try:
+            import os
+            ex_raw = os.getenv("EXCLUDED_MEMORY_PHRASES", "").strip()
+            fixed = os.getenv("ENROLLMENT_FIXED_PHRASE", "").strip()
+            excluded = [p.strip().lower() for p in ex_raw.split("||") if p.strip()]
+            if fixed:
+                excluded.append(fixed.lower())
+        except Exception:
+            pass
         for text, eid, ts in hits:
+            logger.debug(f"[Retrieval._convo] Processing hit: eid='{eid}' text='{text[:40]}'")
             # Filter to only conversation entries (not summary)
             # Summaries are stored with eid starting with "summary:" or "summary"
             if eid and (eid == "summary" or eid.startswith("summary:")):
+                logger.debug(f"[Retrieval._convo] Skipping summary: {eid}")
                 continue
             s = text.strip().replace("\n", " ")
             if not s:
+                logger.debug(f"[Retrieval._convo] Skipping empty text")
                 continue
+            if excluded:
+                tl = s.lower()
+                if any(p in tl for p in excluded):
+                    logger.debug("[Retrieval._convo] Skipping excluded phrase hit")
+                    continue
             bullet = f"• [convo] {s[:120]}{self._ago_suffix(ts)}"  # keep short
             if bullet in seen:
+                logger.debug(f"[Retrieval._convo] Skipping duplicate bullet")
                 continue
             seen.add(bullet)
             out.append(bullet)
+            logger.debug(f"[Retrieval._convo] Added bullet: {bullet[:60]}")
             if len(out) >= max_bullets:
                 break
+        logger.debug(f"[Retrieval._convo] Returning {len(out)} bullets")
         return out
 
     def _summary_retrieve(self, max_bullets: int, seen: set) -> List[str]:
