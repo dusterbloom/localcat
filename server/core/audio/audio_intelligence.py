@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from loguru import logger
+import difflib
 
 from pipecat.frames.frames import (
     Frame,
@@ -45,11 +46,11 @@ class UnknownSpeakerDetectedFrame(SystemFrame):
     timestamp: float = None
     
     def __post_init__(self):
+        super().__post_init__()  # CRITICAL: Initialize Frame.id, name, etc.
         if self.timestamp is None:
             self.timestamp = time.time()
     
-    @property
-    def name(self) -> str:
+    def __str__(self) -> str:
         """For Pipecat frame logging"""
         return f"UnknownSpeakerDetectedFrame({self.embedding_hash[:8]})"
 
@@ -64,11 +65,11 @@ class StartEnrollmentFrame(SystemFrame):
     timestamp: float = None
     
     def __post_init__(self):
+        super().__post_init__()  # CRITICAL: Initialize Frame.id, name, etc.
         if self.timestamp is None:
             self.timestamp = time.time()
     
-    @property
-    def name(self) -> str:
+    def __str__(self) -> str:
         """For Pipecat frame logging"""
         return f"StartEnrollmentFrame({self.speaker_name})"
 
@@ -83,11 +84,11 @@ class SpeakerChangedFrame(SystemFrame):
     timestamp: float = None
     
     def __post_init__(self):
+        super().__post_init__()  # CRITICAL: Initialize Frame.id, name, etc.
         if self.timestamp is None:
             self.timestamp = time.time()
     
-    @property
-    def name(self) -> str:
+    def __str__(self) -> str:
         """For Pipecat frame logging"""
         return f"SpeakerChangedFrame({self.speaker_id})"
 
@@ -105,11 +106,11 @@ class EnrollmentProgressFrame(SystemFrame):
     timestamp: float = None
     
     def __post_init__(self):
+        super().__post_init__()  # CRITICAL: Initialize Frame.id, name, etc.
         if self.timestamp is None:
             self.timestamp = time.time()
     
-    @property
-    def name(self) -> str:
+    def __str__(self) -> str:
         """For Pipecat frame logging"""
         return f"EnrollmentProgressFrame({self.current_sample}/{self.total_samples})"
     
@@ -140,11 +141,11 @@ class AudioIntelligenceFrame(SystemFrame):
     timestamp: float = None
     
     def __post_init__(self):
+        super().__post_init__()  # CRITICAL: Initialize Frame.id, name, etc.
         if self.timestamp is None:
             self.timestamp = time.time()
     
-    @property
-    def name(self) -> str:
+    def __str__(self) -> str:
         """For Pipecat frame logging"""
         return f"AudioIntelligenceFrame({self.speaker_id})"
 
@@ -214,6 +215,11 @@ class AudioIntelligenceProcessor(FrameProcessor):
         self._current_speaker: Optional[str] = None
         self._unknown_embeddings: List[Tuple[torch.Tensor, float]] = []
         self._collecting_samples = False
+        self._early_recognition_done = False
+        try:
+            self._early_ms = int(os.getenv("AUDIO_INTEL_EARLY_MS", "700"))
+        except Exception:
+            self._early_ms = 700
         
         # Privacy-First: Consent tracking (CRITICAL: Must initialize!)
         self._pending_consent_hash: Optional[str] = None
@@ -293,11 +299,17 @@ class AudioIntelligenceProcessor(FrameProcessor):
         if isinstance(frame, InputAudioRawFrame):
             if self._is_speaking:
                 self._audio_buffer.extend(frame.audio)
+                # Attempt early recognition once per utterance
+                try:
+                    await self._attempt_early_recognition()
+                except Exception as e:
+                    logger.debug(f"[AudioIntel] Early recognition skipped: {e}")
         
         # Speech boundary events
         elif isinstance(frame, UserStartedSpeakingFrame):
             self._is_speaking = True
             self._audio_buffer.clear()
+            self._early_recognition_done = False
             logger.debug("[AudioIntel] User started speaking, buffer cleared")
         
         elif isinstance(frame, UserStoppedSpeakingFrame):
@@ -400,7 +412,7 @@ class AudioIntelligenceProcessor(FrameProcessor):
                 if best_match != self._current_speaker:
                     # Speaker changed
                     self._current_speaker = best_match
-                    real_name = self._speaker_names.get(best_match)
+                    real_name = self._get_valid_name(self._speaker_names.get(best_match))
                     
                     logger.info(
                         f"[AudioIntel] 🎯 Speaker recognized: {best_match} "
@@ -443,6 +455,47 @@ class AudioIntelligenceProcessor(FrameProcessor):
         
         except Exception as e:
             logger.error(f"[AudioIntel] Error processing utterance: {e}", exc_info=True)
+
+    async def _attempt_early_recognition(self):
+        """Try to recognize returning user mid‑utterance for faster UX."""
+        if self._early_recognition_done:
+            return
+        # Require at least _early_ms of audio
+        min_bytes = int(self._sample_rate * (self._early_ms / 1000.0) * 2)  # 16‑bit mono
+        if len(self._audio_buffer) < min_bytes:
+            return
+        # Build tensor from current buffer slice
+        audio_array = np.frombuffer(bytes(self._audio_buffer), dtype=np.int16).astype(np.float32) / 32768.0
+        audio_tensor = torch.from_numpy(audio_array).unsqueeze(0)
+        if self._device != "cpu":
+            audio_tensor = audio_tensor.to(self._device)
+        with torch.no_grad():
+            emb = self._speaker_model.encode_batch(audio_tensor).squeeze().cpu()
+        best_match, best_similarity = self._find_best_match(emb)
+        if best_match and best_similarity >= self._similarity_threshold:
+            if best_match != self._current_speaker:
+                self._current_speaker = best_match
+                real_name = self._get_valid_name(self._speaker_names.get(best_match))
+                logger.info(
+                    f"[AudioIntel] ⚡ Early recognition: {best_match} ({real_name or 'unnamed'}) conf={best_similarity:.2f}"
+                )
+                await self.push_frame(
+                    SpeakerChangedFrame(
+                        speaker_id=best_match,
+                        speaker_name=real_name,
+                        confidence=best_similarity,
+                        auto_enrolled=False
+                    )
+                )
+                await self.push_frame(
+                    AudioIntelligenceFrame(
+                        speaker_id=best_match,
+                        speaker_confidence=best_similarity,
+                        emotion=None,
+                        emotion_confidence=0.0,
+                    )
+                )
+        self._early_recognition_done = True
     
     def _find_best_match(self, embedding: torch.Tensor) -> Tuple[Optional[str], float]:
         """Find best matching speaker by cosine similarity"""
@@ -536,6 +589,16 @@ class AudioIntelligenceProcessor(FrameProcessor):
                 self._current_speaker = "unknown"
                 self._collecting_samples = True
                 logger.info("[AudioIntel] 👤 Unknown speaker, collecting samples...")
+            
+            # CRITICAL FIX: Emit progress frame for first sample to trigger EnrollmentCoordinator
+            await self.push_frame(
+                EnrollmentProgressFrame(
+                    current_sample=1,
+                    total_samples=self._auto_enroll_utterances,
+                    consistency=1.0,  # First sample is 100% consistent with itself
+                    speaker_id="unknown"
+                )
+            )
             return
         
         # Check consistency with existing samples
@@ -571,7 +634,14 @@ class AudioIntelligenceProcessor(FrameProcessor):
             
             # Check if ready to enroll
             if current_count >= self._auto_enroll_utterances:
-                await self._auto_enroll_speaker()
+                await self._auto_enroll_speaker(
+                    emotion=emotion,
+                    emotion_confidence=emotion_confidence,
+                    valence=valence,
+                    arousal=arousal,
+                    prosody_features=prosody_features,
+                    prosody_certainty=prosody_certainty,
+                )
         else:
             # Inconsistent - reset (normal for real-world audio with noise)
             logger.debug(
@@ -579,19 +649,19 @@ class AudioIntelligenceProcessor(FrameProcessor):
             )
             self._unknown_embeddings = [(embedding, current_time)]
     
-    async def _auto_enroll_speaker(self):
+    async def _auto_enroll_speaker(
+        self,
+        *,
+        emotion: Optional[str] = None,
+        emotion_confidence: float = 0.0,
+        valence: float = 0.0,
+        arousal: float = 0.0,
+        prosody_features: Optional[Any] = None,
+        prosody_certainty: float = 0.0,
+    ):
         """Enroll speaker (with name if provided via consent)"""
         try:
             embeddings = [emb for emb, _ in self._unknown_embeddings]
-            
-            # Use custom name if provided, otherwise auto-generate
-            if self._enrollment_name:
-                speaker_id = self._enrollment_name
-                logger.info(f"[AudioIntel] Enrolling as: {speaker_id} (user-provided name)")
-            else:
-                self._speaker_counter += 1
-                speaker_id = f"Speaker_{self._speaker_counter}"
-                logger.info(f"[AudioIntel] Auto-enrolling as: {speaker_id}")
             
             # Calculate consistency
             similarities = []
@@ -606,9 +676,14 @@ class AudioIntelligenceProcessor(FrameProcessor):
             consistency = np.mean(similarities) if similarities else 0.0
             
             if consistency >= self._consistency_threshold:
-                # Create speaker ID
-                self._speaker_counter += 1
-                speaker_id = f"Speaker_{self._speaker_counter}"
+                # Create speaker ID (use provided name if available)
+                if self._enrollment_name:
+                    speaker_id = self._enrollment_name
+                    logger.info(f"[AudioIntel] Enrolling as: {speaker_id} (user-provided name)")
+                else:
+                    self._speaker_counter += 1
+                    speaker_id = f"Speaker_{self._speaker_counter}"
+                    logger.info(f"[AudioIntel] Auto-enrolling as: {speaker_id}")
                 
                 # Compute centroid
                 centroid = torch.stack([e.cpu() for e in embeddings]).mean(dim=0)
@@ -736,8 +811,24 @@ class AudioIntelligenceProcessor(FrameProcessor):
             if names_file.exists():
                 with open(names_file) as f:
                     data = json.load(f)
-                    self._speaker_names = data.get("mappings", {})
-                    logger.info(f"[AudioIntel] Loaded {len(self._speaker_names)} name mappings")
+                    raw_map = data.get("mappings", {})
+                    sanitized = {}
+                    removed = 0
+                    for sid, nm in raw_map.items():
+                        valid = self._get_valid_name(nm)
+                        if valid:
+                            sanitized[sid] = valid
+                        else:
+                            removed += 1
+                    self._speaker_names = sanitized
+                    logger.info(f"[AudioIntel] Loaded {len(self._speaker_names)} valid name mappings (removed {removed} invalid)")
+                    if removed > 0 and os.getenv("SANITIZE_SPEAKER_NAMES_ON_LOAD", "true").lower() in ("1", "true", "yes"):
+                        try:
+                            with open(names_file, "w") as wf:
+                                json.dump({"mappings": self._speaker_names}, wf, indent=2)
+                            logger.info("[AudioIntel] Rewrote speaker_names.json without invalid entries")
+                        except Exception as e:
+                            logger.warning(f"[AudioIntel] Failed to rewrite speaker_names.json: {e}")
         
         except Exception as e:
             logger.error(f"[AudioIntel] Failed to load profiles: {e}")
@@ -751,21 +842,57 @@ class AudioIntelligenceProcessor(FrameProcessor):
         """Get real name for speaker ID"""
         return self._speaker_names.get(speaker_id)
     
-    def set_speaker_name(self, speaker_id: str, name: str):
-        """Assign a real name to speaker ID"""
+    def set_speaker_name(self, speaker_id: str, name: str) -> bool:
+        """Assign a validated real name to speaker ID. Returns True if saved."""
         if speaker_id not in self._speakers:
             logger.warning(f"[AudioIntel] Unknown speaker ID: {speaker_id}")
-            return
-        
-        self._speaker_names[speaker_id] = name
-        
-        # Save mappings
+            return False
+
+        norm = self._normalize_name_candidate(name)
+        if not self._is_valid_name_candidate(norm):
+            logger.warning(f"[AudioIntel] Rejected invalid speaker name: '{name}'")
+            return False
+
+        self._speaker_names[speaker_id] = norm
+
         try:
             names_file = self._profile_dir / "speaker_names.json"
             with open(names_file, "w") as f:
                 json.dump({"mappings": self._speaker_names}, f, indent=2)
-            
-            logger.info(f"[AudioIntel] Named {speaker_id} as '{name}'")
-        
+            logger.info(f"[AudioIntel] Named {speaker_id} as '{norm}'")
+            return True
         except Exception as e:
             logger.error(f"[AudioIntel] Failed to save name mapping: {e}")
+            return False
+
+    # ----- Name validation helpers -----
+    def _normalize_name_candidate(self, text: str) -> str:
+        import re
+        cleaned = re.sub(r"[^A-Za-z'\-\s]", "", (text or "")).strip()
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned.title()
+
+    def _fixed_phrase(self) -> str:
+        return os.getenv("ENROLLMENT_FIXED_PHRASE", "LocalCat learns my voice.").strip()
+
+    def _is_valid_name_candidate(self, candidate: str) -> bool:
+        if not candidate:
+            return False
+        if len(candidate) > 20:
+            return False
+        tokens = candidate.split()
+        if not (1 <= len(tokens) <= 3):
+            return False
+        try:
+            ratio = difflib.SequenceMatcher(None, candidate.lower(), self._fixed_phrase().lower()).ratio()
+            if ratio >= 0.6:
+                return False
+        except Exception:
+            pass
+        return any(c.isalpha() for c in tokens[0])
+
+    def _get_valid_name(self, name: Optional[str]) -> Optional[str]:
+        if not name:
+            return None
+        norm = self._normalize_name_candidate(name)
+        return norm if self._is_valid_name_candidate(norm) else None

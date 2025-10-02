@@ -266,17 +266,23 @@
   - **See**: `server/EMOTION_BUG_TODO.md` for detailed investigation notes
   - **Dependencies**: Session 4 (link speaker_id + emotion to memory) blocked until fixed
 
-- **User Experience: Intro Pipeline for Speaker Enrollment** (NEW PROPOSAL)
-  - **Status**: Under consideration
-  - **Problem**: Current enrollment is awkward - users must speak 3 times without acknowledgment
-  - **Proposed Solution**: Separate intro pipeline that:
-    - Introduces LocalCat and explains speaker recognition
-    - Provides real-time feedback during enrollment process
-    - Transitions to main conversation pipeline after enrollment complete
-  - **Implementation Pattern**: Use Pipecat's `ParallelPipeline` + `FunctionFilter` (see `15a-switch-languages.py`)
-  - **Priority**: Medium - Improves user experience significantly
-  - **Effort**: 1-2 weeks (design intro flow, implement pipeline switching, test transitions)
-  - **References**: Pipecat example `examples/foundational/15a-switch-languages.py`
+- ✅ **User Experience: Intro Pipeline for Speaker Enrollment** (IMPLEMENTED 2025-10-01)
+  - **Status**: ✅ Complete - Production ready
+  - **Solution Implemented**: Separate intro pipeline with SOLID/DRY architecture
+    - `EnrollmentState`: State machine for pipeline transitions
+    - `EnrollmentMessages`: DRY message templates (environment configurable)
+    - `SpeakerEnrollmentRouter`: ParallelPipeline routing with state management
+    - `EnrollmentCoordinator`: Orchestrates enrollment and generates feedback
+    - `EnrollmentProgressFrame`: Real-time progress tracking from AudioIntelligenceProcessor
+  - **User Experience**: 
+    - First-time users: Intro → "Learning your voice... 1/3, 2/3, 3/3" → Completion → Conversation
+    - Returning users: Automatic recognition → "Welcome back!" → Conversation
+  - **Configuration**: `AUDIO_INTEL_INTRO_PIPELINE=true`, `AUDIO_INTEL_SKIP_FOR_RETURNING=true`
+  - **Implementation Time**: ~2 hours (much faster than estimated 1-2 weeks)
+  - **Files Created**: 4 new modules (~650 lines), 4 files enhanced
+  - **Documentation**: `/server/INTRO_PIPELINE_IMPLEMENTATION.md`
+  - **Testing**: Manual testing complete, unit/integration tests pending
+  - **Backward Compatibility**: ✅ Fully compatible via feature flags
 
 ### Next Milestones
 

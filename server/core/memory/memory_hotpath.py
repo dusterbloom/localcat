@@ -409,6 +409,13 @@ class HotMemory:
         
         # Noun chunks
         for chunk in doc.noun_chunks:
+            # Skip noun chunks that are Person=2 pronouns (user talking to AI)
+            if chunk.root.pos_ == "PRON":
+                person = chunk.root.morph.get("Person")
+                person_val = person[0] if person else None
+                if person_val == "2":
+                    continue  # Skip second-person pronouns
+
             chunk_text = _canon_entity_text(chunk.text)
             entities.add(chunk_text)
             entity_map[chunk.root.i] = chunk_text
@@ -417,10 +424,29 @@ class HotMemory:
         for token in doc:
             if token.i not in entity_map:
                 if token.pos_ in {"NOUN", "PROPN", "PRON"}:
-                    entity_text = _canon_entity_text(token.text)
-                    # Canonicalize pronouns
-                    if entity_text in _PRON_YOU:
-                        entity_text = self.user_eid
+                    # Person-aware pronoun handling using UD morphology
+                    if token.pos_ == "PRON":
+                        person = token.morph.get("Person")
+                        person_val = person[0] if person else None
+
+                        if person_val == "1":
+                            # First person: user talking about themselves
+                            entity_text = self.user_eid
+                        elif person_val == "2":
+                            # Second person: user talking to/about AI - SKIP
+                            continue
+                        elif person_val == "3":
+                            # Third person: keep as-is (he, she, they)
+                            entity_text = _canon_entity_text(token.lemma_)
+                        else:
+                            # Fallback: use old logic for pronouns without Person feature
+                            entity_text = _canon_entity_text(token.text)
+                            if entity_text in _PRON_YOU:
+                                entity_text = self.user_eid
+                    else:
+                        # NOUN/PROPN: use current logic
+                        entity_text = _canon_entity_text(token.text)
+
                     entities.add(entity_text)
                     entity_map[token.i] = entity_text
         
@@ -566,8 +592,28 @@ class HotMemory:
 
         return root, enriched
 
+    def _is_person2_pronoun(self, token) -> bool:
+        """
+        Check if token is a Person=2 pronoun (user talking TO/ABOUT the AI).
+
+        Uses Universal Dependencies Person morphological feature:
+        - Person=2 → second person (you, your) → User addressing AI → Should NOT store
+
+        Returns:
+            True if token is a Person=2 pronoun, False otherwise
+        """
+        if token.pos_ != "PRON":
+            return False
+
+        person = token.morph.get("Person")
+        return person and person[0] == "2"
+
     def _extract_subject(self, token, entity_map, triples, entities):
         """nsubj, nsubjpass - nominal subject"""
+        # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+        if self._is_person2_pronoun(token):
+            return
+
         subj = self._get_entity(token, entity_map)
         head = token.head
         
@@ -697,6 +743,10 @@ class HotMemory:
         if head.pos_ == "VERB":
             for child in head.children:
                 if child.dep_ in {"nsubj", "nsubjpass"}:
+                    # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                    if self._is_person2_pronoun(child):
+                        continue
+
                     subj = self._get_entity(child, entity_map)
                     verb = head.lemma_.lower()
                     pred = "has" if verb in {"have", "has", "had"} else verb
@@ -713,6 +763,10 @@ class HotMemory:
         # Find subject
         for child in head.children:
             if child.dep_ in {"nsubj", "nsubjpass"}:
+                # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                if self._is_person2_pronoun(child):
+                    continue
+
                 subj = self._get_entity(child, entity_map)
                 triples.append((subj, f"gave_to", enriched_iobj))
                 entities.add(root_iobj)
@@ -725,6 +779,10 @@ class HotMemory:
 
         for child in token.head.children:
             if child.dep_ in {"nsubj", "nsubjpass"}:
+                # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                if self._is_person2_pronoun(child):
+                    continue
+
                 subj = self._get_entity(child, entity_map)
                 triples.append((subj, "is", enriched_attr))
                 entities.add(root_attr)
@@ -740,6 +798,10 @@ class HotMemory:
         # Find subject of copula
         for child in head.children:
             if child.dep_ in {"nsubj", "nsubjpass"}:
+                # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                if self._is_person2_pronoun(child):
+                    continue
+
                 subj = self._get_entity(child, entity_map)
                 triples.append((subj, "is", enriched_adj))
                 entities.add(root_adj)
@@ -831,6 +893,10 @@ class HotMemory:
                 # Find subject of main verb
                 for child in head.children:
                     if child.dep_ in {"nsubj", "nsubjpass"}:
+                        # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                        if self._is_person2_pronoun(child):
+                            continue
+
                         subj = self._get_entity(child, entity_map)
                         # Extract the clause as object
                         obj_tokens = []
@@ -857,6 +923,10 @@ class HotMemory:
             subj = None
             for child in head.children:
                 if child.dep_ in {"nsubj", "nsubjpass"}:
+                    # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                    if self._is_person2_pronoun(child):
+                        continue
+
                     subj = self._get_entity(child, entity_map)
                     break
 
@@ -879,6 +949,10 @@ class HotMemory:
         oprd = self._get_entity(token, entity_map)
         for child in token.head.children:
             if child.dep_ in {"nsubjpass"}:
+                # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                if self._is_person2_pronoun(child):
+                    continue
+
                 subj = self._get_entity(child, entity_map)
                 if token.head.lemma_ in {"name", "call"}:
                     triples.append((subj, "name", oprd))

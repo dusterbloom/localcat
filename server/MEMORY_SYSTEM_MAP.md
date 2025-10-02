@@ -2,9 +2,9 @@
 
 **Purpose**: Reference guide for any LLM to quickly understand and improve the memory system without wasting time on assumptions.
 
-**Last Updated**: 2025-09-30
+**Last Updated**: 2025-10-01
 **Database Location**: `../data/memory.db` (from server/ directory)
-**Current State**: 191 edges, 411 mentions, contextual extraction + alias indexing
+**Current State**: Multi-source retrieval (graph+convo+summary), FTS-indexed conversations
 
 ---
 
@@ -141,8 +141,9 @@ retrieve_bullets() (memory_hotpath.py + retrieval.py)
 │    ⚠️ NOTE: confidence weight ignored in ranking!           │
 │                                                              │
 │ 2. Conversation Retrieval (if MEMORY_CONVO_INDEX=true):    │
-│    - SQLite FTS5 search on chunks_fts                       │
-│    - Returns: recent conversation snippets                  │
+│    - SQLite FTS5 search on chunks_fts (eid='conversation')  │
+│    - Indexed automatically when storing conversation turns  │
+│    - Returns: recent conversation snippets matching query   │
 │                                                              │
 │ 3. Summary Retrieval (if enabled):                          │
 │    - Returns: LLM-generated summaries                       │
@@ -201,15 +202,26 @@ CREATE TABLE mention(
 );
 CREATE INDEX idx_mention_eid ON mention(eid);
 
--- Full-text search index
+-- Conversation turn table (full conversation context)
+CREATE TABLE conversation_turn(
+  id TEXT PRIMARY KEY,        -- Hash(session_id|turn_id)
+  text TEXT,                  -- Full conversation text
+  session_id TEXT,            -- Session identifier
+  turn_id INT,                -- Turn number
+  ts INT                      -- Timestamp
+);
+
+-- Full-text search index (includes conversations + mentions)
 CREATE VIRTUAL TABLE chunks_fts USING fts5(
   text,                       -- Searchable text
-  eid UNINDEXED,              -- Entity reference
+  eid UNINDEXED,              -- Entity/source reference ('conversation', 'summary', or entity_id)
   rel UNINDEXED,
   dst UNINDEXED,
   ts UNINDEXED,
   tokenize='porter'           -- Porter stemming
 );
+-- Conversations indexed with eid='conversation' for convo retrieval
+-- Summaries indexed with eid='summary' for summary retrieval
 ```
 
 ### LMDB Structure

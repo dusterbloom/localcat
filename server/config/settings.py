@@ -73,6 +73,7 @@ class VoiceAgentConfig:
     force_intro: bool = False  # For testing
     include_privacy_explanation: bool = False
     speaker_profile_dir: str = "data/speaker_profiles"
+    enable_ephemeral_choice: bool = True
 
     # ============================================================================
     # Pipeline Configuration
@@ -156,6 +157,8 @@ class VoiceAgentConfig:
         config.include_privacy_explanation = os.getenv("AUDIO_INTEL_INCLUDE_PRIVACY", "false").lower() == "true"
         if os.getenv("SPEAKER_PROFILE_DIR"):
             config.speaker_profile_dir = os.getenv("SPEAKER_PROFILE_DIR")
+        # Ephemeral choice on startup
+        config.enable_ephemeral_choice = os.getenv("ENABLE_EPHEMERAL_CHOICE", str(config.enable_ephemeral_choice)).lower() == "true"
 
         # Legacy environment variable support for backward compatibility
         config._load_legacy_env_vars()
