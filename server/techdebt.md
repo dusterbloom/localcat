@@ -124,6 +124,48 @@ core/memory/
 
 ## Current Technical Debt
 
+### 🎤 Audio Intelligence System Issues
+
+**Emotion Detection Model API Incompatibility** — BLOCKING Session 2
+- **Issue**: SpeechBrain emotion model has incompatible API causing `'ModuleDict' object has no attribute 'compute_features'` error
+- **Current Status**: Temporarily disabled via `AUDIO_INTEL_ENABLE_EMOTION=false` in `.env`
+- **Impact**: 
+  - Missing emotion context (happy/sad/angry/neutral) in memory system
+  - Reduced confidence scoring accuracy (no emotion signal in fusion)
+  - Session 4 integration blocked (cannot link speaker_id + emotion to memory)
+- **Root Cause**: API mismatch with `speechbrain/emotion-recognition-wav2vec2-IEMOCAP` model
+- **Investigation**: See `server/EMOTION_BUG_TODO.md` for detailed error logs and analysis
+- **Proposed Solutions**:
+  1. Investigate SpeechBrain version compatibility and API changes
+  2. Test alternative emotion detection models (Wav2Vec2-based or MLX-compatible)
+  3. Consider using simpler rule-based prosody heuristics as fallback
+  4. Evaluate CPU vs MPS device compatibility for emotion model
+- **Priority**: Medium (system functional without it, but reduces audio intelligence capabilities)
+- **Effort**: 4-8 hours (model research + testing + integration)
+- **Files**: `server/core/audio/audio_intelligence.py` (lines ~150-180 emotion detection logic)
+
+**Speaker Enrollment User Experience** — NEW PROPOSAL
+- **Issue**: Current enrollment requires 3+ utterances with no acknowledgment to user
+- **Impact**: Confusing UX - users don't know enrollment is happening or when it's complete
+- **Proposed Solution**: Implement intro pipeline pattern
+  - Separate pipeline for onboarding and speaker enrollment
+  - Provide real-time feedback: "I'm learning your voice... (1/3)...(2/3)...Done!"
+  - Explain privacy options (ephemeral/consent_pending/auto_enroll)
+  - Transition to main conversation pipeline after enrollment
+- **Implementation Pattern**: 
+  - Use Pipecat's `ParallelPipeline` + `FunctionFilter` for pipeline switching
+  - Reference: `pipecat/examples/foundational/15a-switch-languages.py`
+  - Create `IntroductionPipeline` class with enrollment-specific TTS responses
+  - Implement state machine: intro → enrollment → transition → conversation
+- **Benefits**:
+  - Clear user expectations and progress feedback
+  - Better privacy consent handling
+  - Professional onboarding experience
+  - Easy to skip for returning users (detect existing speaker profile)
+- **Priority**: Medium (significant UX improvement)
+- **Effort**: 1-2 weeks (design + implementation + testing)
+- **Files**: New `server/core/audio/intro_pipeline.py`, modifications to `server/bot.py`
+
 ### 🧩 HotMem Modularization & Duplication (UPDATED - 2025-09-21)
 
 **~~Flat Module Layout~~** — ✅ RESOLVED
@@ -188,6 +230,154 @@ core/memory/
 - Solution: Design JSON column / edge context payload, plus backfill strategy (Phase 4 of contextual plan)
 - Priority: Medium
 - Effort: 1–2 days (pending product need)
+
+### 🔴 CRITICAL: Negation Scope Bug in Embedded Clauses (NEW - 2025-09-30)
+
+**Problem Description**:
+The memory system mishandles negation scope when users correct facts through embedded clauses in meta-commentary. This causes negation to apply to the WRONG facts.
+
+**Real-world Example**:
+User says: "So you don't remember that I told you already in like three hours ago maybe that **I am currently unemployed** and that **I work from home** but **I don't have a great job anymore**."
+
+**What SHOULD happen**:
+1. Extract new facts: `(you, is, unemployed)`, `(you, work_from_home, true)`
+2. Apply negation ONLY to the correct clause: negate `(you, has, great job)` → update to `(you, had, great job)` [past tense]
+3. Ignore the meta-verb "don't remember" - user is being sarcastic/correcting, not negating the embedded facts
+
+**What ACTUALLY happens** (from logs):
+```
+Extracted 7 raw triples from 'So you don't remember that I told you already in l...'
+After refinement: 5 triples
+After filtering: 2 triples (removed 3)
+Filtered triples (first 3): [('you', 'is', 'unemployed'), ('you', 'has', 'great job')]
+Negated: (you, is, unemployed)  ← ❌ WRONG! This should be ASSERTED, not negated
+Negated: (you, has, great job)  ← ❌ WRONG! This should be negated based on "don't have", not "don't remember"
+```
+
+**Root Causes**:
+
+1. **Flat Negation Counting (line 394-395)**:
+   ```python
+   elif dep == "neg":
+       neg_count += 1
+   ```
+   - Counts ALL negations in the sentence without considering scope
+   - "don't remember" and "don't have" both increment `neg_count`
+   - Applies negation globally to ALL extracted facts
+
+2. **No Clause Boundary Detection**:
+   - Doesn't distinguish between:
+     - Main clause negation: "I **don't** live here" → negate (you, live, here)
+     - Meta-verb negation: "You **don't remember** that I live here" → IGNORE, extract facts normally
+     - Embedded clause negation: "I told you that I **don't** like it" → negate only the embedded fact
+
+3. **No Negation-to-Triple Mapping**:
+   - Current: `neg_count = 2` → negate ALL extracted triples
+   - Needed: Track which `neg` token governs which fact
+
+**Dependency Parse Analysis**:
+```
+don't remember that I told you that I am unemployed and don't have a great job
+
+remember (ROOT)
+├─ do (aux)
+├─ nt (neg) ← negates "remember" (meta-verb)
+└─ told (ccomp)
+    └─ am (ccomp)
+        └─ unemployed (acomp) ← should be EXTRACTED
+    └─ have (conj)
+        ├─ do (aux)
+        ├─ nt (neg) ← negates "have" (applies to "great job")
+        └─ job (dobj) ← should be NEGATED
+```
+
+**Impact**:
+- **High**: Users cannot correct facts through natural conversation
+- **High**: System stores opposite of what user intends
+- **High**: Undermines trust - agent ignores corrections
+
+**Proposed Solution** (Elegant, Root Cause Fix):
+
+**Phase 1: Track Negation Scope**
+```python
+def _extract_with_negation_scope(self, text: str, lang: str):
+    """Extract triples with precise negation scope tracking"""
+
+    # Build negation map: token.i → is_negated
+    negation_map = {}
+    for token in doc:
+        if token.dep_ == "neg":
+            # Mark the negation's head as negated
+            negation_map[token.head.i] = True
+
+    # During extraction, check if governing verb is negated
+    for token in doc:
+        if token.dep_ == "acomp":  # "unemployed"
+            head_verb = token.head  # "am"
+
+            # Check if THIS verb is directly negated
+            is_negated = head_verb.i in negation_map
+
+            # Store with negation flag
+            triple = (subj, "is", obj)
+            triple_metadata[triple] = {"negated": is_negated}
+```
+
+**Phase 2: Filter Meta-Verb Contexts**
+```python
+META_VERBS = frozenset({'tell', 'say', 'remember', 'recall', 'forget', 'think', 'believe', 'mention', 'claim'})
+
+def _is_in_meta_context(token) -> bool:
+    """Check if token is in a clause governed by meta-verb"""
+    current = token.head
+    while current.head != current:
+        if current.dep_ in {'ccomp', 'xcomp'} and current.head.lemma_ in META_VERBS:
+            # This is reported speech or meta-commentary
+            # Check if the meta-verb is negated
+            if current.head.i in negation_map:
+                # "don't remember that X" → ignore meta-negation, extract X normally
+                return True  # Skip meta-verb's negation
+        current = current.head
+    return False
+```
+
+**Phase 3: Apply Tense Transformation for Negations**
+```python
+def _apply_negation(self, triple, is_negated):
+    """Apply negation with tense transformation"""
+    subj, rel, obj = triple
+
+    if is_negated:
+        if rel == "has":
+            # "don't have X" → negate edge, optionally store "had X" as past fact
+            self.store.negate_edge(subj, rel, obj)
+            # TODO: Create historical edge (you, had, X) with timestamp
+        elif rel == "is":
+            # "is not X" → negate edge
+            self.store.negate_edge(subj, rel, obj)
+        else:
+            # Generic negation
+            self.store.negate_edge(subj, rel, obj)
+    else:
+        # Normal assertion
+        self.store.observe_edge(subj, rel, obj)
+```
+
+**Benefits of This Approach**:
+1. ✅ **Precise**: Each negation only affects its governed clause
+2. ✅ **Natural**: Handles reported speech ("you don't remember that I told you...")
+3. ✅ **Complete**: Supports complex sentences with multiple negations
+4. ✅ **Extensible**: Can add tense transformation (has → had) later
+5. ✅ **Testable**: Clear scope rules make testing straightforward
+
+**Files to Modify**:
+- `core/memory/memory_hotpath.py` (lines 313-397): Add negation scope tracking
+- `core/memory/memory_hotpath.py` (lines 736-747): Add meta-verb filtering to `_extract_acomp`
+- `core/memory/memory_hotpath.py` (lines 692-706): Add meta-verb filtering to `_extract_object`
+
+**Priority**: 🔴 **CRITICAL** - Breaks fundamental correction capability
+**Effort**: 6-8 hours (design + implement + test)
+**Risk**: Low - Localized changes, backward compatible
 
 ### ⚠️ Remaining Startup Warnings
 

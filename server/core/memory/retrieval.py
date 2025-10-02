@@ -12,7 +12,7 @@ store exactly as the previous implementation did.
 
 from typing import List, Tuple, Any, Dict, Optional, Set
 import time
-
+from loguru import logger
 
 import os
 
@@ -38,6 +38,7 @@ class Retrieval:
         """
         # Source control via env (defaults to graph only for backward compatibility)
         enabled_sources = [s.strip() for s in os.getenv("MEMORY_SOURCES", "graph").split(",") if s.strip()]
+        logger.debug(f"[Retrieval] enabled_sources={enabled_sources} query='{query[:50]}'")
 
         # Lightweight intent gating for greetings
         q = (query or "").strip().lower()
@@ -61,6 +62,7 @@ class Retrieval:
                 graph_bullets = self._graph_retrieve(
                     query, entities, turn_id, budget["graph"], seen.copy(), relation_allowlist
                 )
+                logger.debug(f"[Retrieval] graph_bullets count={len(graph_bullets)}")
                 # Score graph bullets based on position (earlier = higher priority)
                 for idx, bullet in enumerate(graph_bullets):
                     priority_boost = 1.0 if source_priority[0] == "graph" else 0.5
@@ -69,6 +71,7 @@ class Retrieval:
 
             elif source == "convo" and budget.get("convo", 0) > 0:
                 convo_bullets = self._convo_retrieve(query, budget["convo"], seen.copy())
+                logger.debug(f"[Retrieval] convo_bullets count={len(convo_bullets)}")
                 for idx, bullet in enumerate(convo_bullets):
                     # Convo/FTS matches get a boost for relevance (they matched the search query)
                     priority_boost = 1.2 if source_priority[0] == "convo" else 1.1
@@ -77,6 +80,7 @@ class Retrieval:
 
             elif source == "summary" and budget.get("summary", 0) > 0:
                 summary_bullets = self._summary_retrieve(budget["summary"], seen.copy())
+                logger.debug(f"[Retrieval] summary_bullets count={len(summary_bullets)}")
                 for idx, bullet in enumerate(summary_bullets):
                     # Summary gets moderate boost (contextual but not query-matched)
                     priority_boost = 1.05 if source_priority[0] == "summary" else 1.0
@@ -94,6 +98,14 @@ class Retrieval:
                 seen_bullets.add(bullet)
                 if len(final_bullets) >= max_bullets:
                     break
+
+        # Log source distribution in final results
+        source_counts = {}
+        for bullet in final_bullets:
+            for src in ["graph", "convo", "summary"]:
+                if f"[{src}]" in bullet:
+                    source_counts[src] = source_counts.get(src, 0) + 1
+        logger.debug(f"[Retrieval] final_bullets={len(final_bullets)} source_counts={source_counts}")
 
         return final_bullets[:max_bullets]
 
@@ -247,7 +259,8 @@ class Retrieval:
             hits = []
         for text, eid, ts in hits:
             # Filter to only conversation entries (not summary)
-            if eid == "summary":
+            # Summaries are stored with eid starting with "summary:" or "summary"
+            if eid and (eid == "summary" or eid.startswith("summary:")):
                 continue
             s = text.strip().replace("\n", " ")
             if not s:

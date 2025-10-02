@@ -31,6 +31,10 @@ class Context:
     text: Optional[str] = None
     session_id: Optional[str] = None
     turn_id: Optional[int] = None
+    # Session 3: Audio intelligence fields
+    prosody_features: Optional[any] = None  # ProsodyFeatures
+    emotion: Optional[str] = None
+    arousal: Optional[float] = None
 
 
 class ConfidenceStrategy(Protocol):
@@ -187,12 +191,73 @@ class UsageBasedConfidence:
         return 1.0
 
 
+class ProsodyAwareConfidence:
+    """
+    Session 3: Voice-aware confidence using prosody + linguistic features
+    
+    Replaces arbitrary confidence (0.85-0.95) with TRUE confidence based on:
+    - Prosody features (pitch, stress, speaking rate)
+    - Linguistic certainty markers ("maybe", "definitely", etc.)
+    - Emotion signals (high arousal + correction = boost)
+    - Usage patterns (reinforcement, recency)
+    """
+    
+    def __init__(self, baseline: Optional[ConfidenceStrategy] = None):
+        """
+        Args:
+            baseline: Fallback for when audio intelligence unavailable
+        """
+        self.baseline = baseline or UsageBasedConfidence()
+        
+        try:
+            from core.audio import ConfidenceFusion
+            self.fusion = ConfidenceFusion()
+        except ImportError:
+            logger.warning("ConfidenceFusion not available, falling back to baseline")
+            self.fusion = None
+    
+    def score(self, edge: Edge, context: Context) -> float:
+        """
+        Calculate TRUE confidence from audio + linguistic + usage signals
+        """
+        # If audio intelligence available, use it
+        if self.fusion and context.text:
+            # Get prosody and emotion from context if available
+            prosody = getattr(context, 'prosody_features', None)
+            emotion = getattr(context, 'emotion', None)
+            arousal = getattr(context, 'arousal', None)
+            
+            # Calculate fusion confidence
+            fusion_conf = self.fusion.calculate(
+                relation=edge.rel,
+                text=context.text,
+                prosody=prosody,
+                emotion=emotion,
+                arousal=arousal
+            )
+            
+            # Apply usage-based adjustments
+            if hasattr(self.baseline, '_reinforcement_multiplier'):
+                reinforcement = self.baseline._reinforcement_multiplier(edge)
+                recency = self.baseline._recency_multiplier(edge)
+                source_count = self.baseline._source_count_multiplier(edge, context)
+                
+                # Combine fusion with usage signals
+                final_conf = fusion_conf * reinforcement * recency * source_count
+                return min(1.0, max(0.0, final_conf))
+            
+            return fusion_conf
+        
+        # Fallback to baseline when no audio intelligence
+        return self.baseline.score(edge, context)
+
+
 def create_confidence_strategy(name: str = "relation_type") -> ConfidenceStrategy:
     """
     Factory function for creating confidence strategies
 
     Args:
-        name: Strategy name ("relation_type", "usage_based")
+        name: Strategy name ("relation_type", "usage_based", "prosody_aware")
 
     Returns:
         Confidence strategy instance
@@ -204,5 +269,7 @@ def create_confidence_strategy(name: str = "relation_type") -> ConfidenceStrateg
         return RelationTypeConfidence()
     elif name == "usage_based":
         return UsageBasedConfidence()
+    elif name == "prosody_aware":
+        return ProsodyAwareConfidence()
     else:
         raise ValueError(f"Unknown confidence strategy: {name}")

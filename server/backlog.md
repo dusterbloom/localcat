@@ -254,6 +254,30 @@
     MEMORY_COREFERENCE_MIN_LENGTH=10
     ```
 
+### Pending Audio Intelligence Issues
+
+- **Emotion Detection Model API Incompatibility** (Session 2 - BLOCKED)
+  - **Status**: Temporarily disabled via `AUDIO_INTEL_ENABLE_EMOTION=false`
+  - **Error**: `'ModuleDict' object has no attribute 'compute_features'`
+  - **Root Cause**: SpeechBrain emotion model (`speechbrain/emotion-recognition-wav2vec2-IEMOCAP`) has incompatible API
+  - **Impact**: Missing emotion context in memory system and confidence scoring
+  - **Priority**: Medium - System works without it, but reduces audio intelligence quality
+  - **Effort**: 4-8 hours (investigate SpeechBrain API changes, test alternative models)
+  - **See**: `server/EMOTION_BUG_TODO.md` for detailed investigation notes
+  - **Dependencies**: Session 4 (link speaker_id + emotion to memory) blocked until fixed
+
+- **User Experience: Intro Pipeline for Speaker Enrollment** (NEW PROPOSAL)
+  - **Status**: Under consideration
+  - **Problem**: Current enrollment is awkward - users must speak 3 times without acknowledgment
+  - **Proposed Solution**: Separate intro pipeline that:
+    - Introduces LocalCat and explains speaker recognition
+    - Provides real-time feedback during enrollment process
+    - Transitions to main conversation pipeline after enrollment complete
+  - **Implementation Pattern**: Use Pipecat's `ParallelPipeline` + `FunctionFilter` (see `15a-switch-languages.py`)
+  - **Priority**: Medium - Improves user experience significantly
+  - **Effort**: 1-2 weeks (design intro flow, implement pipeline switching, test transitions)
+  - **References**: Pipecat example `examples/foundational/15a-switch-languages.py`
+
 ### Next Milestones
 
 - Phase 2 (Retrieval Quality; behind flags, no default cost)

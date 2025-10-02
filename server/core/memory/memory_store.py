@@ -362,6 +362,11 @@ class MemoryStore:
                         "VALUES(?, ?, ?, ?, ?)",
                         (tid, text, sid, turn_num, ts)
                     )
+                    # Index conversation in FTS for convo retrieval
+                    cur.execute(
+                        "INSERT INTO chunks_fts(text, eid, rel, dst, ts) VALUES(?, ?, ?, ?, ?)",
+                        (text, "conversation", "", "", ts)
+                    )
 
                 # Batch process edge sources
                 for edge_id, turn_id, ts in self._edge_sources:
