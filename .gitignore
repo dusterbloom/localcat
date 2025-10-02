@@ -32,3 +32,7 @@ server/wav2vec2_checkpoints/**
 
 # Local speaker profile model directory (if used)
 server/data/speaker_profiles/models/**
+
+# Keep server root tight: forbid stray markdowns
+server/*.md
+!server/README.md

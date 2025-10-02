@@ -70,3 +70,4 @@ test_*.db*
 *.log
 .logs/
 server/core/memory/.logs/
+wav2vec2_checkpoints/
