@@ -110,6 +110,9 @@ class EnrollmentCoordinator(FrameProcessor):
         )
         self._sign_in_requested: bool = False
         self._sign_in_timeout_task: Optional[asyncio.Task] = None
+        # Suppress one immediate transcription after returning-user recognition
+        self._suppress_next_transcription: bool = False
+        self._suppress_deadline_ts: float = 0.0
         
         logger.debug(
             f"[EnrollmentCoordinator] Initialized "
@@ -167,6 +170,17 @@ class EnrollmentCoordinator(FrameProcessor):
                 # Do NOT forward this transcription downstream during onboarding
                 return
             else:
+                # Drop the very next transcription immediately after returning-user recognition
+                if self._suppress_next_transcription:
+                    try:
+                        now = asyncio.get_event_loop().time()
+                        if now <= self._suppress_deadline_ts:
+                            self._suppress_next_transcription = False
+                            logger.debug("[EnrollmentCoordinator] Dropped post-recognition transcription to avoid LLM overlap")
+                            return
+                    except Exception:
+                        pass
+                    self._suppress_next_transcription = False
                 # Normal conversation: allow downstream
                 await self.push_frame(frame, direction)
                 return
@@ -402,6 +416,14 @@ class EnrollmentCoordinator(FrameProcessor):
         self._intro_sent = True  # Mark as handled
         
         logger.info("[EnrollmentCoordinator] Skipped intro for returning user")
+        # Suppress the just-finished utterance: drop the next transcription frame
+        try:
+            loop = asyncio.get_event_loop()
+            self._suppress_next_transcription = True
+            self._suppress_deadline_ts = loop.time() + 1.0  # short window
+            logger.debug("[EnrollmentCoordinator] Suppressing next transcription (post-recognition)")
+        except Exception:
+            pass
 
     async def _handle_transcription(self, frame: TranscriptionFrame, direction: FrameDirection):
         """Handle user transcriptions during choice and name capture flows."""
