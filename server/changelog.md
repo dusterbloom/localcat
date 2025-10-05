@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Intent-Aware Multi-Source Retrieval System** (2025-09-30)
+  - Hybrid budget allocation preventing source starvation (each source gets ≥3 bullet budget, re-ranking selects best)
+  - Intent-aware source routing: temporal queries prioritize convo/summary, semantic queries prioritize summary/convo
+  - Smart scoring system: FTS matches get 1.1-1.2x boost, summary gets 1.05x, graph gets variable priority
+  - Query pattern detection for automatic routing without intent classification
+  - Proper convo/summary filtering in FTS results
+  - Comprehensive test suite validating multi-source retrieval behavior
+  - Backward compatible with `intent=None` using pattern detection fallback
+- **Contextual Extraction Granularity** (2025-09-30)
+  - Introduced `_get_entity_with_context()` to capture prepositional phrases, adjectives, and compounds while preserving canonical roots
+  - Expanded UD extractor contract to return alias maps so HotMem can index enriched triples under both enriched and base entities
+  - Added dual registration + rebuild heuristics for `entity_index`, keeping queries like `swimming` aligned with enriched edges
+  - Recorded enrichment metrics (length/timing/truncation) and added caps for modifiers to stay within <10 ms extraction budget
+  - Created `test_contextual_extraction.py` regression suite covering prep, adjective, compound, and negation scenarios
+
 - **SOLID/DRY Coreference Resolution Architecture** (2025-09-27): Complete implementation following software engineering best practices
   - **SharedNLPManager**: Eliminated 3 duplicate spaCy model loading patterns, thread-safe caching
   - **TextProcessor Strategy Pattern**: Extensible text processing pipeline following OCP + DIP principles

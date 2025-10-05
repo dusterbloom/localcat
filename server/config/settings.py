@@ -22,7 +22,7 @@ class VoiceAgentConfig:
     # ============================================================================
     # STT Configuration
     # ============================================================================
-    stt_engine: str = "parakeet_streaming"  # parakeet_streaming | whisper_mlx
+    stt_engine: str = "parakeet_streaming"  # parakeet_streaming | parakeet_batch | whisper_mlx
     stt_model: str = "mlx-community/parakeet-tdt-0.6b-v3"
     stt_chunk_length_ms: int = 100
     stt_language: str = "en"
@@ -63,6 +63,17 @@ class VoiceAgentConfig:
     session_persistence: bool = True
     memory_max_entries: int = 1000
     memory_cleanup_interval_minutes: int = 60
+
+    # ============================================================================
+    # Audio Intelligence & Enrollment UX
+    # ============================================================================
+    audio_intelligence_enabled: bool = True
+    enable_intro_pipeline: bool = True
+    skip_intro_for_returning: bool = True
+    force_intro: bool = False  # For testing
+    include_privacy_explanation: bool = False
+    speaker_profile_dir: str = "data/speaker_profiles"
+    enable_ephemeral_choice: bool = True
 
     # ============================================================================
     # Pipeline Configuration
@@ -138,6 +149,17 @@ class VoiceAgentConfig:
         config.debug_mode = os.getenv("VOICE_AGENT_DEBUG_MODE", "false").lower() == "true"
         config.log_level = os.getenv("VOICE_AGENT_LOG_LEVEL", config.log_level)
 
+        # Audio Intelligence & Enrollment UX
+        config.audio_intelligence_enabled = os.getenv("AUDIO_INTELLIGENCE_ENABLED", "true").lower() == "true"
+        config.enable_intro_pipeline = os.getenv("AUDIO_INTEL_INTRO_PIPELINE", "true").lower() == "true"
+        config.skip_intro_for_returning = os.getenv("AUDIO_INTEL_SKIP_FOR_RETURNING", "true").lower() == "true"
+        config.force_intro = os.getenv("AUDIO_INTEL_FORCE_INTRO", "false").lower() == "true"
+        config.include_privacy_explanation = os.getenv("AUDIO_INTEL_INCLUDE_PRIVACY", "false").lower() == "true"
+        if os.getenv("SPEAKER_PROFILE_DIR"):
+            config.speaker_profile_dir = os.getenv("SPEAKER_PROFILE_DIR")
+        # Ephemeral choice on startup
+        config.enable_ephemeral_choice = os.getenv("ENABLE_EPHEMERAL_CHOICE", str(config.enable_ephemeral_choice)).lower() == "true"
+
         # Legacy environment variable support for backward compatibility
         config._load_legacy_env_vars()
 
@@ -171,7 +193,7 @@ class VoiceAgentConfig:
         errors = []
 
         # Validate STT engine
-        if self.stt_engine not in ["parakeet_streaming", "whisper_mlx"]:
+        if self.stt_engine not in ["parakeet_streaming", "parakeet_batch", "whisper_mlx"]:
             errors.append(f"Invalid STT engine: {self.stt_engine}")
 
         # Validate TTS engine

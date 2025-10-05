@@ -19,6 +19,14 @@ from spacy.tokens import Token
 from .memory_store import MemoryStore
 from .extractors.ud import UDExtractor
 from .retrieval import Retrieval
+from .confidence_strategy import (
+    ConfidenceStrategy,
+    RelationTypeConfidence,
+    Edge,
+    Context
+)
+from .processors.coreference import CoreferenceProcessor
+from .config import MemoryConfig
 
 # Try to import language detection
 try:
@@ -89,21 +97,42 @@ class HotMemory:
     All operations target <200ms p95
     """
     
-    def __init__(self, store: MemoryStore, max_recency: int = 50):
+    def __init__(self, store: MemoryStore, max_recency: int = 50,
+                 confidence_strategy: Optional[ConfidenceStrategy] = None,
+                 enable_dspy_extraction: bool = None):
         self.store = store
         self.user_eid = "you"
-        
+
+        # Confidence scoring strategy (dependency injection)
+        self.confidence = confidence_strategy or RelationTypeConfidence()
+
+        # DSPy-enhanced extraction for complex sentences
+        self.enable_dspy_extraction = enable_dspy_extraction if enable_dspy_extraction is not None else \
+            os.getenv("ENABLE_DSPY_EXTRACTION", "false").lower() in ("true", "1", "yes")
+
+        # Lazy load DSPy extractor (only if enabled)
+        self._dspy_extractor = None
+        self._complexity_detector = None
+
         # Hot indices (RAM)
         self.entity_index = defaultdict(set)  # entity -> set of (s,r,d) triples
         self.recency_buffer = deque(maxlen=max_recency)  # Recent interactions
         self.entity_cache = {}  # Canonical entity mapping
-        
+
         # Performance tracking
         self.metrics = defaultdict(list)
         self.max_metric_size = 1000
         # Extractor (Phase 1C): adapter to existing implementation
         self.extractor = UDExtractor(self)
         self.retriever = Retrieval(self)
+
+        # Coreference resolution (SOLID refactored component)
+        config = MemoryConfig.from_env()
+        self.coref_processor = CoreferenceProcessor(
+            timeout_ms=config.coreference.timeout_ms,
+            min_text_length=config.coreference.min_text_length,
+            lang=config.coreference.lang
+        ) if config.coreference.enabled else None
 
     def prewarm(self, lang: str = "en") -> None:
         """Load NLP resources up-front to avoid first-turn latency."""
@@ -112,9 +141,15 @@ class HotMemory:
         except Exception:
             pass
 
-    def process_turn(self, text: str, session_id: str, turn_id: int, focus: str = 'standard') -> Tuple[List[str], List[Tuple[str, str, str]]]:
+    def process_turn(self, text: str, session_id: str, turn_id: int, focus: str = 'standard', intent: Optional[Dict] = None) -> Tuple[List[str], List[Tuple[str, str, str]]]:
         """
         Process a conversation turn
+        Args:
+            text: User input text
+            session_id: Current session ID
+            turn_id: Current turn ID
+            focus: Processing focus strategy
+            intent: Optional intent classification for smart retrieval routing
         Returns: (memory_bullets, extracted_triples)
         """
         start = time.perf_counter()
@@ -127,13 +162,30 @@ class HotMemory:
         lang = self._detect_language(text) if PYCLD3_AVAILABLE else "en"
         
         # Stage 1: Extract entities and relations (via extractor seam)
+        # NOTE: Coreference resolution exists but needs proper spacy-coref integration
+        # TODO: Implement proper coref that resolves pronouns in doc before extraction
         extract_start = time.perf_counter()
-        entities, triples, neg_count, doc = self.extractor.extract(text, lang)
+        entities, triples, neg_count, doc, entity_aliases = self.extractor.extract(text, lang)
         self.metrics['extraction_ms'].append((time.perf_counter() - extract_start) * 1000)
-        
+        # Store aliases for dual registration in hot index
+        self._entity_aliases = entity_aliases
+        logger.debug(f"[HotMem] Extracted {len(triples)} raw triples from '{text[:50]}...'")
+        if triples:
+            logger.debug(f"[HotMem] Raw triples (first 3): {triples[:3]}")
+
+        # Stage 1.5: DSPy-enhanced extraction for complex sentences
+        if self.enable_dspy_extraction and doc:
+            dspy_start = time.perf_counter()
+            additional_triples = self._extract_with_dspy(text, triples, doc)
+            if additional_triples:
+                triples.extend(additional_triples)
+                logger.debug(f"[HotMem] DSPy added {len(additional_triples)} edges")
+            self.metrics['dspy_extraction_ms'].append((time.perf_counter() - dspy_start) * 1000)
+
         # Stage 2: Refine triples and update memory with new facts (skip writes for questions)
         refine_start = time.perf_counter()
         triples = self.extractor.refine(text, triples, doc)
+        logger.debug(f"[HotMem] After refinement: {len(triples)} triples")
         # Rebuild entities from refined triples + text context
         ent_from_triples: Set[str] = set()
         for s, r, d in triples:
@@ -141,12 +193,33 @@ class HotMemory:
             ent_from_triples.add(d)
         entities = self.extractor.refine_entities(text, list(ent_from_triples))
 
+        # Ensure base aliases (e.g., "swimming") are present alongside enriched forms
+        # (e.g., "swimming in the sea") so retrieval can fan out on both keys.
+        if self._entity_aliases:
+            base_entities: Set[str] = set(self._entity_aliases.values())
+            seen_entities: Set[str] = set(entities)
+            for base_entity in base_entities:
+                if base_entity not in seen_entities:
+                    entities.append(base_entity)
+                    seen_entities.add(base_entity)
+
         # Filter noisy triples before storing/retrieving
+        triples_before_filter = len(triples)
         triples = [t for t in triples if self._is_meaningful_fact(*t)]
+        logger.debug(f"[HotMem] After filtering: {len(triples)} triples (removed {triples_before_filter - len(triples)})")
+        if triples:
+            logger.debug(f"[HotMem] Filtered triples (first 3): {triples[:3]}")
 
         update_start = time.perf_counter()
         now_ts = int(time.time() * 1000)
-        if not self._is_question(text):
+
+        # Store the conversation turn FIRST (before edge extraction) for provenance
+        turn_id_hash = self.store.enqueue_turn(text, session_id, turn_id, now_ts)
+
+        is_question = self._is_question(text)
+        logger.debug(f"[HotMem] Text classified as question: {is_question}")
+
+        if not is_question:
             for s, r, d in triples:
                 # Demote conflicting facts before observing new evidence
                 conflicting = [fact for fact in list(self.entity_index.get(s, set())) if fact[1] == r and fact[2] != d]
@@ -160,29 +233,67 @@ class HotMemory:
                         self.entity_index[old_d].discard((_s, _r, old_d))
                     self._prune_recency_item(s, r, old_d)
 
-                # Determine confidence weights based on relation type
-                if r == "name":
-                    conf = 0.95
-                elif r.startswith("v:"):
-                    conf = 0.85
-                else:
-                    conf = 0.9
+                # Compute confidence using injected strategy
+                edge_id = self.store.edge_id(s, r, d)
 
-                if neg_count > 0 and r.startswith("v:"):
+                # Get edge data for confidence calculation
+                # (pos/neg come from existing edge if it exists)
+                cur = self.store.sql.cursor()
+                edge_data = cur.execute(
+                    "SELECT pos, neg, updated_at FROM edge WHERE id = ?",
+                    (edge_id,)
+                ).fetchone()
+
+                if edge_data:
+                    pos, neg, updated_at = edge_data
+                else:
+                    pos, neg, updated_at = 0, 0, now_ts
+
+                # Create Edge object for strategy
+                edge_obj = Edge(
+                    src=s, rel=r, dst=d,
+                    pos=pos, neg=neg,
+                    updated_at=updated_at,
+                    id=edge_id
+                )
+                context_obj = Context(
+                    store=self.store,
+                    text=text,
+                    session_id=session_id,
+                    turn_id=turn_id
+                )
+
+                # Score confidence
+                conf = self.confidence.score(edge_obj, context_obj)
+
+                # Apply negation to verb-based relations when negation detected
+                if neg_count > 0:
                     try:
                         self.store.negate_edge(s, r, d, conf=0.6, now_ts=now_ts)
+                        logger.debug(f"[HotMem] Negated: ({s}, {r}, {d})")
                     except Exception as e:
                         logger.warning(f"HotMem negation failed for ({s}, {r}, {d}): {e}")
                 else:
                     self.store.observe_edge(s, r, d, conf, now_ts)
+
+                # Link edge to conversation turn (provenance)
+                edge_id = self.store.edge_id(s, r, d)
+                self.store.enqueue_edge_source(edge_id, turn_id_hash, now_ts)
+
                 # Update hot indices
                 self.entity_index[s].add((s, r, d))
                 self.entity_index[d].add((s, r, d))
+
+                # Dual registration: If dst was enriched, also index under base form
+                # This enables queries like "swimming" to find "swimming in the sea"
+                base_d = self._entity_aliases.get(d, d)
+                if base_d != d:
+                    self.entity_index[base_d].add((s, r, d))
         self.metrics['update_ms'].append((time.perf_counter() - update_start) * 1000)
         
-        # Stage 3: Retrieve relevant memories
+        # Stage 3: Retrieve relevant memories with intent-aware routing
         retrieve_start = time.perf_counter()
-        bullets = self._retrieve_context(text, entities, turn_id)
+        bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
         self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
         
         # Update recency with extracted triples
@@ -199,20 +310,24 @@ class HotMemory:
         
         return bullets, triples
     
-    def _extract(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any]:
+    def _extract(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any, Dict[str, str]]:
         """
         Extract entities and relations using USGS 27-pattern approach
-        Returns: (entities, triples, negation_count, doc)
+        Returns: (entities, triples, negation_count, doc, entity_aliases)
         """
         nlp = _load_nlp(lang)
-        
+
         if not nlp:
-            return [], [], 0, None
-        
+            return [], [], 0, None, {}
+
         doc = nlp(text)
         entities = set()
         triples = []
         neg_count = 0
+
+        # Initialize per-extraction tracking
+        self._entity_aliases = {}  # enriched -> base mapping
+        self._enriched_entities = set()  # base entities that were enriched
         
         # Stage 1: Build entity map
         entity_map = self._build_entity_map(doc, entities)
@@ -278,8 +393,8 @@ class HotMemory:
             # Count negations
             elif dep == "neg":
                 neg_count += 1
-        
-        return list(entities), triples, neg_count, doc
+
+        return list(entities), triples, neg_count, doc, self._entity_aliases
     
     def _build_entity_map(self, doc, entities: Set[str]) -> Dict[int, str]:
         """Build entity map from document"""
@@ -294,6 +409,13 @@ class HotMemory:
         
         # Noun chunks
         for chunk in doc.noun_chunks:
+            # Skip noun chunks that are Person=2 pronouns (user talking to AI)
+            if chunk.root.pos_ == "PRON":
+                person = chunk.root.morph.get("Person")
+                person_val = person[0] if person else None
+                if person_val == "2":
+                    continue  # Skip second-person pronouns
+
             chunk_text = _canon_entity_text(chunk.text)
             entities.add(chunk_text)
             entity_map[chunk.root.i] = chunk_text
@@ -302,10 +424,29 @@ class HotMemory:
         for token in doc:
             if token.i not in entity_map:
                 if token.pos_ in {"NOUN", "PROPN", "PRON"}:
-                    entity_text = _canon_entity_text(token.text)
-                    # Canonicalize pronouns
-                    if entity_text in _PRON_YOU:
-                        entity_text = self.user_eid
+                    # Person-aware pronoun handling using UD morphology
+                    if token.pos_ == "PRON":
+                        person = token.morph.get("Person")
+                        person_val = person[0] if person else None
+
+                        if person_val == "1":
+                            # First person: user talking about themselves
+                            entity_text = self.user_eid
+                        elif person_val == "2":
+                            # Second person: user talking to/about AI - SKIP
+                            continue
+                        elif person_val == "3":
+                            # Third person: keep as-is (he, she, they)
+                            entity_text = _canon_entity_text(token.lemma_)
+                        else:
+                            # Fallback: use old logic for pronouns without Person feature
+                            entity_text = _canon_entity_text(token.text)
+                            if entity_text in _PRON_YOU:
+                                entity_text = self.user_eid
+                    else:
+                        # NOUN/PROPN: use current logic
+                        entity_text = _canon_entity_text(token.text)
+
                     entities.add(entity_text)
                     entity_map[token.i] = entity_text
         
@@ -316,9 +457,163 @@ class HotMemory:
     def _get_entity(self, token, entity_map) -> str:
         """Get entity for token"""
         return entity_map.get(token.i, _norm(token.text))
-    
+
+    def _extract_base_entity(self, entity: str) -> str:
+        """
+        Heuristic to extract base from enriched form.
+
+        Examples:
+        - "swimming in the sea" -> "swimming" (first word)
+        - "red car" -> "car" (last word if multiple)
+        - "machine learning" -> "learning" (last word)
+
+        Strategy: If multi-word, check if contains prepositions (in, on, at, with, for).
+        If yes, base is first word. Otherwise, base is last word (compound pattern).
+        """
+        words = entity.split()
+        if len(words) <= 1:
+            return entity
+
+        # Check for prep pattern: "X in Y", "X on Y"
+        preps = {"in", "on", "at", "with", "for", "from", "to", "by"}
+        if any(w in preps for w in words[1:]):
+            return words[0]  # "swimming" from "swimming in sea"
+
+        # Otherwise assume compound: "machine learning" -> "learning"
+        return words[-1]
+
+    def _get_entity_with_context(self, token, entity_map, max_length: int = 50) -> tuple[str, str]:
+        """
+        Get entity with full contextual modifiers.
+
+        Returns:
+            (root_entity, enriched_entity) tuple for dual registration
+
+        CRITICAL: root stays untouched (canonical base form), enriched gets modifiers.
+        This ensures entity_index["car"] finds "red car" edges.
+
+        Includes:
+        1. Prepositional phrases (location, time, manner)
+        2. Adjectival modifiers (attributes)
+        3. Compound nouns (multi-word concepts)
+
+        Examples:
+        - root="swimming", enriched="swimming in the sea"       ← prep
+        - root="car", enriched="red car"                        ← amod
+        - root="learning", enriched="machine learning"          ← compound
+        - root="meeting", enriched="meeting on tuesday"         ← prep
+        """
+        import time
+        start = time.perf_counter()
+
+        # Get root entity (canonical form) - NEVER MODIFIED
+        # IMPORTANT: entity_map may already contain full noun chunks ("red car"),
+        # so derive the true head from the token itself before consulting the map.
+        raw_root = token.lemma_ or token.text
+        root = _canon_entity_text(raw_root)  # Apply canonical form immediately
+
+        # If entity_map carries a chunk-alias (e.g., "red car"), record it now so
+        # we can index the enriched edge under both the chunk and the canonical root.
+        chunk_alias = entity_map.get(token.i)
+        if chunk_alias and _canon_entity_text(chunk_alias) != root:
+            self._entity_aliases[_canon_entity_text(chunk_alias)] = root
+
+        # Start building enriched from root
+        enriched = root
+
+        # Phase 3: Collect compound nouns (comes before root)
+        # Cap at 3 compounds to prevent pathological cases
+        # IMPORTANT: Sort by token.i to preserve left-to-right order ("machine learning", not "learning machine")
+        compounds = []
+        for child in sorted(token.children, key=lambda t: t.i):
+            if child.dep_ == "compound" and len(compounds) < 3:
+                compounds.append(_canon_entity_text(child.text))
+
+        # Build enriched with compounds (root stays untouched)
+        if compounds:
+            enriched = " ".join(compounds + [enriched])
+
+        # Phase 2: Collect adjectives
+        # Cap at 5 adjectives to prevent pathological cases
+        # IMPORTANT: Sort by token.i to preserve natural order ("big blue house", not "blue big house")
+        adjectives = []
+        for child in sorted(token.children, key=lambda t: t.i):
+            if child.dep_ == "amod" and len(adjectives) < 5:
+                adjectives.append(_canon_entity_text(child.text))
+
+        # Add adjectives before enriched (root stays untouched)
+        if adjectives:
+            enriched = " ".join(adjectives + [enriched])
+
+        # Phase 1: Collect prepositional phrases
+        # Cap at 3 prep phrases to prevent pathological cases
+        prep_parts = []
+        for child in token.children:
+            if child.dep_ == "prep" and len(prep_parts) < 3:
+                prep_text = child.text.lower()
+                # Get prepositional object
+                for pobj_child in child.children:
+                    if pobj_child.dep_ == "pobj":
+                        pobj_text = self._get_entity(pobj_child, entity_map)
+                        pobj_text = _canon_entity_text(pobj_text)
+                        prep_parts.append(f"{prep_text} {pobj_text}")
+                        break  # Only first pobj per prep
+
+        # Combine with prep phrases (root stays untouched)
+        if prep_parts:
+            enriched = f"{enriched} {' '.join(prep_parts)}"
+
+        # Cap length to prevent pathological cases
+        if len(enriched) > max_length:
+            truncated = enriched[:max_length].rsplit(' ', 1)[0]  # Cut at word boundary
+            # Fallback if truncation produces empty string
+            if truncated:
+                enriched = truncated
+            else:
+                enriched = enriched[:max_length]  # Hard cut as last resort
+            # Track truncations for monitoring
+            if hasattr(self, '_metrics'):
+                self._metrics['enrichment_truncations'] = self._metrics.get('enrichment_truncations', 0) + 1
+
+        # Performance monitoring
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        # Only log slow-path warning if debug logging enabled to avoid log noise
+        if elapsed_ms > 1.0 and logger.level <= 10:  # DEBUG = 10
+            logger.debug(f"Slow entity enrichment: {elapsed_ms:.2f}ms for '{enriched}'")
+
+        # Track metrics
+        if hasattr(self, '_metrics'):
+            self._metrics.setdefault('entity_enrichment_times_ms', []).append(elapsed_ms)
+            self._metrics.setdefault('enriched_lengths', []).append(len(enriched))
+
+        # Store alias mapping if enriched differs from root
+        if enriched != root:
+            self._entity_aliases[enriched] = root
+
+        return root, enriched
+
+    def _is_person2_pronoun(self, token) -> bool:
+        """
+        Check if token is a Person=2 pronoun (user talking TO/ABOUT the AI).
+
+        Uses Universal Dependencies Person morphological feature:
+        - Person=2 → second person (you, your) → User addressing AI → Should NOT store
+
+        Returns:
+            True if token is a Person=2 pronoun, False otherwise
+        """
+        if token.pos_ != "PRON":
+            return False
+
+        person = token.morph.get("Person")
+        return person and person[0] == "2"
+
     def _extract_subject(self, token, entity_map, triples, entities):
         """nsubj, nsubjpass - nominal subject"""
+        # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+        if self._is_person2_pronoun(token):
+            return
+
         subj = self._get_entity(token, entity_map)
         head = token.head
         
@@ -341,16 +636,18 @@ class HotMemory:
         if head.pos_ == "AUX" or any(c.dep_ == "cop" for c in head.children):
             for child in head.children:
                 if child.dep_ == "attr":
-                    obj = self._get_entity(child, entity_map)
+                    root_obj, enriched_obj = self._get_entity_with_context(child, entity_map)
                     # Special: "My name is X"
                     if token.text.lower() == "name":
                         for gc in token.children:
                             if gc.dep_ == "poss" and gc.text.lower() in {"my", "mine"}:
-                                triples.append((self.user_eid, "name", obj))
-                                entities.add(obj)
+                                triples.append((self.user_eid, "name", enriched_obj))
+                                entities.add(root_obj)
+                                self._enriched_entities.add(root_obj)
                                 return
-                    triples.append((subj, "is", obj))
-                    entities.add(obj)
+                    triples.append((subj, "is", enriched_obj))
+                    entities.add(root_obj)
+                    self._enriched_entities.add(root_obj)
         
         # Active verb: X verbs Y
         elif head.pos_ == "VERB":
@@ -359,10 +656,11 @@ class HotMemory:
             # Direct object
             for child in head.children:
                 if child.dep_ in {"dobj", "obj"}:
-                    obj = self._get_entity(child, entity_map)
+                    root_obj, enriched_obj = self._get_entity_with_context(child, entity_map)
                     pred = "has" if verb in {"have", "has", "had", "own"} else verb
-                    triples.append((subj, pred, obj))
-                    entities.add(obj)
+                    triples.append((subj, pred, enriched_obj))
+                    entities.add(root_obj)
+                    self._enriched_entities.add(root_obj)
             
             # Prepositional complement
             for child in head.children:
@@ -408,10 +706,11 @@ class HotMemory:
                 # Objects of the conj verb
                 for ch in v2.children:
                     if ch.dep_ in {"dobj", "obj"}:
-                        obj = self._get_entity(ch, entity_map)
+                        root_obj, enriched_obj = self._get_entity_with_context(ch, entity_map)
                         pred = "has" if verb2 in {"have", "has", "had", "own"} else verb2
-                        triples.append((subj2, pred, obj))
-                        entities.add(obj)
+                        triples.append((subj2, pred, enriched_obj))
+                        entities.add(root_obj)
+                        self._enriched_entities.add(root_obj)
 
                 # Prepositional complements of the conj verb
                 for ch in v2.children:
@@ -438,59 +737,87 @@ class HotMemory:
     
     def _extract_object(self, token, entity_map, triples, entities):
         """dobj, obj - direct object"""
-        obj = self._get_entity(token, entity_map)
+        root_obj, enriched_obj = self._get_entity_with_context(token, entity_map)
         head = token.head
-        
+
         if head.pos_ == "VERB":
             for child in head.children:
                 if child.dep_ in {"nsubj", "nsubjpass"}:
+                    # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                    if self._is_person2_pronoun(child):
+                        continue
+
                     subj = self._get_entity(child, entity_map)
                     verb = head.lemma_.lower()
                     pred = "has" if verb in {"have", "has", "had"} else verb
-                    triples.append((subj, pred, obj))
+                    triples.append((subj, pred, enriched_obj))
+                    entities.add(root_obj)
+                    self._enriched_entities.add(root_obj)
                     break
-    
+
     def _extract_indirect_object(self, token, entity_map, triples, entities):
         """iobj - indirect object"""
-        iobj = self._get_entity(token, entity_map)
+        root_iobj, enriched_iobj = self._get_entity_with_context(token, entity_map)
         head = token.head
-        
+
         # Find subject
         for child in head.children:
             if child.dep_ in {"nsubj", "nsubjpass"}:
+                # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                if self._is_person2_pronoun(child):
+                    continue
+
                 subj = self._get_entity(child, entity_map)
-                triples.append((subj, f"gave_to", iobj))
+                triples.append((subj, f"gave_to", enriched_iobj))
+                entities.add(root_iobj)
+                self._enriched_entities.add(root_iobj)
                 break
-    
+
     def _extract_attribute(self, token, entity_map, triples, entities):
         """attr - attribute (copula complement)"""
-        attr = self._get_entity(token, entity_map)
-        
+        root_attr, enriched_attr = self._get_entity_with_context(token, entity_map)
+
         for child in token.head.children:
             if child.dep_ in {"nsubj", "nsubjpass"}:
+                # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                if self._is_person2_pronoun(child):
+                    continue
+
                 subj = self._get_entity(child, entity_map)
-                triples.append((subj, "is", attr))
+                triples.append((subj, "is", enriched_attr))
+                entities.add(root_attr)
+                self._enriched_entities.add(root_attr)
                 break
-    
+
     def _extract_acomp(self, token, entity_map, triples, entities):
         """acomp - adjectival complement (copula complement)"""
         # Handle patterns like "Caroline is single"
-        adj = self._get_entity(token, entity_map)
+        root_adj, enriched_adj = self._get_entity_with_context(token, entity_map)
         head = token.head
-        
+
         # Find subject of copula
         for child in head.children:
             if child.dep_ in {"nsubj", "nsubjpass"}:
+                # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                if self._is_person2_pronoun(child):
+                    continue
+
                 subj = self._get_entity(child, entity_map)
-                triples.append((subj, "is", adj))
-                entities.add(adj)
+                triples.append((subj, "is", enriched_adj))
+                entities.add(root_adj)
+                self._enriched_entities.add(root_adj)
                 break
     
     def _extract_amod(self, token, entity_map, triples, entities):
         """amod - adjectival modifier"""
-        adj = token.text.lower()
+        # Only extract quality triple if parent wasn't enriched
+        # (Enriched objects already contain adjectives)
         head_entity = self._get_entity(token.head, entity_map)
-        triples.append((head_entity, "quality", adj))
+        head_base = _canon_entity_text(token.head.lemma_ or token.head.text)
+
+        if head_base not in self._enriched_entities:
+            adj = token.text.lower()
+            triples.append((head_entity, "quality", adj))
     
     def _extract_advmod(self, token, entity_map, triples, entities):
         """advmod - adverbial modifier"""
@@ -566,6 +893,10 @@ class HotMemory:
                 # Find subject of main verb
                 for child in head.children:
                     if child.dep_ in {"nsubj", "nsubjpass"}:
+                        # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                        if self._is_person2_pronoun(child):
+                            continue
+
                         subj = self._get_entity(child, entity_map)
                         # Extract the clause as object
                         obj_tokens = []
@@ -592,14 +923,19 @@ class HotMemory:
             subj = None
             for child in head.children:
                 if child.dep_ in {"nsubj", "nsubjpass"}:
+                    # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                    if self._is_person2_pronoun(child):
+                        continue
+
                     subj = self._get_entity(child, entity_map)
                     break
-            
+
             if subj:
-                obj = self._get_entity(token, entity_map)
+                root_obj, enriched_obj = self._get_entity_with_context(token, entity_map)
                 verb = head.lemma_.lower()
-                triples.append((subj, verb, obj))
-                entities.add(obj)
+                triples.append((subj, verb, enriched_obj))
+                entities.add(root_obj)
+                self._enriched_entities.add(root_obj)
     
     def _extract_agent(self, token, entity_map, triples, entities):
         """agent - agent (by-phrase in passive)"""
@@ -613,16 +949,20 @@ class HotMemory:
         oprd = self._get_entity(token, entity_map)
         for child in token.head.children:
             if child.dep_ in {"nsubjpass"}:
+                # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
+                if self._is_person2_pronoun(child):
+                    continue
+
                 subj = self._get_entity(child, entity_map)
                 if token.head.lemma_ in {"name", "call"}:
                     triples.append((subj, "name", oprd))
                     entities.add(oprd)
                 break
     
-    def _retrieve_context(self, query: str, entities: List[str], turn_id: int) -> List[str]:
-        """Compatibility shim: delegate to retriever (no behavior change)."""
+    def _retrieve_context(self, query: str, entities: List[str], turn_id: int, intent: Optional[Dict] = None) -> List[str]:
+        """Compatibility shim: delegate to retriever with optional intent routing."""
         try:
-            return self.retriever.retrieve(query, entities, turn_id)
+            return self.retriever.retrieve(query, entities, turn_id, intent=intent)
         except Exception:
             return []
     
@@ -638,6 +978,85 @@ class HotMemory:
             except Exception:
                 return "en"
         return "en"
+
+    def _get_dspy_extractor(self):
+        """Lazy load DSPy extractor"""
+        if self._dspy_extractor is None:
+            try:
+                from .dspy_extractor import create_dspy_extractor
+                self._dspy_extractor = create_dspy_extractor()
+                logger.info("DSPy extractor initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize DSPy extractor: {e}")
+                self._dspy_extractor = False  # Mark as failed
+        return self._dspy_extractor if self._dspy_extractor is not False else None
+
+    def _get_complexity_detector(self):
+        """Lazy load complexity detector"""
+        if self._complexity_detector is None:
+            try:
+                from .complexity_detector import ComplexityDetector
+                self._complexity_detector = ComplexityDetector()
+                logger.info("Complexity detector initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize complexity detector: {e}")
+                self._complexity_detector = False
+        return self._complexity_detector if self._complexity_detector is not False else None
+
+    def _extract_with_dspy(self, text: str, existing_triples: List[Tuple[str, str, str]], doc: Any) -> List[Tuple[str, str, str]]:
+        """
+        Extract additional edges using DSPy for complex sentences
+
+        IMPORTANT: Each DSPy call should be isolated to avoid context pollution.
+        The extractor is cached but each extraction is independent.
+
+        Args:
+            text: Original text
+            existing_triples: Edges already extracted by spaCy
+            doc: spaCy Doc object
+
+        Returns:
+            Additional edges found by DSPy
+        """
+        try:
+            # Check complexity
+            detector = self._get_complexity_detector()
+            if not detector:
+                return []
+
+            is_complex, metrics = detector.is_complex(doc)
+
+            if not is_complex:
+                logger.debug(f"[HotMem] Sentence not complex (score={metrics['complexity_score']:.2f}), skipping DSPy")
+                return []
+
+            logger.debug(f"[HotMem] Complex sentence detected (score={metrics['complexity_score']:.2f}), using DSPy")
+
+            # Get DSPy extractor (cached, lazy loaded)
+            extractor = self._get_dspy_extractor()
+            if not extractor:
+                return []
+
+            # Extract missing edges (each call is isolated - no session pollution)
+            missing_edges = extractor.extract_missing_edges(text, existing_triples)
+
+            if not missing_edges:
+                return []
+
+            # Filter quality
+            from .edge_quality_filter import filter_edges
+            filtered_edges = filter_edges(missing_edges, existing_triples)
+
+            logger.info(
+                f"[HotMem] DSPy extraction: {len(missing_edges)} raw → {len(filtered_edges)} filtered "
+                f"(complexity={metrics['complexity_score']:.2f})"
+            )
+
+            return filtered_edges
+
+        except Exception as e:
+            logger.error(f"[HotMem] DSPy extraction failed: {e}")
+            return []
     
     def _cleanup_metrics(self):
         """Keep metrics bounded"""
@@ -683,6 +1102,12 @@ class HotMemory:
             if conf > 0.1:  # Only active edges
                 self.entity_index[s].add((s, r, d))
                 self.entity_index[d].add((s, r, d))
+
+                # Also index under base form if dst looks enriched
+                base_d = self._extract_base_entity(d)
+                if base_d != d:
+                    self.entity_index[base_d].add((s, r, d))
+
                 count += 1
         
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -695,7 +1120,7 @@ class HotMemory:
         Useful for validating retrieval independently of writes.
         """
         try:
-            entities, _, _, _ = self.extractor.extract(text, lang)
+            entities, _, _, _, _ = self.extractor.extract(text, lang)
             entities = self.extractor.refine_entities(text, entities)
         except Exception:
             entities = []
@@ -703,28 +1128,29 @@ class HotMemory:
         return {"entities": entities, "bullets": bullets}
 
     # Phase 0: unified retrieval entry point (read-only or normal)
-    def retrieve_bullets(self, text: str, read_only: bool = True, lang: str = "en") -> List[str]:
+    def retrieve_bullets(self, text: str, read_only: bool = True, lang: str = "en", intent: Optional[Dict] = None) -> List[str]:
         """
         Retrieve bullets for the given text.
 
         - read_only=True: does not perform any store updates or recency changes; uses extraction + retrieval only.
         - read_only=False: behaves like normal retrieval path after extraction/persist (callers should have persisted if needed).
+        - intent: Optional intent classification result for smart routing
         """
         if read_only:
             try:
-                entities, _, _, _ = self.extractor.extract(text, lang)
+                entities, _, _, _, _ = self.extractor.extract(text, lang)
                 entities = self.extractor.refine_entities(text, entities)
             except Exception:
                 entities = []
-            return self.retriever.retrieve(text, entities, turn_id=-1)
+            return self.retriever.retrieve(text, entities, turn_id=-1, intent=intent)
         else:
             # Non read-only: reuse preview path for now; callers may have called process_turn before this.
             try:
-                entities, _, _, _ = self.extractor.extract(text, lang)
+                entities, _, _, _, _ = self.extractor.extract(text, lang)
                 entities = self.extractor.refine_entities(text, entities)
             except Exception:
                 entities = []
-            return self.retriever.retrieve(text, entities, turn_id=-1)
+            return self.retriever.retrieve(text, entities, turn_id=-1, intent=intent)
 
     # ---------- Refinement helpers (quality without large perf cost) ----------
     def _is_question(self, text: str) -> bool:
@@ -768,7 +1194,14 @@ class HotMemory:
             "think",
             "ask",
             "quality",
+            "quantity",
             "tell_about",
+            "talk",
+            "talk_about",
+            "delete",
+            "remove",
+            "known",
+            "known_as",
         }
         if r_norm in stop_relations:
             return False

@@ -8,6 +8,9 @@ import threading
 from contextlib import asynccontextmanager
 from typing import Dict, Optional
 
+# Prevent tokenizers parallelism warning when forking processes
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 
 # Add local pipecat to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "pipecat", "src"))
@@ -94,10 +97,10 @@ ice_servers = [
 # LocalSmartTurnAnalyzerV3 includes model weights bundled with Pipecat
 
 
-SYSTEM_INSTRUCTION =  """You are Locat, a personal assistant. You can remember things about the person you are talking to.
+SYSTEM_INSTRUCTION =  """You are Locat, an AI persona. 
+                         You have contextual awareness through your context so reference it when you feel it useful for the interaction with the user.  
                         Some Guidelines:
                         - Make sure your responses are friendly yet short and concise.
-                        - If the user asks you to remember something, make sure to remember it.
                         - Greet the user by their name if you know about it. 
                     """
 
@@ -124,14 +127,14 @@ async def run_bot(webrtc_connection):
     async def on_client_ready(rtvi):
         await rtvi.set_bot_ready()
 
-        # Get greeting
-        greeting = await get_initial_greeting()
-
-        # Add the greeting as an assistant message to start the conversation
-        context.add_message({"role": "assistant", "content": greeting})
-
-        # Send greeting directly to TTS without triggering LLM
-        await task.queue_frames([TextFrame(greeting)])
+        # If intro/enrollment pipeline is enabled, coordinator leads the first message
+        if not (factory.config.enable_intro_pipeline):
+            # Get greeting
+            greeting = await get_initial_greeting()
+            # Add the greeting as an assistant message to start the conversation
+            context.add_message({"role": "assistant", "content": greeting})
+            # Send greeting directly to TTS without triggering LLM
+            await task.queue_frames([TextFrame(greeting)])
 
         try:
             memory.refresh_session_header()

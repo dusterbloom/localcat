@@ -121,6 +121,15 @@ class HotPathMemoryProcessor(BaseProcessor):
         self._turn_has_preinjected_bullets: bool = False
         self._last_injected_bullets: List[str] = []
         self._turn_ready_signaled: bool = False
+        # Ephemeral mode: when enabled, bypass all storage, extraction, and retrieval
+        self._ephemeral: bool = False
+        # Excluded phrases (not stored or injected); defaults to enrollment fixed-phrase
+        ex_phr = os.getenv("EXCLUDED_MEMORY_PHRASES", "").strip()
+        fixed = os.getenv("ENROLLMENT_FIXED_PHRASE", "").strip()
+        items = [p.strip() for p in ex_phr.split("||") if p.strip()]
+        if fixed:
+            items.append(fixed)
+        self._excluded_phrases = [p.lower() for p in items]
         # Env-driven controls (Phase 0.5)
         self._enabled: bool = os.getenv("MEMORY_ENABLED", "true").lower() in ("1", "true", "yes")
         try:
@@ -146,7 +155,7 @@ class HotPathMemoryProcessor(BaseProcessor):
         )
         self._summary_base_url = os.getenv("MEMORY_SUMMARIZER_BASE_URL", "http://127.0.0.1:1234/v1").rstrip("/")
         self._summary_api_key = os.getenv("MEMORY_SUMMARIZER_API_KEY", "")
-        self._summary_model = os.getenv("MEMORY_SUMMARIZER_MODEL", "qwen3:4b")
+        self._summary_model = os.getenv("MEMORY_SUMMARIZER_MODEL", "llama-3.2-3b-instruct")
         try:
             self._summary_interval_secs = float(os.getenv("MEMORY_SUMMARIZER_INTERVAL_SECS", "60"))
         except Exception:
@@ -212,21 +221,21 @@ class HotPathMemoryProcessor(BaseProcessor):
         # Log all frames for debugging
         # logger.debug(f"[HotMem] process_frame called: {type(frame).__name__}")
 
-        # If memory is disabled, simply forward
-        if not self._enabled:
+        # If memory is disabled or ephemeral, simply forward
+        if not self._enabled or self._ephemeral:
             await self.push_frame(frame, direction)
             return
 
         # REQUIRED: handle StartFrame immediately
         if isinstance(frame, StartFrame):
             # Start background summarizer only for delta mode (time-based)
-            if self._summary_enabled and self._window_mode == "delta" and self._summary_task is None:
+            if (not self._ephemeral) and self._summary_enabled and self._window_mode == "delta" and self._summary_task is None:
                 try:
                     self._summary_task = asyncio.create_task(self._summary_loop())
                     logger.debug("[HotMem] Background summarizer started (delta mode)")
                 except Exception as e:
                     logger.warning(f"[HotMem] Could not start summarizer: {e}")
-            elif self._summary_enabled and self._window_mode == "turn_pairs":
+            elif (not self._ephemeral) and self._summary_enabled and self._window_mode == "turn_pairs":
                 logger.debug(f"[HotMem] Turn-based summarization enabled (every {self._turn_pairs} turns)")
             await self.push_frame(frame, direction)
             return
@@ -255,6 +264,10 @@ class HotPathMemoryProcessor(BaseProcessor):
 
         # Phase 0: Interim pre-injection (retrieval-only; once per turn)
         if isinstance(frame, InterimTranscriptionFrame):
+            if self._ephemeral:
+                # Do not inject any memory in ephemeral mode
+                await self.push_frame(frame, direction)
+                return
             text = getattr(frame, 'text', '') or ''
             # Basic length threshold; no intent gating in Phase 0
             if not self._turn_has_preinjected_bullets:
@@ -265,7 +278,14 @@ class HotPathMemoryProcessor(BaseProcessor):
                     wcount = 0
                 if wcount >= self._interim_min_words:
                     try:
-                        preview = self.hot.retrieve_bullets(text, read_only=True)
+                        # Provide identity scope to retriever
+                        try:
+                            self.hot.current_session_id = self._session_id
+                            self.hot.current_user_id = self._user_id
+                        except Exception:
+                            pass
+                        # Note: Interim doesn't have intent yet (happens in _process_transcription)
+                        preview = self.hot.retrieve_bullets(text, read_only=True, intent=None)
                     except Exception as e:
                         logger.error(f"[HotMem] Interim retrieval failed: {e}")
                         preview = []
@@ -289,11 +309,25 @@ class HotPathMemoryProcessor(BaseProcessor):
 
         # Process final transcriptions (compute bullets, update store)
         if isinstance(frame, TranscriptionFrame):
+            if self._ephemeral:
+                # In ephemeral mode, do not process/store/inject; forward only
+                await self.push_frame(frame, direction)
+                return
             is_final = getattr(frame, 'is_final', None)
             text = getattr(frame, 'text', '') or ''
             logger.info(f"[HotMem] TranscriptionFrame received: is_final={is_final} text_len={len(text)} text='{text[:120]}'")
+            if self._is_excluded(text):
+                logger.debug("[HotMem] Skipping excluded phrase from memory processing")
+                await self.push_frame(frame, direction)
+                return
             # WhisperSTTServiceMLX doesn't set is_final, so treat None as final (non-streaming)
             if is_final is True or is_final is None:
+                # Provide identity scope to retriever
+                try:
+                    self.hot.current_session_id = self._session_id
+                    self.hot.current_user_id = self._user_id
+                except Exception:
+                    pass
                 logger.info(f"[HotMem] Processing transcription (is_final={is_final}): '{text}'")
                 # Process: extract+persist+retrieve for final
                 await self._process_transcription(frame, direction)
@@ -326,6 +360,50 @@ class HotPathMemoryProcessor(BaseProcessor):
 
         # REQUIRED: always forward the original frame
         await self.push_frame(frame, direction)
+
+    def set_ephemeral_mode(self, enabled: bool) -> None:
+        """Enable/disable ephemeral mode (no storage/extraction/retrieval)."""
+        self._ephemeral = bool(enabled)
+        if self._ephemeral:
+            logger.info("[HotMem] Ephemeral mode ENABLED: memory storage and retrieval are bypassed for this session")
+        else:
+            logger.info("[HotMem] Ephemeral mode DISABLED: normal memory processing restored")
+        # Refresh header to reflect anonymous display if needed
+        try:
+            self._ensure_session_header()
+        except Exception:
+            pass
+
+    def _is_excluded(self, text: str) -> bool:
+        if not text or not self._excluded_phrases:
+            return False
+        tl = text.lower()
+        for p in self._excluded_phrases:
+            if p and p in tl:
+                return True
+        return False
+
+    def set_user_identity(self, user_id: str) -> None:
+        """Switch the active user identity for headers and future indexing."""
+        try:
+            user_id = (user_id or "").strip() or self._user_id
+            if user_id != self._user_id:
+                self._user_id = user_id
+                logger.info(f"[HotMem] User identity set to: {self._user_id}")
+                # Namespaced 'you' so future facts are user-scoped
+                try:
+                    self.hot.user_eid = f"you:{self._user_id}"
+                except Exception:
+                    pass
+                # Provide scope for retrieval
+                try:
+                    self.hot.current_user_id = self._user_id
+                    self.hot.current_session_id = self._session_id
+                except Exception:
+                    pass
+                self._ensure_session_header()
+        except Exception as e:
+            logger.warning(f"[HotMem] Failed to set user identity: {e}")
     
     async def _process_transcription(self, frame: TranscriptionFrame, direction: FrameDirection):
         """Process final user transcription with intent awareness"""
@@ -374,35 +452,35 @@ class HotPathMemoryProcessor(BaseProcessor):
             # Apply strategy-based processing
             logger.debug(f"[HotMem] Using {strategy} strategy for intent: {intent_name}")
 
-            # Enhanced processing for different strategies
+            # Enhanced processing for different strategies - ALWAYS pass intent for routing
             if strategy == 'storage_focused':
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='storage')
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='storage', intent=intent_result)
             elif strategy == 'retrieval_focused':
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='retrieval')
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='retrieval', intent=intent_result)
             elif strategy == 'deletion_focused':
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='deletion')
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='deletion', intent=intent_result)
             elif strategy == 'lookup_focused':
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='lookup')
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='lookup', intent=intent_result)
             elif strategy == 'minimal':
                 # Minimal processing - just retrieve context without extraction
-                bullets = self.hot.retrieve_bullets(text, read_only=True)
+                bullets = self.hot.retrieve_bullets(text, read_only=True, intent=intent_result)
                 triples = []
             elif strategy == 'contextual':
                 # Contextual processing - focus on recent context
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='context')
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='context', intent=intent_result)
             elif strategy == 'recent_context':
                 # Recent context processing - for corrections
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='recent')
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, focus='recent', intent=intent_result)
             else:
                 # Standard processing for other strategies
-                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id)
+                bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, intent=intent_result)
         else:
             # Fallback to standard processing if no intent classification or fallback result
             fallback_reason = "no intent classification"
             if intent_result:
                 fallback_reason = f"fallback classification ({intent_result.get('reason', 'unknown')})"
             logger.debug(f"[HotMem] Using standard processing ({fallback_reason})")
-            bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id)
+            bullets, triples = self.hot.process_turn(text, self._session_id, self._turn_id, intent=None)
 
         try:
             
@@ -474,7 +552,15 @@ class HotPathMemoryProcessor(BaseProcessor):
             memory_message = _build_msg(self._inject_role, self._inject_header, bullets)
 
             logger.debug(f"[HotMem] Injecting {len(bullets)} memory bullets directly into context")
-            logger.debug(f"[HotMem] Memory bullets: {bullets[:2]}")
+            try:
+                if len(bullets) <= 5:
+                    preview = ", ".join(bullets)
+                else:
+                    preview = ", ".join(bullets[:3]) + f" ... (+{len(bullets) - 3} more)"
+                logger.debug(f"[HotMem] Memory bullets: {preview}")
+            except Exception:
+                # Fallback to previous logging behavior on any error
+                logger.debug(f"[HotMem] Memory bullets: {bullets[:2]}")
 
             target_idx = self._find_context_message(messages, self._inject_header)
             if bullets:
@@ -562,24 +648,32 @@ class HotPathMemoryProcessor(BaseProcessor):
             )
             session_elapsed = float(stats.get("session_elapsed", time.time() - self._session_start))
             total_time = float(stats.get("total_time_seconds", session_elapsed))
-            system_date = time.strftime("%Y-%m-%d %H:%M:%S")
-            context_obj = self._context_aggregator.user().context if self._context_aggregator else None
-            current_context = len(context_obj.get_messages()) if context_obj else 0
-            available_context = int(os.getenv("CONTEXT_MAX_MESSAGES", "50"))
+            # Use coarse-grained values to preserve LLM KV cache
+            # Only show date without time to avoid cache invalidation
+            system_date = time.strftime("%Y-%m-%d")
+
+            # Round session durations to nearest 5 minutes to reduce cache invalidation
+            session_minutes = int(session_elapsed / 60)
+            session_minutes_rounded = (session_minutes // 5) * 5  # Round to nearest 5min
+            total_minutes = int(total_time / 60)
+            total_minutes_rounded = (total_minutes // 5) * 5
+
+            # Show anonymous label in ephemeral mode
+            display_user = "anonymous" if getattr(self, "_ephemeral", False) else self._user_id
+
             lines = [
                 self._session_header_tag,
-                f"System date: {system_date}",
-                f"User ID: {self._user_id}",
-                f"Agent ID: {self._agent_id}",
-                f"Session #: {int(stats.get('current_session', total_sessions))}",
-                f"Session start: {session_start}",
-                f"Current turn: {current_turn}",
-                f"Total turns: {total_turns}",
-                f"Total sessions with user: {total_sessions}",
-                f"Session duration: {self._format_duration(session_elapsed)}",
-                f"Total time with user: {self._format_duration(total_time)}",
-                f"Context usage: {current_context}/{available_context}",
+                f"Date: {system_date}",
+                f"User: {display_user}",
+                f"Session #{int(stats.get('current_session', total_sessions))}",
+                f"Total sessions: {total_sessions}",
             ]
+
+            # Only add timing info if significant (>= 5 min)
+            if session_minutes_rounded >= 5:
+                lines.append(f"Session: ~{session_minutes_rounded}min")
+            if total_minutes_rounded >= 5 and total_minutes_rounded != session_minutes_rounded:
+                lines.append(f"Total time: ~{total_minutes_rounded}min")
             return {"role": "system", "content": "\n".join(lines)}
         except Exception as e:
             logger.warning(f"[HotMem] Failed to build session header: {e}")

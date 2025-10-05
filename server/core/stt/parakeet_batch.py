@@ -78,6 +78,11 @@ class ParakeetBatchSTT(STTService):
 
         logger.info(f"✅ Parakeet Batch STT initialized: {model_path} (confidence_threshold: {confidence_threshold})")
 
+        # Streaming/VAD integration state for batch mode
+        self._vad_active: bool = False
+        self._buffered_audio: list[np.ndarray] = []  # float32 [-1,1] segments @ 16kHz
+        self._buffer_duration: float = 0.0
+
     def _init_parakeet_model(self):
         """Initialize the Parakeet model for batch processing"""
         try:
@@ -124,6 +129,30 @@ class ParakeetBatchSTT(STTService):
             return normalized
 
         return audio_np
+
+    def _append_audio(self, audio_bytes: bytes) -> None:
+        """Append incoming PCM16 bytes to the utterance buffer (assumed 16kHz mono)."""
+        if not audio_bytes:
+            return
+        arr = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        arr = self._normalize_audio(arr)
+        self._buffered_audio.append(arr)
+        self._buffer_duration += len(arr) / float(self._sample_rate)
+
+    def _get_buffer_bytes(self) -> bytes:
+        if not self._buffered_audio:
+            return b""
+        full = (
+            np.concatenate(self._buffered_audio)
+            if len(self._buffered_audio) > 1
+            else self._buffered_audio[0]
+        )
+        audio_int16 = np.clip(full * 32767.0, -32768.0, 32767.0).astype(np.int16)
+        return audio_int16.tobytes()
+
+    def _reset_buffer(self) -> None:
+        self._buffered_audio = []
+        self._buffer_duration = 0.0
 
     def _audio_bytes_to_wav(self, audio_bytes: bytes) -> str:
         """Convert audio bytes to temporary WAV file for Parakeet with normalization"""
@@ -182,40 +211,13 @@ class ParakeetBatchSTT(STTService):
             # Convert to temporary WAV file
             audio_path = self._audio_bytes_to_wav(audio_bytes)
 
-            # Prepare generation parameters
-            generate_kwargs = {}
-
-            # Add temperature if supported
-            if self._temperature != 0.0:
-                # Try common temperature parameter names
-                for temp_param in ["temperature", "temp", "sampling_temperature"]:
-                    try:
-                        # Test if the parameter is accepted
-                        test_kwargs = generate_kwargs.copy()
-                        test_kwargs[temp_param] = self._temperature
-                        if PARAKEET_OLD_FORMAT:
-                            result = self._model.generate(audio_path, **test_kwargs)
-                        else:
-                            from parakeet_mlx.audio import load_audio
-                            audio_array = load_audio(audio_path, self._model.preprocessor_config.sample_rate)
-                            result = self._model.generate(audio_array, **test_kwargs)
-                        generate_kwargs = test_kwargs
-                        logger.debug(f"Using temperature parameter '{temp_param}' with value {self._temperature}")
-                        break
-                    except TypeError:
-                        continue
-                else:
-                    logger.debug("Temperature parameter not supported by Parakeet model, using default")
-
-            # Generate transcription
+            # Generate transcription (use model's transcribe API to avoid shape issues)
             if PARAKEET_OLD_FORMAT:
-                # Legacy mlx_audio API
-                result = self._model.generate(audio_path, **generate_kwargs)
+                # Legacy mlx_audio API may expect raw path for generate
+                result = self._model.generate(audio_path)
             else:
-                # New parakeet_mlx API
-                from parakeet_mlx.audio import load_audio
-                audio_array = load_audio(audio_path, self._model.preprocessor_config.sample_rate)
-                result = self._model.generate(audio_array, **generate_kwargs)
+                # New parakeet_mlx API exposes transcribe(path) → AlignedResult
+                result = self._model.transcribe(audio_path)
 
             # Extract text and confidence from result
             text = ""
@@ -258,22 +260,40 @@ class ParakeetBatchSTT(STTService):
                 pass
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame, None]:
-        """Process audio and yield transcription frames"""
+        """Buffer audio during speech; produce final on end-of-turn (see process_frame)."""
         try:
-            # Process the complete audio utterance
-            text = await asyncio.get_event_loop().run_in_executor(None, self._process_audio_batch, audio)
-
-            if text:
-                # Yield final transcription frame
-                yield TranscriptionFrame(
-                    text=text,
-                    user_id=self._user_id or "user",
-                    timestamp=str(time.time())
-                )
-            else:
-                # No transcription available
-                logger.debug("Parakeet batch: no transcription generated")
-
+            if self._vad_active:
+                self._append_audio(audio)
+            # Batch mode yields no interims
         except Exception as e:
-            logger.error(f"Error in Parakeet batch STT: {e}")
-            yield ErrorFrame(f"Parakeet batch STT error: {e}")
+            logger.error(f"Error buffering audio for Parakeet batch STT: {e}")
+            yield ErrorFrame(f"Parakeet batch STT buffering error: {e}")
+
+    async def process_frame(self, frame: Frame, direction=None):
+        """Handle VAD events to orchestrate batch transcription lifecycle."""
+        await super().process_frame(frame, direction)
+
+        if isinstance(frame, UserStartedSpeakingFrame):
+            self._vad_active = True
+            self._reset_buffer()
+
+        elif isinstance(frame, UserStoppedSpeakingFrame):
+            self._vad_active = False
+            try:
+                audio_bytes = self._get_buffer_bytes()
+                self._reset_buffer()
+                if not audio_bytes:
+                    return
+                text = await asyncio.get_event_loop().run_in_executor(
+                    None, self._process_audio_batch, audio_bytes
+                )
+                if text:
+                    await self.push_frame(
+                        TranscriptionFrame(
+                            text=text,
+                            user_id=self._user_id or "user",
+                            timestamp=str(time.time())
+                        )
+                    )
+            except Exception as e:
+                logger.error(f"Parakeet batch finalize error: {e}")

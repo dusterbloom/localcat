@@ -30,6 +30,7 @@ from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIProcessor, RTVIOb
 from config import VoiceAgentConfig
 from core.memory.hotpath_processor import HotPathMemoryProcessor
 from core.memory.session_tracker import SessionTracker
+from core.memory import HotMemService
 
 # Import intent service for smart processing
 try:
@@ -47,13 +48,13 @@ except ImportError:
 from core.tts.kokoro_professional import ProfessionalKokoroTTSService
 from core.tts.kokoro_mlx import MLXKokoroTTSService
 
-# Import legacy TTS services for backward compatibility
-try:
-    from fastapi_streaming_tts import FastAPIStreamingTTS
-    FASTAPI_TTS_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"FastAPI TTS not available: {e}")
-    FASTAPI_TTS_AVAILABLE = False
+# # Import legacy TTS services for backward compatibility
+# try:
+#     from fastapi_streaming_tts import FastAPIStreamingTTS
+#     FASTAPI_TTS_AVAILABLE = True
+# except ImportError as e:
+#     logger.warning(f"FastAPI TTS not available: {e}")
+#     FASTAPI_TTS_AVAILABLE = False
 
 # Import optional components
 try:
@@ -141,7 +142,7 @@ class VoiceAgentFactory:
                     stt = ParakeetBatchSTT(
                         model_path=stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3"),
                         language=stt_config.get("language", "en"),
-                        confidence_threshold=float(os.getenv("PARAKEET_BATCH_CONFIDENCE_THRESHOLD", "0.3")),
+                        confidence_threshold=float(os.getenv("PARAKEET_BATCH_CONFIDENCE_THRESHOLD", "0.2")),
                         temperature=float(os.getenv("PARAKEET_TEMPERATURE", "0.0"))
                     )
                     logger.info("✅ Parakeet batch STT ready (fallback)")
@@ -150,6 +151,22 @@ class VoiceAgentFactory:
                     # Final fallback to Whisper MLX
                     logger.warning("Using Whisper MLX as final fallback")
                     stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
+        elif self.config.stt_engine == "parakeet_batch":
+            # Explicit batch mode for quality comparison
+            try:
+                from core.stt.parakeet_batch import ParakeetBatchSTT
+                logger.debug("Using Parakeet batch STT (explicit)")
+                stt = ParakeetBatchSTT(
+                    model_path=stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3"),
+                    language=stt_config.get("language", "en"),
+                    confidence_threshold=float(os.getenv("PARAKEET_BATCH_CONFIDENCE_THRESHOLD", "0.2")),
+                    temperature=float(os.getenv("PARAKEET_TEMPERATURE", "0.0"))
+                )
+                logger.info("✅ Parakeet batch STT ready")
+            except Exception as e:
+                logger.error(f"❌ Parakeet batch STT failed: {e}", exc_info=True)
+                logger.warning("Falling back to Whisper MLX batch mode")
+                stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
         elif self.config.stt_engine == "parakeet":
             # Support legacy "parakeet" name for backward compatibility
             try:
@@ -176,8 +193,14 @@ class VoiceAgentFactory:
         self._services_cache['stt'] = stt
         return stt
 
-    def create_tts_service(self) -> Any:
-        """Create TTS service based on configuration."""
+    def create_tts_service(self, use_boundaries: bool = True) -> Any:
+        """
+        Create TTS service based on configuration.
+        
+        Args:
+            use_boundaries: Enable sentence boundary detection (default True).
+                           Set False for intro messages to play as one unit.
+        """
         tts_config = self.config.get_component_config("tts")
 
         if self.config.tts_engine == "kokoro_professional":
@@ -199,7 +222,9 @@ class VoiceAgentFactory:
                 voice=tts_config["voice"],
                 speed=tts_config["speed"],
                 sample_rate=tts_config["sample_rate"],
-                buffer_ms=50  # 50ms buffer for optimal latency
+                buffer_ms=50,  # 50ms buffer for optimal latency
+                use_boundaries=use_boundaries,  # Control sentence boundary detection
+                aggregate_sentences=use_boundaries  # CRITICAL: Disable sentence aggregation for intro
             )
             logger.info("✅ Ultra-Low Latency MLX Kokoro TTS ready")
         elif self.config.tts_engine == "fastapi_streaming" and FASTAPI_TTS_AVAILABLE:
@@ -274,6 +299,81 @@ class VoiceAgentFactory:
 
         self._services_cache['memory'] = memory
         return memory
+    
+    def create_audio_intelligence_processor(self) -> Any:
+        """Create Audio Intelligence processor for speaker recognition, emotion, prosody."""
+        audio_intel_enabled = os.getenv("AUDIO_INTELLIGENCE_ENABLED", "true").lower() in ("true", "1", "yes")
+        
+        if not audio_intel_enabled:
+            logger.info("Audio intelligence disabled")
+            return None
+        
+        try:
+            from core.audio import AudioIntelligenceProcessor
+            
+            # Determine device (MPS for Apple Silicon, CPU fallback)
+            device = "mps" if os.getenv("AUDIO_INTEL_USE_MPS", "true").lower() in ("true", "1", "yes") else "cpu"
+            
+            audio_intel = AudioIntelligenceProcessor(
+                profile_dir=os.getenv("SPEAKER_PROFILE_DIR", "data/speaker_profiles"),
+                similarity_threshold=float(os.getenv("SPEAKER_SIMILARITY_THRESHOLD", "0.75")),
+                min_utterance_duration_sec=float(os.getenv("SPEAKER_MIN_UTTERANCE_SEC", "1.0")),
+                auto_enroll_utterances=int(os.getenv("SPEAKER_AUTO_ENROLL_UTTERANCES", "3")),
+                consistency_threshold=float(os.getenv("SPEAKER_CONSISTENCY_THRESHOLD", "0.80")),
+                sample_rate=16000,
+                device=device,
+                enable_emotion=os.getenv("AUDIO_INTEL_ENABLE_EMOTION", "true").lower() in ("true", "1", "yes"),
+                enable_prosody=os.getenv("AUDIO_INTEL_ENABLE_PROSODY", "true").lower() in ("true", "1", "yes"),
+                # Privacy-First
+                privacy_mode=os.getenv("AUDIO_INTEL_PRIVACY_MODE", "auto_enroll"),
+                require_consent=os.getenv("AUDIO_INTEL_REQUIRE_CONSENT", "false").lower() in ("true", "1", "yes"),
+                consent_timeout_sec=int(os.getenv("AUDIO_INTEL_CONSENT_TIMEOUT_SEC", "300")),
+            )
+            
+            logger.info(f"✅ Audio Intelligence processor ready on {device}")
+            self._services_cache['audio_intelligence'] = audio_intel
+            return audio_intel
+        
+        except ImportError as e:
+            logger.error(f"AudioIntelligenceProcessor not available: {e}")
+            logger.info("Install with: pip install speechbrain")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to create AudioIntelligenceProcessor: {e}")
+            return None
+
+    def create_hotmem_service(self, session_tracker: Optional[SessionTracker] = None) -> HotMemService:
+        """Create HotMemService (Pipecat-compatible memory service)."""
+        # Create confidence strategy based on configuration
+        confidence_strategy = self._create_confidence_strategy()
+
+        hotmem_service = HotMemService(
+            user_id=os.getenv("USER_ID", "default-user"),
+            agent_id=os.getenv("AGENT_ID", "locat"),
+            run_id=f"session_{os.getenv('USER_ID', 'default')}",
+            sqlite_path=os.getenv("MEMORY_SQLITE_PATH"),
+            lmdb_dir=os.getenv("MEMORY_LMDB_PATH"),
+            session_tracker=session_tracker,
+            confidence_strategy=confidence_strategy
+        )
+
+        self._services_cache['hotmem_service'] = hotmem_service
+        logger.info(f"✅ HotMemService created with {type(confidence_strategy).__name__ if confidence_strategy else 'default'} confidence strategy")
+        return hotmem_service
+
+    def _create_confidence_strategy(self):
+        """Create confidence strategy from environment configuration."""
+        from core.memory.confidence_strategy import create_confidence_strategy
+
+        strategy_name = os.getenv("CONFIDENCE_STRATEGY", "relation_type")
+
+        try:
+            strategy = create_confidence_strategy(strategy_name)
+            logger.debug(f"Using confidence strategy: {strategy_name}")
+            return strategy
+        except ValueError as e:
+            logger.warning(f"Invalid confidence strategy '{strategy_name}', using default: {e}")
+            return None  # Will use default in HotMemory
 
     def create_intent_service(self) -> Optional[Any]:
         """Create intent classification service for smart memory processing."""
@@ -356,8 +456,154 @@ class VoiceAgentFactory:
         self._services_cache['text_aggregator'] = aggregator
         return aggregator
 
+    def _has_existing_speaker_profiles(self) -> bool:
+        """Check if any speaker profiles exist."""
+        try:
+            from pathlib import Path
+            profile_dir = Path(self.config.speaker_profile_dir)
+            auto_dir = profile_dir / "auto_enrolled"
+            
+            if not auto_dir.exists():
+                return False
+            
+            # Check for .pt files
+            profiles = list(auto_dir.glob("*.pt"))
+            has_profiles = len(profiles) > 0
+            
+            logger.debug(f"[Factory] Found {len(profiles)} existing speaker profiles")
+            return has_profiles
+        except Exception as e:
+            logger.warning(f"[Factory] Error checking speaker profiles: {e}")
+            return False
+
+    def create_intro_aware_pipeline(
+        self,
+        transport: SmallWebRTCTransport,
+        services: Dict[str, Any]
+    ) -> Pipeline:
+        """
+        Create pipeline with intro/enrollment routing for improved UX.
+        
+        Uses ParallelPipeline pattern to route between:
+        - Intro pipeline: Direct TTS feedback during enrollment
+        - Conversation pipeline: Full LLM processing
+        """
+        from core.audio.pipeline_router import SpeakerEnrollmentRouter
+        from core.audio.enrollment_coordinator import EnrollmentCoordinator
+        from core.audio.enrollment_state import EnrollmentState
+        
+        # Determine initial state: if ephemeral choice is enabled, start with CHOICE
+        has_profiles = self._has_existing_speaker_profiles()
+        if self.config.enable_intro_pipeline and self.config.enable_ephemeral_choice and not self.config.force_intro:
+            initial_state = EnrollmentState.CHOICE
+        else:
+            initial_state = (
+                EnrollmentState.CONVERSATION if (has_profiles and self.config.skip_intro_for_returning and not self.config.force_intro)
+                else EnrollmentState.INTRO
+            )
+        
+        logger.info(
+            f"[Factory] Creating intro-aware pipeline "
+            f"(initial_state={initial_state.value}, has_profiles={has_profiles})"
+        )
+        
+        # CRITICAL: ParallelPipeline requires separate processor instances for each branch
+        # Reusing the same TTS instance causes initialization errors
+        
+        # Define intro pipeline (bypasses LLM for direct feedback)
+        # Create a separate TTS instance for intro messages
+        # CRITICAL: Disable sentence boundaries so full intro message plays as one unit
+        intro_tts = self.create_tts_service(use_boundaries=False)
+
+        # Optional: prevent TTS from being interrupted during intro/enrollment
+        async def _no_intro_interruptions(frame) -> bool:
+            try:
+                from pipecat.frames.frames import InterruptionTaskFrame
+                return not isinstance(frame, InterruptionTaskFrame)
+            except Exception:
+                return True
+
+        from pipecat.processors.filters.function_filter import FunctionFilter as _FF
+        intro_processors = [_FF(_no_intro_interruptions), intro_tts]
+        
+        # Define conversation pipeline (full processing)
+        # IMPORTANT: Memory processor should only run in conversation branch
+        conversation_processors = [
+            services['memory'],
+            services['context_aggregator'].user(),
+            services['llm'],
+            services['tts'],  # Main TTS instance
+            services['context_aggregator'].assistant(),
+        ]
+        
+        # Determine enrollment sample count from AudioIntelligence (single source of truth)
+        total_samples = 3
+        try:
+            ai = services.get('audio_intelligence')
+            if ai is not None and hasattr(ai, '_auto_enroll_utterances'):
+                total_samples = int(getattr(ai, '_auto_enroll_utterances'))
+            else:
+                # Fallback to environment variable
+                total_samples = int(os.getenv('SPEAKER_AUTO_ENROLL_UTTERANCES', str(total_samples)))
+        except Exception:
+            total_samples = 3
+
+        # Create router
+        router = SpeakerEnrollmentRouter(
+            intro_processors=intro_processors,
+            conversation_processors=conversation_processors,
+            initial_state=initial_state,
+            total_enrollment_samples=total_samples,
+        )
+        
+        # Create coordinator
+        coordinator = EnrollmentCoordinator(
+            router=router,
+            profile_dir=self.config.speaker_profile_dir,
+            skip_for_returning=self.config.skip_intro_for_returning,
+            include_privacy_explanation=self.config.include_privacy_explanation,
+            audio_intel=services.get('audio_intelligence'),
+            memory=services.get('memory'),
+            enable_ephemeral_choice=self.config.enable_ephemeral_choice,
+        )
+        
+        # Build main pipeline stages
+        stages = [transport.input()]
+        
+        # Optional mic probe
+        mic_probe = services.get('mic_probe')
+        if mic_probe:
+            stages.append(mic_probe)
+        
+        # Core processing before router
+        stages.extend([
+            services['stt'],
+            services['rtvi'],
+            services['audio_intelligence'],  # Emits enrollment frames
+            coordinator,  # Generates feedback and controls router
+        ])
+        
+        # Router splits to intro vs conversation
+        stages.append(router)
+        
+        # Output
+        stages.append(transport.output())
+        
+        pipeline = Pipeline(stages)
+        self._services_cache['pipeline'] = pipeline
+        self._services_cache['enrollment_router'] = router
+        self._services_cache['enrollment_coordinator'] = coordinator
+        
+        return pipeline
+
     def create_pipeline(self, transport: SmallWebRTCTransport, services: Dict[str, Any]) -> Pipeline:
-        """Create the main voice agent pipeline."""
+        """Create the main voice agent pipeline with optional audio intelligence."""
+        # Use intro-aware pipeline if enabled
+        if self.config.enable_intro_pipeline and services.get('audio_intelligence'):
+            logger.info("🎭 Using intro-aware pipeline for enrollment UX")
+            return self.create_intro_aware_pipeline(transport, services)
+        
+        # Standard pipeline (no enrollment UX)
         stages = [transport.input()]
 
         # Optional mic probe
@@ -365,6 +611,12 @@ class VoiceAgentFactory:
         if mic_probe:
             stages.append(mic_probe)
 
+        # Audio intelligence (if enabled) - runs async on UserStoppedSpeaking, non-blocking
+        audio_intel = services.get('audio_intelligence')
+        if audio_intel:
+            logger.info("🎤 Audio Intelligence enabled - speaker recognition active")
+            stages.append(audio_intel)
+        
         # Main processing pipeline
         stages.extend([
             services['stt'],
@@ -435,14 +687,27 @@ class VoiceAgentFactory:
         # Create intent service for smart processing (optional)
         intent_service = self.create_intent_service()
 
-        # Create memory processor
-        memory = self.create_memory_processor(context_aggregator, session_tracker)
+        # Create memory service based on configuration
+        memory_backend = os.getenv("MEMORY_BACKEND", "hotpath").lower()
+        logger.debug(f"[Factory] MEMORY_BACKEND from env: '{memory_backend}'")
+
+        if memory_backend == "hotmem":
+            # Use HotMemService (Pipecat-compatible service)
+            memory = self.create_hotmem_service(session_tracker)
+            logger.info("Using HotMemService (Pipecat-compatible memory)")
+        else:
+            # Use HotPathMemoryProcessor (current processor)
+            memory = self.create_memory_processor(context_aggregator, session_tracker)
+            logger.info("Using HotPathMemoryProcessor (current memory processor)")
 
         # Create RTVI processor
         rtvi = self.create_rtvi_processor()
 
         # Create optional mic probe
         mic_probe = self.create_mic_probe()
+
+        # Create audio intelligence processor (Session 1: Speaker recognition)
+        audio_intelligence = self.create_audio_intelligence_processor()
 
         # Assemble all services
         services = {
@@ -456,7 +721,8 @@ class VoiceAgentFactory:
             'memory': memory,
             'rtvi': rtvi,
             'mic_probe': mic_probe,
-            'intent': intent_service  # Intent classification service (optional)
+            'intent': intent_service,  # Intent classification service (optional)
+            'audio_intelligence': audio_intelligence,  # Audio intelligence (speaker, emotion, prosody)
         }
 
         # Create pipeline

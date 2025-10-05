@@ -14,3 +14,25 @@ data
 server/.logs/
 server/server/.logs/
 server/base.pt
+# Python caches and pytest cache
+.pytest_cache/
+.mypy_cache/
+
+# Model artifacts and checkpoints (never commit)
+server/wav2vec2_checkpoints/**
+**/.locks/**
+**/*.pt
+**/*.bin
+**/*.safetensors
+**/*.onnx
+**/*.tflite
+
+# Logs anywhere
+**/*.log
+
+# Local speaker profile model directory (if used)
+server/data/speaker_profiles/models/**
+
+# Keep server root tight: forbid stray markdowns
+server/*.md
+!server/README.md

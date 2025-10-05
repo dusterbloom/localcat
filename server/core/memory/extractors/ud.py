@@ -60,7 +60,7 @@ class UDExtractor(Extractor):
                 except Exception as e:
                     logger.warning(f"Processor {processor.name} prewarming failed: {e}")
 
-    def extract(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any]:
+    def extract(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any, dict]:
         """
         Extract entities and relations with optional text preprocessing.
 
@@ -69,7 +69,7 @@ class UDExtractor(Extractor):
             lang: Language code
 
         Returns:
-            Tuple of (entities, triples, neg_count, doc)
+            Tuple of (entities, triples, neg_count, doc, entity_aliases)
 
         Note:
             If text processors are configured, text will be preprocessed
@@ -85,13 +85,14 @@ class UDExtractor(Extractor):
         except Exception as e:
             logger.warning(f"Extraction failed: {e}")
             # Return empty results on failure to maintain robustness
-            return [], [], 0, None
+            return [], [], 0, None, {}
 
-    def _extract_direct(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any]:
+    def _extract_direct(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any, dict]:
         """Direct extraction without preprocessing (backward compatibility path)."""
-        return self._host._extract(text, lang)  # type: ignore[attr-defined]
+        entities, triples, neg_count, doc, aliases = self._host._extract(text, lang)  # type: ignore[attr-defined]
+        return entities, triples, neg_count, doc, aliases
 
-    def _extract_with_preprocessing(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any]:
+    def _extract_with_preprocessing(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any, dict]:
         """
         Extract with text preprocessing applied.
 
@@ -102,11 +103,11 @@ class UDExtractor(Extractor):
         4. Apply standard refinement
         """
         # Get initial extraction to obtain spaCy document
-        entities, triples, neg_count, doc = self._host._extract(text, lang)  # type: ignore[attr-defined]
+        entities, triples, neg_count, doc, aliases = self._host._extract(text, lang)  # type: ignore[attr-defined]
 
         if doc is None:
             logger.debug("No spaCy document available for preprocessing")
-            return entities, triples, neg_count, doc
+            return entities, triples, neg_count, doc, aliases
 
         # Apply text processing chain
         try:
@@ -118,19 +119,19 @@ class UDExtractor(Extractor):
 
                 # Check if host supports extraction from document
                 if hasattr(self._host, '_extract_from_doc'):
-                    entities, triples, neg_count, final_doc = self._host._extract_from_doc(processed_doc)  # type: ignore[attr-defined]
-                    return entities, triples, neg_count, final_doc
+                    entities, triples, neg_count, final_doc, aliases = self._host._extract_from_doc(processed_doc)  # type: ignore[attr-defined]
+                    return entities, triples, neg_count, final_doc, aliases
                 else:
                     # Fallback: re-extract from processed text
-                    entities, triples, neg_count, final_doc = self._host._extract(processed_doc.text, lang)  # type: ignore[attr-defined]
-                    return entities, triples, neg_count, final_doc
+                    entities, triples, neg_count, final_doc, aliases = self._host._extract(processed_doc.text, lang)  # type: ignore[attr-defined]
+                    return entities, triples, neg_count, final_doc, aliases
             else:
                 logger.debug("No text modifications applied by processors")
-                return entities, triples, neg_count, processed_doc
+                return entities, triples, neg_count, processed_doc, aliases
 
         except Exception as e:
             logger.warning(f"Text preprocessing failed: {e}, using original extraction")
-            return entities, triples, neg_count, doc
+            return entities, triples, neg_count, doc, aliases
 
     def refine(self, text: str, triples: List[Tuple[str, str, str]], doc: Any) -> List[Tuple[str, str, str]]:
         """Refine extracted triples (unchanged from original implementation)."""

@@ -56,8 +56,13 @@ class MemoryStore:
         self._aliases: List[Tuple[str, str]] = []
         self._edges: List[Tuple[str, str, str, float, int, int, int, int]] = []
         self._mentions: List[Tuple[str, str, int, str, int]] = []
+
+        # Provenance queues
+        self._turns: List[Tuple[str, str, str, int, int]] = []  # (id, text, sid, tid, ts)
+        self._edge_sources: List[Tuple[str, str, int]] = []  # (edge_id, turn_id, ts)
+
         self._last = time.time()
-        
+
         # Performance monitoring
         self.metrics = defaultdict(list)
     
@@ -86,6 +91,7 @@ class MemoryStore:
             PRAGMA synchronous=NORMAL;
             PRAGMA temp_store=MEMORY;
             PRAGMA mmap_size=268435456;  -- 256MB memory map
+            PRAGMA foreign_keys=ON;  -- Enable foreign key constraints
             
             CREATE TABLE IF NOT EXISTS entity(
               id TEXT PRIMARY KEY, 
@@ -121,13 +127,36 @@ class MemoryStore:
             
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
               USING fts5(
-                text, 
-                eid UNINDEXED, 
-                rel UNINDEXED, 
-                dst UNINDEXED, 
-                ts UNINDEXED, 
+                text,
+                eid UNINDEXED,
+                rel UNINDEXED,
+                dst UNINDEXED,
+                ts UNINDEXED,
                 tokenize='porter'
               );
+
+            -- Conversation-first provenance tables
+            CREATE TABLE IF NOT EXISTS conversation_turn(
+              id TEXT PRIMARY KEY,
+              text TEXT NOT NULL,
+              session_id TEXT NOT NULL,
+              turn_id INT NOT NULL,
+              ts INT NOT NULL,
+              UNIQUE(session_id, turn_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_turn_session ON conversation_turn(session_id, turn_id);
+            CREATE INDEX IF NOT EXISTS idx_turn_ts ON conversation_turn(ts DESC);
+
+            CREATE TABLE IF NOT EXISTS edge_source(
+              edge_id TEXT NOT NULL,
+              turn_id TEXT NOT NULL,
+              extracted_at INT NOT NULL,
+              PRIMARY KEY (edge_id, turn_id),
+              FOREIGN KEY (edge_id) REFERENCES edge(id) ON DELETE CASCADE,
+              FOREIGN KEY (turn_id) REFERENCES conversation_turn(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_source_edge ON edge_source(edge_id);
+            CREATE INDEX IF NOT EXISTS idx_source_turn ON edge_source(turn_id);
         """)
         
         # LMDB with proper settings (skip if lmdb_dir is None)
@@ -206,17 +235,52 @@ class MemoryStore:
     
     def enqueue_mention(self, eid: str, text: str, ts: float, sid: str, tid: int) -> None:
         self._mentions.append((eid, text[:500], int(ts), sid, int(tid)))  # Limit text length
-    
+
+    @staticmethod
+    def turn_id(session_id: str, turn_id: int) -> str:
+        """Generate stable turn ID from session + turn number"""
+        return hashlib.sha1(f"{session_id}|{turn_id}".encode()).hexdigest()
+
+    def enqueue_turn(self, text: str, session_id: str, turn_id: int, ts: int) -> str:
+        """
+        Store conversation turn (non-blocking, idempotent)
+
+        Args:
+            text: Full conversation text
+            session_id: Session identifier
+            turn_id: Turn number within session
+            ts: Timestamp in milliseconds
+
+        Returns:
+            Turn ID (hash) for linking to edges
+        """
+        tid = self.turn_id(session_id, turn_id)
+        self._turns.append((tid, text[:2000], session_id, turn_id, ts))  # Limit text to 2KB
+        return tid
+
+    def enqueue_edge_source(self, edge_id: str, turn_id: str, ts: int) -> None:
+        """
+        Link edge to conversation turn (non-blocking)
+
+        Args:
+            edge_id: Edge ID from self.edge_id(s, r, d)
+            turn_id: Turn ID from self.enqueue_turn()
+            ts: Extraction timestamp in milliseconds
+        """
+        self._edge_sources.append((edge_id, turn_id, ts))
+
     def flush_if_needed(self, max_ops: int = 16, max_ms: int = 500) -> None:
-        total_ops = len(self._aliases) + len(self._edges) + len(self._mentions)
+        total_ops = (len(self._aliases) + len(self._edges) + len(self._mentions) +
+                     len(self._turns) + len(self._edge_sources))
         elapsed_ms = (time.time() - self._last) * 1000
-        
+
         if total_ops >= max_ops or elapsed_ms >= max_ms:
             self.flush()
     
     # ---------- Flush (batched) ----------
     def flush(self) -> None:
-        if not (self._aliases or self._edges or self._mentions):
+        if not (self._aliases or self._edges or self._mentions or
+                self._turns or self._edge_sources):
             return
         
         start = time.perf_counter()
@@ -290,7 +354,28 @@ class MemoryStore:
                         "INSERT INTO chunks_fts(text, eid, rel, dst, ts) VALUES(?, ?, ?, ?, ?)",
                         (text, eid, "", "", int(ts))
                     )
-                
+
+                # Batch process conversation turns
+                for tid, text, sid, turn_num, ts in self._turns:
+                    cur.execute(
+                        "INSERT OR IGNORE INTO conversation_turn(id, text, session_id, turn_id, ts) "
+                        "VALUES(?, ?, ?, ?, ?)",
+                        (tid, text, sid, turn_num, ts)
+                    )
+                    # Index conversation in FTS for convo retrieval
+                    cur.execute(
+                        "INSERT INTO chunks_fts(text, eid, rel, dst, ts) VALUES(?, ?, ?, ?, ?)",
+                        (text, "conversation", "", "", ts)
+                    )
+
+                # Batch process edge sources
+                for edge_id, turn_id, ts in self._edge_sources:
+                    cur.execute(
+                        "INSERT OR IGNORE INTO edge_source(edge_id, turn_id, extracted_at) "
+                        "VALUES(?, ?, ?)",
+                        (edge_id, turn_id, ts)
+                    )
+
                 self.sql.commit()
                 
         except Exception as e:
@@ -302,6 +387,8 @@ class MemoryStore:
         self._aliases.clear()
         self._edges.clear()
         self._mentions.clear()
+        self._turns.clear()
+        self._edge_sources.clear()
         self._last = time.time()
         
         # Track performance
@@ -471,6 +558,36 @@ class MemoryStore:
         ):
             results.append((str(text), str(eid), int(ts)))
         return results
+
+    def search_fts_scoped(self, query: str, eids: List[str], limit: int = 10) -> List[Tuple[str, str, int]]:
+        """FTS search restricted to specific eids (user/session scoped)."""
+        if not eids:
+            return self.search_fts(query, limit)
+        cur = self.sql.cursor()
+        results: List[Tuple[str, str, int]] = []
+        try:
+            placeholders = ",".join(["?"] * len(eids))
+            sql = f"SELECT text, eid, ts FROM chunks_fts WHERE chunks_fts MATCH ? AND eid IN ({placeholders}) ORDER BY rank LIMIT ?"
+            params = [query, *eids, int(limit)]
+            for (text, eid, ts) in cur.execute(sql, params):
+                results.append((str(text), str(eid), int(ts)))
+        except Exception as e:
+            logger.warning(f"search_fts_scoped failed: {e}")
+        return results
+
+    def is_session_owned_by_user(self, session_id: str, user_id: str) -> bool:
+        """Return True if there is at least one mention for (eid=user_id, session_id=session_id)."""
+        if not session_id or not user_id:
+            return False
+        try:
+            cur = self.sql.cursor()
+            row = cur.execute(
+                "SELECT 1 FROM mention WHERE session_id = ? AND eid = ? LIMIT 1",
+                (session_id, user_id),
+            ).fetchone()
+            return bool(row)
+        except Exception:
+            return False
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get performance metrics"""
@@ -553,3 +670,83 @@ class MemoryStore:
             (int(min_status),)
         ).fetchall()
         return [(str(s), str(r), str(d), float(w)) for (s, r, d, w) in rows]
+
+    # ---------- Provenance Query Helpers ----------
+
+    def get_edge_provenance(self, edge_id: str) -> List[Tuple[str, str, int, int]]:
+        """
+        Get all conversation turns that produced this edge
+
+        Args:
+            edge_id: Edge ID from self.edge_id(s, r, d)
+
+        Returns:
+            List of (text, session_id, turn_id, extracted_at) tuples
+            Ordered by most recent first
+        """
+        cur = self.sql.cursor()
+        return cur.execute("""
+            SELECT t.text, t.session_id, t.turn_id, es.extracted_at
+            FROM edge_source es
+            JOIN conversation_turn t ON es.turn_id = t.id
+            WHERE es.edge_id = ?
+            ORDER BY es.extracted_at DESC
+        """, (edge_id,)).fetchall()
+
+    def get_turn_extractions(self, session_id: str, turn_id: int) -> List[Tuple[str, str, str, float]]:
+        """
+        Get all edges extracted from a conversation turn
+
+        Args:
+            session_id: Session identifier
+            turn_id: Turn number within session
+
+        Returns:
+            List of (src, rel, dst, weight) tuples
+        """
+        tid = self.turn_id(session_id, turn_id)
+        cur = self.sql.cursor()
+        return cur.execute("""
+            SELECT e.src, e.rel, e.dst, e.weight
+            FROM edge_source es
+            JOIN edge e ON es.edge_id = e.id
+            WHERE es.turn_id = ?
+            ORDER BY e.weight DESC
+        """, (tid,)).fetchall()
+
+    def get_conversation(self, session_id: str, limit: int = 100) -> List[Tuple[int, str, int]]:
+        """
+        Retrieve full conversation by session
+
+        Args:
+            session_id: Session identifier
+            limit: Maximum turns to return
+
+        Returns:
+            List of (turn_id, text, timestamp) tuples ordered by turn
+        """
+        cur = self.sql.cursor()
+        return cur.execute("""
+            SELECT turn_id, text, ts
+            FROM conversation_turn
+            WHERE session_id = ?
+            ORDER BY turn_id ASC
+            LIMIT ?
+        """, (session_id, limit)).fetchall()
+
+    def get_edge_sources_count(self, edge_id: str) -> int:
+        """
+        Count how many conversation turns produced this edge
+        Useful for confidence scoring (more sources = higher confidence)
+
+        Args:
+            edge_id: Edge ID
+
+        Returns:
+            Number of distinct source conversations
+        """
+        cur = self.sql.cursor()
+        result = cur.execute("""
+            SELECT COUNT(*) FROM edge_source WHERE edge_id = ?
+        """, (edge_id,)).fetchone()
+        return result[0] if result else 0
