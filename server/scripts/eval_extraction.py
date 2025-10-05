@@ -21,6 +21,10 @@ from typing import List, Tuple, Dict
 
 from loguru import logger
 
+import sys
+from pathlib import Path as FilePath
+sys.path.insert(0, str(FilePath(__file__).parent.parent))
+
 from core.memory.memory_store import MemoryStore, Paths
 from core.memory.memory_hotpath import HotMemory
 from core.memory.extractors.yaml_extractor import YAMLExtractor
@@ -34,7 +38,8 @@ def load_dataset(path: Path) -> List[Dict]:
 
 
 def run_extractor_hotmem(hot: HotMemory, text: str, lang: str) -> List[Tuple[str, str, str]]:
-    ents, triples, neg, doc = hot.extractor.extract(text, lang)
+    # UDExtractor returns 5-tuple (entities, triples, neg_count, doc, aliases)
+    ents, triples, neg, doc, _aliases = hot.extractor.extract(text, lang)
     triples = hot.extractor.refine(text, triples, doc)
     return triples
 
