@@ -1,0 +1,16 @@
+{
+  "intercept": -0.4762870601156507,
+  "weights": {
+    "bias": -0.4762870601156507,
+    "lexicalized": 0.0,
+    "len_d": -0.28540408549386564,
+    "very_short_d": 0.0,
+    "empty_d": -0.23389579633214222,
+    "rel_strong": -0.2205662888580334,
+    "generic_head": 0.0,
+    "pron_d": 0.0,
+    "type_loc_match": 0.0,
+    "type_org_match": 0.0
+  },
+  "threshold": 0.25
+}

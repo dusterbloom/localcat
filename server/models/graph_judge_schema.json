@@ -1,0 +1,21 @@
+{
+  "live_in": ["GPE", "LOC", "FAC"],
+  "reside_in": ["GPE", "LOC"],
+  "arrive_at": ["FAC", "GPE"],
+  "arrive_in": ["GPE", "LOC"],
+  "travel_to": ["GPE", "LOC"],
+  "relocate_to": ["GPE", "LOC"],
+  "move_to": ["GPE", "LOC"],
+  "work_at": ["ORG"],
+  "works_at": ["ORG"],
+  "employed_by": ["ORG"],
+  "present_to": ["ORG", "PERSON"],
+  "meet_with": ["PERSON", "ORG"],
+  "located_in": ["GPE", "LOC", "FAC"],
+  "study_at": ["ORG", "FAC"],
+  "graduate_from": ["ORG"],
+  "launch_in": ["GPE", "LOC"],
+  "expand_into": ["GPE", "LOC"],
+  "invest_in": ["ORG", "PRODUCT"]
+}
+

@@ -8,6 +8,7 @@ Metrics:
 from __future__ import annotations
 
 from typing import Dict, List, Tuple, Iterable
+from .canonicalize import canonicalize_triple
 
 
 def _canon(s: str) -> str:
@@ -26,7 +27,10 @@ def _canon(s: str) -> str:
 def _norm_triples(triples: Iterable[Tuple[str, str, str]]) -> List[Tuple[str, str, str]]:
     out = []
     for s, r, d in triples:
-        out.append((_canon(s), (r or "").strip().lower(), _canon(d)))
+        s2, r2, d2 = _canon(s), (r or "").strip().lower(), _canon(d)
+        # Apply canonicalization (verb+prep folding, copula unification)
+        s3, r3, d3 = canonicalize_triple(s2, r2, d2)
+        out.append((s3, r3, d3))
     return out
 
 
