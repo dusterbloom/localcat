@@ -58,7 +58,8 @@ _DET_WORDS = {
     "my", "your", "his", "her", "their", "our", "its"
 }
 
-_PRON_YOU = {"i", "me", "my", "mine", "myself"}
+# First-person pronouns (speaker referring to self)
+_PRON_FIRST = {"i", "me", "my", "mine", "myself"}
 
 def _strip_leading_dets(text: str) -> str:
     t = _norm(text)
@@ -74,8 +75,7 @@ def _strip_leading_dets(text: str) -> str:
 
 def _canon_entity_text(text: str) -> str:
     t = _norm(text)
-    if t in _PRON_YOU:
-        return "you"
+    # Do not collapse pronouns here; role-aware mapping occurs upstream.
     t = _strip_leading_dets(t)
     return t
 
@@ -101,7 +101,9 @@ class HotMemory:
                  confidence_strategy: Optional[ConfidenceStrategy] = None,
                  enable_dspy_extraction: bool = None):
         self.store = store
-        self.user_eid = "you"
+        self.user_eid = "you"  # Overridden by HotPathMemoryProcessor.set_user_identity
+        # Agent entity id for second-person references from the user (role-aware mapping)
+        self.agent_eid = f"agent:{os.getenv('AGENT_ID', 'agent')}"
 
         # Confidence scoring strategy (dependency injection)
         self.confidence = confidence_strategy or RelationTypeConfidence()
@@ -409,12 +411,20 @@ class HotMemory:
         
         # Noun chunks
         for chunk in doc.noun_chunks:
-            # Skip noun chunks that are Person=2 pronouns (user talking to AI)
+            # Map noun chunks with pronouns to role-aware IDs
             if chunk.root.pos_ == "PRON":
                 person = chunk.root.morph.get("Person")
                 person_val = person[0] if person else None
+                if person_val == "1":
+                    # Actor (speaker)
+                    entities.add(self.user_eid)
+                    entity_map[chunk.root.i] = self.user_eid
+                    continue
                 if person_val == "2":
-                    continue  # Skip second-person pronouns
+                    # Addressee (agent in dyadic chat)
+                    entities.add(self.agent_eid)
+                    entity_map[chunk.root.i] = self.agent_eid
+                    continue
 
             chunk_text = _canon_entity_text(chunk.text)
             entities.add(chunk_text)
@@ -430,18 +440,18 @@ class HotMemory:
                         person_val = person[0] if person else None
 
                         if person_val == "1":
-                            # First person: user talking about themselves
+                            # First person: actor (speaker)
                             entity_text = self.user_eid
                         elif person_val == "2":
-                            # Second person: user talking to/about AI - SKIP
-                            continue
+                            # Second person: addressee (agent in dyadic chat)
+                            entity_text = self.agent_eid
                         elif person_val == "3":
                             # Third person: keep as-is (he, she, they)
                             entity_text = _canon_entity_text(token.lemma_)
                         else:
                             # Fallback: use old logic for pronouns without Person feature
                             entity_text = _canon_entity_text(token.text)
-                            if entity_text in _PRON_YOU:
+                            if entity_text in _PRON_FIRST:
                                 entity_text = self.user_eid
                     else:
                         # NOUN/PROPN: use current logic
@@ -1256,7 +1266,7 @@ class HotMemory:
         if md:
             dname = _canon_entity_text(md.group(1))
             refined.append(("dog", "name", dname))
-            refined.append(("you", "has", "dog"))
+            refined.append((self.user_eid, "has", "dog"))
 
         # 3) My son is named X
         ms = None
@@ -1267,7 +1277,7 @@ class HotMemory:
         if ms:
             sname = _canon_entity_text(ms.group(1))
             refined.append(("son", "name", sname))
-            refined.append(("you", "has", "son"))
+            refined.append((self.user_eid, "has", "son"))
 
         # 4) Favorite color is X → favorite_color
         fc = None
@@ -1277,17 +1287,17 @@ class HotMemory:
             fc = None
         if fc:
             fav = _canon_entity_text(fc.group(1))
-            refined.append(("you", "favorite_color", fav))
+            refined.append((self.user_eid, "favorite_color", fav))
 
         for s, r, d in triples:
             cs = _canon_entity_text(s)
             cd = _canon_entity_text(d)
 
-            # Pronouns → you
-            if cs in _PRON_YOU:
-                cs = "you"
-            if cd in _PRON_YOU:
-                cd = "you"
+            # First-person pronouns → user entity id
+            if cs in _PRON_FIRST:
+                cs = self.user_eid
+            if cd in _PRON_FIRST:
+                cd = self.user_eid
 
             rr = r
             # Fix generic preposition rels if the verb is inferable from surface text

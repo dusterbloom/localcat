@@ -46,7 +46,7 @@ _DET_WORDS = {
     "my", "your", "his", "her", "their", "our", "its"
 }
 
-_PRON_YOU = {"i", "me", "my", "mine", "myself"}
+_PRON_FIRST = {"i", "me", "my", "mine", "myself"}
 
 def _strip_leading_dets(text: str) -> str:
     t = _norm(text)
@@ -62,8 +62,7 @@ def _strip_leading_dets(text: str) -> str:
 
 def _canon_entity_text(text: str) -> str:
     t = _norm(text)
-    if t in _PRON_YOU:
-        return "you"
+    # Do not collapse pronouns here; role-aware mapping is handled upstream
     t = _strip_leading_dets(t)
     return t
 

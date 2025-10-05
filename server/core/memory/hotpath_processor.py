@@ -205,6 +205,13 @@ class HotPathMemoryProcessor(BaseProcessor):
         if self._session_tracker:
             stats = self._session_tracker.start_session(self._user_id, self._session_id)
         self._ensure_session_header(stats=stats, initial=True)
+        # Provide role-aware IDs to HotMemory
+        try:
+            self.hot.agent_eid = f"agent:{self._agent_id}"
+            self.hot.current_user_id = self._user_id
+            self.hot.current_session_id = self._session_id
+        except Exception:
+            pass
         logger.debug(f"HotPathMemoryProcessor initialized for user: {user_id}")
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):

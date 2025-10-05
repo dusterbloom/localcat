@@ -390,14 +390,28 @@ class Retrieval:
         Applies conservative filtering for conversational/command relations and
         fixes common agreement issues for second-person subjects.
         """
+        # Role-aware display mapping
+        def _display(x: str) -> str:
+            try:
+                if x.startswith('you:'):
+                    return x.split(':', 1)[1]
+                if x.startswith('agent:'):
+                    return x.split(':', 1)[1]
+            except Exception:
+                pass
+            return x
+
+        ds = _display(s)
+        dd = _display(d)
+
         meaningless_entities = {"it", "this", "that", "there", "here", "been", "know"}
         wh_words = {"what", "who", "when", "where", "why", "how", "which"}
-        if s.lower() in meaningless_entities or d.lower() in meaningless_entities:
+        if ds.lower() in meaningless_entities or dd.lower() in meaningless_entities:
             return ""
         # Drop obvious punctuation artifacts
-        if "," in s or "," in d:
+        if "," in ds or "," in dd:
             return ""
-        if s.lower() in wh_words or d.lower() in wh_words:
+        if ds.lower() in wh_words or dd.lower() in wh_words:
             return ""
 
         stop_relations = {
@@ -423,36 +437,29 @@ class Retrieval:
             return ""
 
         if r == "name":
-            if s.lower() == "you":
-                return f"your name is {d}"
-            return f"{s}'s name is {d}"
+            return f"{ds} is named {dd}"
         if r == "has":
-            if s.lower() == "you":
-                return f"you have {d}"
-            return f"{s} has {d}"
+            return f"{ds} has {dd}"
         if r == "also_known_as":
             # Only meaningful for user identity
-            if s.lower() != "you":
+            if ds.lower() not in ("you", _display(getattr(self.host, 'user_eid', 'you'))):
                 return ""
-            return f"{s} aka {d}"
+            return f"{ds} aka {dd}"
         if r == "is":
-            if s.lower() in meaningless_entities or d.lower().startswith("what "):
+            if ds.lower() in meaningless_entities or dd.lower().startswith("what "):
                 return ""
-            if s.lower() == "you":
-                return f"you are {d}"
-            return f"{s} is {d}"
+            return f"{ds} is {dd}"
         if r.startswith("v:"):
-            return f"{s} {r[2:]} {d}"
-        # Common relation fixes for second person
-        if s.lower() == "you":
-            if r == "lives_in":
-                return f"you live in {d}"
-            if r == "works_at":
-                return f"you work at {d}"
-            if r == "works_in":
-                return f"you work in {d}"
+            return f"{ds} {r[2:]} {dd}"
+        # Common relation fixes (remove underscore)
+        if r == "lives_in":
+            return f"{ds} lives in {dd}"
+        if r == "works_at":
+            return f"{ds} works at {dd}"
+        if r == "works_in":
+            return f"{ds} works in {dd}"
 
-        return f"{s} {r.replace('_', ' ')} {d}"
+        return f"{ds} {r.replace('_', ' ')} {dd}"
 
     def _is_temporal_query(self, query: str) -> bool:
         """Detect if query is asking about time-based information."""
