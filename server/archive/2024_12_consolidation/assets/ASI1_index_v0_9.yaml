@@ -1,0 +1,9 @@
+meta:
+  version: "0.9"
+  source: "ASI1_proposal.yaml (strict split index)"
+  description: "Index that includes normalized L1/L2/L3 files"
+
+includes:
+  - ASI1_l1_v0_9.yaml
+  - ASI1_l2_v0_9.yaml
+  - ASI1_l3_v0_9.yaml

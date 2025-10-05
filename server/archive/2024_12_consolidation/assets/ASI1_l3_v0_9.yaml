@@ -1,0 +1,22 @@
+meta:
+  version: "0.9"
+  source: "ASI1_proposal.yaml (normalized L3 index)"
+  levels_supported: [3]
+
+language_extensions:
+  spanish:
+    - name: "ES_GUSTAR_PSYCH_VERBS"
+    - name: "ES_ZERO_ANAPHORA_CHAINS"
+    - name: "ES_CLITIC_PRONOUN_RESOLUTION"
+  german:
+    - name: "DE_VERB_FINAL_SUBORDINATE"
+    - name: "DE_SEPARABLE_PREFIX_VERBS"
+    - name: "DE_CASE_AMBIGUITY_RESOLUTION"
+  french:
+    - name: "FR_CLITIC_PRONOUN_CLIMBING"
+    - name: "FR_PARTITIVE_CONSTRUCTIONS"
+    - name: "FR_SUBJUNCTIVE_SCOPE"
+  chinese:
+    - name: "ZH_TOPIC_COMMENT_STRUCTURE"
+    - name: "ZH_SERIAL_VERB_CONSTRUCTIONS"
+    - name: "ZH_CLASSIFIER_CONSTRUCTIONS"

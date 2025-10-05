@@ -1,0 +1,66 @@
+meta:
+  version: "0.9"
+  source: "ASI1_proposal.yaml (normalized L1 index)"
+  levels_supported: [1]
+
+core_patterns:
+  - name: "UNIVERSAL_SVO_ACTIVE"
+    level: 1
+    priority: 200
+  - name: "UNIVERSAL_SVO_PASSIVE"
+    level: 1
+    priority: 195
+  - name: "UNIVERSAL_COPULA_NOMINAL"
+    level: 1
+    priority: 190
+  - name: "UNIVERSAL_COPULA_ADJECTIVAL"
+    level: 1
+    priority: 188
+  - name: "UNIVERSAL_DITRANSITIVE_GIVE"
+    level: 1
+    priority: 185
+  - name: "UNIVERSAL_DITRANSITIVE_COMMUNICATE"
+    level: 1
+    priority: 183
+  - name: "UNIVERSAL_COORD_SUBJECT"
+    level: 1
+    priority: 180
+  - name: "UNIVERSAL_COORD_OBJECT"
+    level: 1
+    priority: 178
+  - name: "UNIVERSAL_COORD_VERB"
+    level: 1
+    priority: 176
+  - name: "UNIVERSAL_COORD_MIXED"
+    level: 1
+    priority: 174
+  - name: "UNIVERSAL_CCOMP_EMBEDDING"
+    level: 1
+    priority: 170
+  - name: "UNIVERSAL_RELATIVE_CLAUSE"
+    level: 1
+    priority: 168
+  - name: "UNIVERSAL_CONTROL_VERB"
+    level: 1
+    priority: 166
+  - name: "UNIVERSAL_MODAL_VERBS"
+    level: 1
+    priority: 164
+  - name: "UNIVERSAL_PERFECT_ASPECT"
+    level: 1
+    priority: 162
+  - name: "UNIVERSAL_PROGRESSIVE_ASPECT"
+    level: 1
+    priority: 160
+  - name: "UNIVERSAL_QUANTIFIER_SCOPE"
+    level: 1
+    priority: 158
+  - name: "UNIVERSAL_NEGATION_SCOPE"
+    level: 1
+    priority: 156
+  - name: "UNIVERSAL_TEMPORAL_ADVERBIALS"
+    level: 1
+    priority: 154
+  - name: "UNIVERSAL_SPATIAL_PREPOSITIONS"
+    level: 1
+    priority: 152

@@ -1,0 +1,30 @@
+meta:
+  version: "0.9"
+  source: "ASI1_proposal.yaml (normalized L2 index)"
+  levels_supported: [2]
+
+coreference_system:
+  - name: "PRONOMINAL_3SG_RESOLUTION"
+    level: 2
+    priority: 300
+  - name: "PRONOMINAL_1ST_2ND_PERSON"
+    level: 2
+    priority: 295
+  - name: "DEFINITE_NP_COREFERENCE"
+    level: 2
+    priority: 290
+  - name: "ZERO_ANAPHORA_SUBJECT_RECOVERY"
+    level: 2
+    priority: 285
+  - name: "CATAPHORA_RESOLUTION"
+    level: 2
+    priority: 280
+  - name: "DISCOURSE_CONNECTIVE_RESOLUTION"
+    level: 2
+    priority: 275
+  - name: "TEMPORAL_EVENT_CHAINING"
+    level: 2
+    priority: 270
+  - name: "ENTITY_CLUSTER_MERGING"
+    level: 2
+    priority: 265
