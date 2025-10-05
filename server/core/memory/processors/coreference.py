@@ -16,7 +16,8 @@ if TYPE_CHECKING:
     import spacy
 
 from .base import TextProcessor
-from ..nlp_manager import get_nlp_with_coref
+# Export both functions for test patching compatibility
+from ..nlp_manager import get_nlp_with_coref, get_nlp_model  # noqa: F401
 
 
 class CoreferenceProcessor(TextProcessor):

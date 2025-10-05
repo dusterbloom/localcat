@@ -109,7 +109,8 @@ async def test_repetitive_model_output():
     print(f"\nSent texts: {sent_texts}")
 
     # Should send incremental updates even with repetitive model output
-    expected = ["Wanna talk about", " wanna talk about", " anymore"]
+    # We strip new_text before appending, so leading spaces are removed.
+    expected = ["Wanna talk about", "wanna talk about", "anymore"]
     assert sent_texts == expected, f"Expected {expected}, got {sent_texts}"
 
     print("✅ Repetitive model output handled correctly!")

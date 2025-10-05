@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """
-Test HTTP client with connection pooling for FastAPI TTS server
+Test HTTP client with connection pooling for FastAPI TTS server.
+
+Skipped by default: requires a running local FastAPI TTS server.
+Enable by setting RUN_FASTAPI_TTS_TESTS=1.
 """
+
+import os
+import pytest
+
+if os.getenv("RUN_FASTAPI_TTS_TESTS", "0") != "1":
+    pytest.skip("Skipping FastAPI TTS client tests (set RUN_FASTAPI_TTS_TESTS=1 to enable)", allow_module_level=True)
 
 import asyncio
 import time

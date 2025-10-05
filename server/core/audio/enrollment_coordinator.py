@@ -73,7 +73,7 @@ class EnrollmentCoordinator(FrameProcessor):
         self._audio_intel = audio_intel
         self._memory = memory
         self._enable_ephemeral_choice = enable_ephemeral_choice
-        
+
         # State tracking
         self._intro_sent = False
         self._last_progress = 0
@@ -82,6 +82,17 @@ class EnrollmentCoordinator(FrameProcessor):
         self._name_capture_pending = False
         self._pending_speaker_id: Optional[str] = None
         self._ephemeral_selected = False
+        # Session lock state
+        self._session_lock_enabled = os.getenv("SESSION_LOCK_ENABLED", "true").lower() in ("1", "true", "yes")
+        self._session_lock_active: bool = False
+        self._session_locked_speaker_id: Optional[str] = None
+        self._different_speaker_matches: int = 0
+        try:
+            self._switch_match_threshold: int = int(os.getenv("SPEAKER_SWITCH_CONFIRM_MATCHES", "3"))
+        except Exception:
+            self._switch_match_threshold = 3
+        # Logout confirmation flow
+        self._awaiting_logout_confirmation: bool = False
         # Fixed phrase configuration
         self._fixed_phrase = os.getenv("ENROLLMENT_FIXED_PHRASE", "LocalCat learns my voice.").strip()
         self._require_fixed_phrase = os.getenv("ENROLLMENT_REQUIRE_FIXED_PHRASE", "false").lower() in ("1", "true", "yes")
@@ -110,6 +121,15 @@ class EnrollmentCoordinator(FrameProcessor):
         )
         self._sign_in_requested: bool = False
         self._sign_in_timeout_task: Optional[asyncio.Task] = None
+        # Logout keywords (configurable)
+        self._logout_terms = self._load_terms(
+            os.getenv(
+                "LOGOUT_TERMS",
+                "log me out|logout|log out|sign out|switch user|switch account",
+            )
+        )
+        self._yes_terms = self._load_terms(os.getenv("YES_TERMS", "yes|yep|yeah|confirm|do it|please do"))
+        self._no_terms = self._load_terms(os.getenv("NO_TERMS", "no|nope|cancel|stop|not now"))
         
         logger.debug(
             f"[EnrollmentCoordinator] Initialized "
@@ -133,6 +153,12 @@ class EnrollmentCoordinator(FrameProcessor):
         
         # Handle unknown speaker detection (first utterance)
         if isinstance(frame, UnknownSpeakerDetectedFrame):
+            # Respect session lock: ignore unknown-speaker prompts when locked to a user
+            if self._session_lock_active:
+                logger.debug("[EnrollmentCoordinator] Ignoring UnknownSpeakerDetected while session is locked")
+                # Forward system frame for downstream visibility but do not react
+                await self.push_frame(frame, direction)
+                return
             await self._handle_unknown_speaker_detected(frame, direction)
             # Forward system frame
             await self.push_frame(frame, direction)
@@ -140,6 +166,11 @@ class EnrollmentCoordinator(FrameProcessor):
 
         # Handle enrollment progress updates
         elif isinstance(frame, EnrollmentProgressFrame):
+            # Respect session lock: ignore enrollment progress when locked
+            if self._session_lock_active:
+                logger.debug("[EnrollmentCoordinator] Ignoring EnrollmentProgress while session is locked")
+                await self.push_frame(frame, direction)
+                return
             await self._handle_enrollment_progress(frame, direction)
             # Forward system frame
             await self.push_frame(frame, direction)
@@ -147,6 +178,24 @@ class EnrollmentCoordinator(FrameProcessor):
         
         # Handle speaker changed (enrollment complete or recognized)
         elif isinstance(frame, SpeakerChangedFrame):
+            # Enforce session lock: ignore recognition changes to a different speaker
+            if self._session_lock_active and self._session_locked_speaker_id:
+                if frame.speaker_id != self._session_locked_speaker_id:
+                    self._different_speaker_matches += 1
+                    logger.info(
+                        f"[EnrollmentCoordinator] Different speaker while locked: {frame.speaker_id} != {self._session_locked_speaker_id} "
+                        f"({self._different_speaker_matches}/{self._switch_match_threshold})"
+                    )
+                    if self._different_speaker_matches >= self._switch_match_threshold:
+                        logger.info("[EnrollmentCoordinator] Switch threshold reached — logging out and returning to choice")
+                        await self.push_frame(TextFrame("I think a different speaker is here. I'll log out so the next person can sign in, sign up, or chat anonymously."), direction)
+                        await self._logout_and_reset(direction)
+                    # Do not react further while locked
+                    await self.push_frame(frame, direction)
+                    return
+                else:
+                    # Same speaker recognized while locked → reset counter
+                    self._different_speaker_matches = 0
             await self._handle_speaker_changed(frame, direction)
             # Forward system frame
             await self.push_frame(frame, direction)
@@ -167,6 +216,21 @@ class EnrollmentCoordinator(FrameProcessor):
                 # Do NOT forward this transcription downstream during onboarding
                 return
             else:
+                # In conversation: intercept logout intent before forwarding
+                text_norm = (frame.text or "").strip().lower()
+                if self._session_lock_active and self._contains_any(text_norm, self._logout_terms):
+                    self._awaiting_logout_confirmation = True
+                    await self.push_frame(TextFrame("Are you sure you want to log out? Say 'yes' to confirm."), direction)
+                    return
+                if self._awaiting_logout_confirmation:
+                    if self._contains_any(text_norm, self._yes_terms):
+                        await self.push_frame(TextFrame("Okay, logging out."), direction)
+                        await self._logout_and_reset(direction)
+                        return
+                    if self._contains_any(text_norm, self._no_terms):
+                        self._awaiting_logout_confirmation = False
+                        await self.push_frame(TextFrame("Okay, staying signed in."), direction)
+                        return
                 # Normal conversation: allow downstream
                 await self.push_frame(frame, direction)
                 return
@@ -402,6 +466,8 @@ class EnrollmentCoordinator(FrameProcessor):
         self._intro_sent = True  # Mark as handled
         
         logger.info("[EnrollmentCoordinator] Skipped intro for returning user")
+        # Lock session to recognized user (optional, default enabled)
+        await self._lock_session(frame.speaker_id)
 
     async def _handle_transcription(self, frame: TranscriptionFrame, direction: FrameDirection):
         """Handle user transcriptions during choice and name capture flows."""
@@ -481,6 +547,8 @@ class EnrollmentCoordinator(FrameProcessor):
                     self._awaiting_name_confirmation = False
                     await self._router.update_state(EnrollmentState.CONVERSATION, speaker_id=sid)
                     logger.info("[EnrollmentCoordinator] Transitioned to conversation mode")
+                    # Lock session to newly enrolled user
+                    await self._lock_session(sid)
                     return
                 if any(x in norm for x in ("no", "nope", "not correct", "wrong")):
                     self._pending_name_candidate = None
@@ -558,3 +626,41 @@ class EnrollmentCoordinator(FrameProcessor):
         except Exception as e:
             logger.warning(f"[EnrollmentCoordinator] Error checking profiles: {e}")
             return False
+
+    # ----- Session lock helpers -----
+    async def _lock_session(self, speaker_id: Optional[str]):
+        if not self._session_lock_enabled or not speaker_id:
+            return
+        self._session_lock_active = True
+        self._session_locked_speaker_id = speaker_id
+        self._different_speaker_matches = 0
+        logger.info(f"[EnrollmentCoordinator] Session locked to {speaker_id}")
+
+    async def _unlock_session(self):
+        self._session_lock_active = False
+        self._session_locked_speaker_id = None
+        self._different_speaker_matches = 0
+        self._awaiting_logout_confirmation = False
+        logger.info("[EnrollmentCoordinator] Session unlocked")
+
+    async def _logout_and_reset(self, direction: FrameDirection):
+        """Log out current user and return to CHOICE for next person."""
+        await self._unlock_session()
+        # Reset onboarding flags
+        self._intro_sent = False
+        self._enrollment_started = False
+        self._awaiting_choice = self._enable_ephemeral_choice
+        self._name_capture_pending = False
+        self._pending_speaker_id = None
+        self._pending_name_candidate = None
+        self._awaiting_name_confirmation = False
+        self._sign_in_requested = False
+        try:
+            if self._sign_in_timeout_task:
+                self._sign_in_timeout_task.cancel()
+        except Exception:
+            pass
+        self._ephemeral_selected = False
+        # Route to choice and prompt options
+        await self._router.update_state(EnrollmentState.CHOICE)
+        await self._send_choice_message(direction)
