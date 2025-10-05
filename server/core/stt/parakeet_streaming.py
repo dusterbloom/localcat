@@ -19,25 +19,11 @@ from pipecat.frames.frames import (
 )
 from pipecat.services.ai_services import STTService
 
-try:
-    from parakeet_mlx import from_pretrained
-    from parakeet_mlx.audio import load_audio
-    import mlx.core as mx
-    PARAKEET_AVAILABLE = True
-except ImportError:
-    logger.warning("parakeet_mlx not available. Install with: pip install parakeet-mlx")
-    try:
-        # Fallback to old mlx_audio
-        from mlx_audio.stt.utils import load_model
-        PARAKEET_AVAILABLE = True
-        PARAKEET_OLD_FORMAT = True
-        logger.warning("Using legacy mlx_audio format - batch mode only")
-    except ImportError:
-        logger.warning("Neither parakeet_mlx nor mlx_audio available")
-        PARAKEET_AVAILABLE = False
-        PARAKEET_OLD_FORMAT = False
-else:
-    PARAKEET_OLD_FORMAT = False
+import os as _os
+PARAKEET_AVAILABLE = _os.getenv("STT_MLX_ENABLED", "on").strip().lower() not in ("off", "false", "0")
+PARAKEET_OLD_FORMAT = False
+if not PARAKEET_AVAILABLE:
+    logger.info("[Parakeet-MLX] Disabled by env (STT_MLX_ENABLED=off)")
 
 
 class ParakeetStreamingSTT(STTService):
@@ -123,16 +109,15 @@ class ParakeetStreamingSTT(STTService):
     def _init_parakeet_model(self):
         """Initialize Parakeet model and streaming transcriber"""
         if not PARAKEET_AVAILABLE:
-            raise ImportError("Parakeet MLX not available")
+            logger.info("[Parakeet-MLX] Not available; STT disabled for this instance")
+            return
 
         try:
             logger.info(f"Loading Parakeet model: {self.model_path}")
 
-            if PARAKEET_OLD_FORMAT:
-                # Legacy mlx_audio format - not supported for streaming
-                raise ImportError("Legacy Parakeet format not supported for streaming")
-            else:
-                # New parakeet_mlx format - handle variable return values
+            # Try new parakeet_mlx first (lazy import)
+            try:
+                from parakeet_mlx import from_pretrained
                 result = from_pretrained(self.model_path)
                 if isinstance(result, tuple):
                     if len(result) >= 2:
@@ -143,25 +128,42 @@ class ParakeetStreamingSTT(STTService):
                     else:
                         raise ValueError(f"Unexpected return from from_pretrained: {result}")
                 else:
-                    # Single return value
                     self._model = result
                     self._processor = None
+                legacy = False
+            except Exception as e_pm:
+                logger.warning(f"parakeet_mlx unavailable: {e_pm}")
+                # Fallback to legacy mlx_audio format
+                try:
+                    from mlx_audio.stt.utils import load_model
+                    legacy = True
+                except Exception as e_legacy:
+                    logger.warning(f"Legacy mlx_audio not available: {e_legacy}")
+                    self._model = None
+                    self._transcriber = None
+                    return
 
             # Create streaming transcriber context and enter it
-            self._transcriber_context = self._model.transcribe_stream(
-                context_size=self.context_size,
-                depth=self.depth,
-                keep_original_attention=False  # Use local attention for streaming
-            )
-
-            # Enter the context manager to get the actual transcriber
-            self._transcriber = self._transcriber_context.__enter__()
+            if not legacy:
+                self._transcriber_context = self._model.transcribe_stream(
+                    context_size=self.context_size,
+                    depth=self.depth,
+                    keep_original_attention=False
+                )
+                self._transcriber = self._transcriber_context.__enter__()
+            else:
+                logger.warning("Legacy Parakeet format does not support streaming; disabling STT")
+                self._model = None
+                self._transcriber = None
+                return
 
             logger.info("✅ Parakeet streaming model loaded successfully")
 
         except Exception as e:
-            logger.error(f"Failed to load Parakeet model: {e}")
-            raise
+            logger.warning(f"[Parakeet-MLX] Failed to load Parakeet model: {e}")
+            self._model = None
+            self._transcriber = None
+            return
 
 
 

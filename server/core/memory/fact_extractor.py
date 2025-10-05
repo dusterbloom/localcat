@@ -361,16 +361,44 @@ class FactExtractor:
             triples.append((entity1, "related_to", entity2))
 
     def _extract_prep(self, token: Token, entity_map: Dict[int, str], triples: List[Tuple[str, str, str]], entities: Set[str]):
-        """Extract prepositional relations."""
-        if token.text in entity_map and token.head.i in entity_map:
-            prep = token.text
-            obj = entity_map[token.i]
-            # Look for subject
-            for child in token.head.children:
-                if child.dep_ in {"nsubj", "nsubjpass"} and child.i in entity_map:
-                    subject = entity_map[child.i]
-                    triples.append((subject, f"{prep}", obj))
+        """Extract prepositional relations with verb lexicalization when applicable.
+
+        If the head is a verb and we can find a subject for it, attach the
+        preposition to the verb (v:verb_prep) and use the pobj as object.
+        This yields relations like v:live_in, v:work_at.
+        Fallback: if no subject, skip (avoid noisy edges like (prep,obj)).
+        """
+        try:
+            if token.dep_ != "prep":
+                return
+            head = token.head
+            if head is None or getattr(head, "pos_", "") != "VERB":
+                return
+            # pobj under this prep
+            pobj = None
+            for ch in token.children:
+                if ch.dep_ in {"pobj", "obj"} and ch.i in entity_map:
+                    pobj = ch
                     break
+            if pobj is None or pobj.i not in entity_map:
+                return
+            # subject for the head verb
+            subject = None
+            for ch in head.children:
+                if ch.dep_ in {"nsubj", "nsubjpass"} and ch.i in entity_map:
+                    subject = ch
+                    break
+            if subject is None:
+                return
+            subj_text = entity_map[subject.i]
+            obj_text = entity_map[pobj.i]
+            verb = getattr(head, "lemma_", getattr(head, "text", ""))
+            prep = token.text.lower()
+            # Only lexicalize common argumental prepositions to avoid noise
+            if prep in {"in", "at", "to", "with", "on", "into", "from", "for"}:
+                triples.append((subj_text, f"v:{verb}_{prep}", obj_text))
+        except Exception:
+            return
 
     def _extract_acl(self, token: Token, entity_map: Dict[int, str], triples: List[Tuple[str, str, str]], entities: Set[str]):
         """Extract adjectival clause relations."""

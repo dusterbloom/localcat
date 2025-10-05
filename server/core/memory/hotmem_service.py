@@ -235,6 +235,14 @@ class HotMemService(FrameProcessor):
         except Exception as e:
             logger.error(f"Error storing messages in HotPath: {e}")
 
+    # Public hook: allow audio pipeline to provide prosody features for the next turn
+    def set_prosody_for_turn(self, prosody: Any) -> None:
+        """Attach ProsodyFeatures (or dict with certainty_modifier) for the next process_turn."""
+        try:
+            self.hot.set_prosody(prosody)
+        except Exception as e:
+            logger.warning(f"Failed to set prosody for turn: {e}")
+
     def _retrieve_memories(self, query: str) -> List[Dict[str, Any]]:
         """
         Retrieve memories using HotPath backend.

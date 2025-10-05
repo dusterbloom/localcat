@@ -54,9 +54,18 @@ class MLXKokoroTTSService(TTSService):
             max_workers=2, thread_name_prefix="kokoro-mlx"
         )
 
-        # Initialize MLX Kokoro pipeline
+        # Initialize MLX Kokoro pipeline (env-gated)
         self._pipeline = None
-        self._initialize_mlx_pipeline()
+        import os as _os
+        if _os.getenv("TTS_MLX_ENABLED", "on").strip().lower() not in ("off", "false", "0"):
+            try:
+                self._initialize_mlx_pipeline()
+            except Exception as _e:
+                # Degrade gracefully in test/CI without hard failure
+                logger.warning(f"[Kokoro-MLX] Disabled due to init failure: {_e}")
+                self._pipeline = None
+        else:
+            logger.info("[Kokoro-MLX] Disabled by env (TTS_MLX_ENABLED=off)")
 
         logger.debug(f"✅ MLX Kokoro TTS initialized with voice: {self._voice}")
 
@@ -116,13 +125,15 @@ class MLXKokoroTTSService(TTSService):
             logger.info("MLX Kokoro TTS ready")
 
         except ImportError as e:
-            logger.error(f"MLX Audio not available: {e}")
-            logger.error("Install with: pip install mlx-audio")
-            raise
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize MLX Kokoro: {e}")
+            logger.warning(f"[Kokoro-MLX] MLX Audio not available: {e}")
+            logger.warning("Install with: pip install mlx-audio")
+            # Graceful degrade: keep pipeline None
             self._pipeline = None
-            raise
+            return
+        except Exception as e:
+            logger.warning(f"[Kokoro-MLX] Failed to initialize MLX Kokoro: {e}")
+            self._pipeline = None
+            return
 
     def _generate_audio_sync(self, text: str) -> Optional[tuple[np.ndarray, int]]:
         """Synchronous audio generation using MLX - runs in thread pool"""

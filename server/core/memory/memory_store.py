@@ -8,6 +8,7 @@ import os
 import lmdb
 import msgpack
 import sqlite3
+import json
 import hashlib
 import time
 import shutil
@@ -54,7 +55,8 @@ class MemoryStore:
         
         # Batch queues
         self._aliases: List[Tuple[str, str]] = []
-        self._edges: List[Tuple[str, str, str, float, int, int, int, int]] = []
+        # Edge queue supports optional meta JSON (9th element)
+        self._edges: List[Tuple] = []
         self._mentions: List[Tuple[str, str, int, str, int]] = []
 
         # Provenance queues
@@ -110,7 +112,8 @@ class MemoryStore:
               pos INT DEFAULT 0, 
               neg INT DEFAULT 0,
               status INT DEFAULT 1,  -- 1=active, 0=stale, -1=archived, -9=deleted
-              updated_at INT
+              updated_at INT,
+              meta TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_edge_src ON edge(src);
             CREATE INDEX IF NOT EXISTS idx_edge_status ON edge(status);
@@ -179,6 +182,13 @@ class MemoryStore:
         else:
             self.db_alias = None
             self.db_adj = None
+
+        # Migrate: ensure 'meta' column exists on edge (safe no-op if present)
+        try:
+            self.sql.execute("ALTER TABLE edge ADD COLUMN meta TEXT")
+            self.sql.commit()
+        except Exception:
+            pass
     
     def _recover_from_corruption(self):
         """Recover from database corruption"""
@@ -224,14 +234,41 @@ class MemoryStore:
     
     @staticmethod
     def edge_id(s, r, d) -> str:
-        return hashlib.sha1(f"{s}|{r}|{d}".encode()).hexdigest()
+        """Compute a canonical edge ID.
+
+        Canonicalization aligns with extraction refiners so that callers using
+        raw text (e.g., 'I', 'Google') can still resolve the stored edge IDs.
+        - Lowercase subject/object and strip leading determiners / trailing "'s".
+        - Map first-person pronouns (i/me/my/mine/myself) → 'you'.
+        - Relation is used as-is (typically already canonicalized like 'v:work_at').
+        """
+        def _canon_entity(x: str) -> str:
+            if not isinstance(x, str):
+                return str(x)
+            t = x.strip().lower()
+            if t in {"i", "me", "my", "mine", "myself"}:
+                return "you"
+            # strip leading simple determiners/possessives
+            for det in ("the", "a", "an", "my", "your", "his", "her", "our", "their", "its"):
+                if t.startswith(det + " "):
+                    t = t[len(det) + 1 :]
+                    break
+            if t.endswith("'s"):
+                t = t[:-2]
+            return t.strip()
+
+        s2 = _canon_entity(s)
+        d2 = _canon_entity(d)
+        r2 = r if isinstance(r, str) else str(r)
+        return hashlib.sha1(f"{s2}|{r2}|{d2}".encode()).hexdigest()
     
     # ---------- Enqueue (non-blocking) ----------
     def enqueue_alias(self, alias: str, eid: str) -> None:
         self._aliases.append((alias, eid))
     
-    def enqueue_edge_row(self, s, r, d, weight, pos, neg, status, ts):
-        self._edges.append((s, r, d, float(weight), int(pos), int(neg), int(status), int(ts)))
+    def enqueue_edge_row(self, s, r, d, weight, pos, neg, status, ts, meta: Optional[Dict[str, Any]] = None):
+        meta_json = json.dumps(meta, ensure_ascii=False) if isinstance(meta, dict) else (meta if isinstance(meta, str) else None)
+        self._edges.append((s, r, d, float(weight), int(pos), int(neg), int(status), int(ts), meta_json))
     
     def enqueue_mention(self, eid: str, text: str, ts: float, sid: str, tid: int) -> None:
         self._mentions.append((eid, text[:500], int(ts), sid, int(tid)))  # Limit text length
@@ -304,7 +341,12 @@ class MemoryStore:
                     )
                 
                 # Batch process edges with adjacency updates
-                for s, r, d, w, pos, neg, status, ts in self._edges:
+                for row in self._edges:
+                    if len(row) == 9:
+                        s, r, d, w, pos, neg, status, ts, meta_json = row
+                    else:
+                        s, r, d, w, pos, neg, status, ts = row
+                        meta_json = None
                     # Update LMDB adjacency if available
                     if txn is not None:
                         key = f"adj:{s}|{r}".encode()
@@ -331,15 +373,16 @@ class MemoryStore:
                     # Update SQLite
                     eid = self.edge_id(s, r, d)
                     cur.execute("""
-                        INSERT INTO edge(id, src, rel, dst, weight, pos, neg, status, updated_at)
-                        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO edge(id, src, rel, dst, weight, pos, neg, status, updated_at, meta)
+                        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(id) DO UPDATE SET
                             weight=excluded.weight,
                             pos=excluded.pos,
                             neg=excluded.neg,
                             status=excluded.status,
-                            updated_at=excluded.updated_at
-                    """, (eid, s, r, d, w, pos, neg, status, int(ts)))
+                            updated_at=excluded.updated_at,
+                            meta=COALESCE(excluded.meta, edge.meta)
+                    """, (eid, s, r, d, w, pos, neg, status, int(ts), meta_json))
                 
                 # Batch process mentions
                 for eid, text, ts, sid, tid in self._mentions:
@@ -424,7 +467,7 @@ class MemoryStore:
     def _alpha(conf: float, base: float = 0.15, lo: float = 0.05, hi: float = 0.35) -> float:
         return max(lo, min(hi, base * conf))
     
-    def observe_edge(self, s: str, r: str, d: str, conf: float, now_ts: int) -> None:
+    def observe_edge(self, s: str, r: str, d: str, conf: float, now_ts: int, meta: Optional[Dict[str, Any]] = None) -> None:
         """Create/reinforce (s,r,d) with positive evidence."""
         if self.lenv is not None:
             # For immediate updates, we write directly to LMDB
@@ -460,17 +503,17 @@ class MemoryStore:
                 txn.put(key, msgpack.dumps(arr), db=self.db_adj, overwrite=True)
 
             # Enqueue for SQLite persistence
-            self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts)
+            self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts, meta)
             self.flush_if_needed()
         else:
             # LMDB disabled: enqueue a conservative SQLite update only
             w = min(0.75, conf)
             pos = 1
             neg = 0
-            self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts)
+            self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts, meta)
             self.flush_if_needed()
     
-    def negate_edge(self, s: str, r: str, d: str, conf: float, now_ts: int) -> None:
+    def negate_edge(self, s: str, r: str, d: str, conf: float, now_ts: int, meta: Optional[Dict[str, Any]] = None) -> None:
         """Demote (s,r,d) with negative/contradicting evidence."""
         if self.lenv is not None:
             with self.lenv.begin(write=True) as txn:
@@ -502,14 +545,14 @@ class MemoryStore:
 
                 txn.put(key, msgpack.dumps(arr), db=self.db_adj, overwrite=True)
 
-            self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts)
+            self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts, meta)
             self.flush_if_needed()
         else:
             # LMDB disabled: conservative SQLite update only
             w = 0.10
             pos = 0
             neg = 1
-            self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts)
+            self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts, meta)
             self.flush_if_needed()
     
     def hard_forget(self, s: str, r: str = None, d: str = None) -> None:

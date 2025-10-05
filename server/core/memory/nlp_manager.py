@@ -67,14 +67,15 @@ class SharedNLPManager:
         """
         try:
             # Load base model following existing pattern
-            if lang == "en":
-                # Match fact_extractor.py pattern: disable ner, textcat
-                disabled = ["ner", "textcat"]
-                nlp = spacy.load("en_core_web_sm", disable=disabled)
-            else:
-                # Match fact_extractor.py pattern for other languages
-                disabled = ["ner", "lemmatizer", "textcat"]
-                nlp = spacy.load(f"{lang}_core_news_sm", disable=disabled)
+            import os
+            # Allow env override for model selection and disabled components
+            override = os.getenv(f"SPACY_MODEL_{lang.upper()}") or (os.getenv("SPACY_MODEL_EN") if lang == "en" else None) or os.getenv("SPACY_MODEL")
+            disable_env = os.getenv("SPACY_DISABLE", "ner,textcat").strip()
+            disabled = [c.strip() for c in disable_env.split(",") if c.strip()] if disable_env else []
+
+            model_name = override if override else ("en_core_web_sm" if lang == "en" else f"{lang}_core_news_sm")
+            nlp = spacy.load(model_name, disable=disabled)
+            logger.info(f"Loaded spaCy model {model_name} with disabled={disabled}")
 
             # Add requested components
             for component in components:

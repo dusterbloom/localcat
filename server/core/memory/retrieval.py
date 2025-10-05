@@ -15,6 +15,7 @@ import time
 from loguru import logger
 
 import os
+import json
 
 
 class Retrieval:
@@ -174,7 +175,7 @@ class Retrieval:
         for entity in query_entities:
             if entity in self.host.entity_index:
                 candidates = list(self.host.entity_index[entity])
-                scored: List[Tuple[float, int, str, str, str]] = []
+                scored: List[Tuple[float, int, str, str, str, Optional[Dict[str, Any]]]] = []
 
                 # Build quick lookup for (s,r)-> dst meta once per relation
                 meta_cache: Dict[Tuple[str, str], Dict[str, Tuple[float, int, int, int, int]]] = {}
@@ -248,15 +249,60 @@ class Retrieval:
                     half_life_ms = 7 * 24 * 3600 * 1000  # 7 days
                     recency_factor = (2 ** (-(age_ms / half_life_ms))) if ts else 0.8
                     score = float(pri) * float(max(w, 0.01)) * support * recency_factor
-                    scored.append((score, ts, s, r, d))
+
+                    # Optional tense/polarity boost based on query intent and edge.meta
+                    tense_pref, want_neg = self._infer_query_temporality(query)
+                    meta_json = None
+                    try:
+                        cur = self.host.store.sql.cursor()
+                        row = cur.execute("SELECT meta FROM edge WHERE id = ?", (edge_id,)).fetchone()
+                        if row and row[0]:
+                            meta_json = json.loads(row[0])
+                    except Exception:
+                        meta_json = None
+                    if meta_json:
+                        tense = (meta_json.get('tense') or '').lower()
+                        pol = meta_json.get('polarity')
+                        use_tense = os.getenv('MEMORY_TENSE_AWARE', 'true').lower() in ('1','true','yes')
+                        use_polarity = os.getenv('MEMORY_POLARITY_AWARE', 'true').lower() in ('1','true','yes')
+                        telem = os.getenv('MEMORY_RETRIEVAL_TELEMETRY', '').lower() in ('1','true','yes')
+                        if use_polarity and want_neg and pol == 'neg':
+                            score *= 1.15
+                            if telem:
+                                logger.debug(f"[Retrieval] Polarity boost: neg match for ({s},{r},{d})")
+                        if use_polarity and not want_neg and pol == 'pos':
+                            score *= 1.05
+                            if telem:
+                                logger.debug(f"[Retrieval] Polarity boost: pos match for ({s},{r},{d})")
+                        if use_tense and tense_pref == 'past' and tense.startswith('past'):
+                            score *= 1.10
+                            if telem:
+                                logger.debug(f"[Retrieval] Tense boost: past match for ({s},{r},{d})")
+                        elif use_tense and tense_pref == 'future' and (tense.startswith('fut') or 'fut' in tense):
+                            score *= 1.10
+                            if telem:
+                                logger.debug(f"[Retrieval] Tense boost: future match for ({s},{r},{d})")
+                        elif use_tense and tense_pref == 'present' and (tense.startswith('pres') or tense == ''):
+                            score *= 1.05
+                            if telem:
+                                logger.debug(f"[Retrieval] Tense boost: present match for ({s},{r},{d})")
+
+                    scored.append((score, ts, s, r, d, meta_json))
                 scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
-                for _score, _ts, s, r, d in scored:
+                for _score, _ts, s, r, d, meta_json in scored:
                     fact = f"{s} {r} {d}"
                     if fact not in seen:
                         suffix = self._ago_suffix(_ts)
-                    human = self._humanize_fact(s, r, d)
+                        human = self._humanize_fact(s, r, d)
                     if human:
-                        out.append(f"• [graph] {human}{suffix}")
+                        bullet = f"• [graph] {human}{suffix}"
+                        if os.getenv('MEMORY_DEBUG_BULLETS_META', '').lower() in ('1','true','yes') and meta_json:
+                            # append compact meta summary
+                            tense = meta_json.get('tense')
+                            pol = meta_json.get('polarity')
+                            lang = meta_json.get('lang')
+                            bullet += f" [meta: tense={tense}, pol={pol}, lang={lang}]"
+                        out.append(bullet)
                         seen.add(fact)
                         if len(out) >= max_bullets:
                             return out
@@ -275,6 +321,86 @@ class Retrieval:
                             break
 
         return out[:max_bullets]
+
+    def _infer_query_temporality(self, q: str) -> Tuple[str, bool]:
+        """Infer coarse tense preference and polarity from the query text.
+        Returns (tense_pref, want_neg). tense_pref in {'past','present','future','any'}.
+        """
+        q2 = (q or '').lower()
+        # Try to detect language via host if available
+        try:
+            detect = getattr(self.host, '_detect_language', None)
+            if callable(detect):
+                lang = detect(q)
+            else:
+                lang = 'en'
+        except Exception:
+            lang = 'en'
+        # Polarity cues across languages
+        want_neg = any(tok in q2 for tok in (
+            # EN
+            " not ", "n't", " never", " no ",
+            # FR
+            " ne ", " pas ", " jamais ", " ni ",
+            # DE
+            " nicht ", " kein ",
+            # ES
+            " no ", " nunca ",
+            # IT
+            " non ", " mai ",
+            # ZH
+            "不", "没"
+        ))
+        # Tense markers (heuristic, multilingual)
+        past_markers = (
+            # EN
+            "did ", "was ", "were ", "yesterday", " last ", " ago", " previously",
+            # FR
+            "hier", "dernier", "dernière", "était", "étaient", "avait", "avions", "aviez", "avaient",
+            # DE
+            "gestern", "letzte", "war ", "waren ", "hatte ", "habe ",
+            # ES
+            "ayer", "pasado", "fue ", "era ", "estaba ",
+            # IT
+            "ieri", "scorso", "era ", "fu ",
+            # ZH
+            "昨天", "上次"
+        )
+        future_markers = (
+            # EN
+            "will ", "gonna ", "tomorrow", " next ",
+            # FR
+            "demain", "prochain", "prochaine", "sera ", "seront ", "va ",
+            # DE
+            "morgen", "wird ", "werden ", "nächste", "nächster",
+            # ES
+            "mañana", "será ", "serán ", "va a ", "próximo", "próxima",
+            # IT
+            "domani", "sarà ", "andr", "prossimo", "prossima",
+            # ZH
+            "明天", "将", "会", "下次"
+        )
+        present_markers = (
+            # EN
+            " is ", " are ", " do ", " does ", " now ", " currently",
+            # FR
+            " est ", " sont ", " maintenant",
+            # DE
+            " ist ", " sind ", " jetzt",
+            # ES
+            " es ", " son ", " ahora",
+            # IT
+            " è ", " sono ", " adesso",
+            # ZH
+            "现在"
+        )
+        if any(m in q2 for m in past_markers):
+            return ('past', want_neg)
+        if any(m in q2 for m in future_markers):
+            return ('future', want_neg)
+        if any(m in q2 for m in present_markers):
+            return ('present', want_neg)
+        return ('any', want_neg)
 
     def _convo_retrieve(self, query: str, max_bullets: int, seen: set) -> List[str]:
         out: List[str] = []

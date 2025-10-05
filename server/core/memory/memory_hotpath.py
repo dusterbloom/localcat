@@ -126,6 +126,9 @@ class HotMemory:
         self.extractor = UDExtractor(self)
         self.retriever = Retrieval(self)
 
+        # Audio/Prosody for current turn (optional, set by service)
+        self._turn_prosody = None
+
         # Coreference resolution (SOLID refactored component)
         config = MemoryConfig.from_env()
         self.coref_processor = CoreferenceProcessor(
@@ -140,6 +143,10 @@ class HotMemory:
             _load_nlp(lang)
         except Exception:
             pass
+
+    # Allow audio pipeline to inject prosody for the next turn
+    def set_prosody(self, prosody_features: Any) -> None:
+        self._turn_prosody = prosody_features
 
     def process_turn(self, text: str, session_id: str, turn_id: int, focus: str = 'standard', intent: Optional[Dict] = None) -> Tuple[List[str], List[Tuple[str, str, str]]]:
         """
@@ -260,21 +267,25 @@ class HotMemory:
                     store=self.store,
                     text=text,
                     session_id=session_id,
-                    turn_id=turn_id
+                    turn_id=turn_id,
+                    prosody_features=self._turn_prosody
                 )
 
                 # Score confidence
                 conf = self.confidence.score(edge_obj, context_obj)
 
                 # Apply negation to verb-based relations when negation detected
+                # Build edge meta (surface + morph + polarity + lang + optional prosody)
+                edge_meta = self._build_edge_meta(doc, s, r, d, lang, text, neg_count)
+
                 if neg_count > 0:
                     try:
-                        self.store.negate_edge(s, r, d, conf=0.6, now_ts=now_ts)
+                        self.store.negate_edge(s, r, d, conf=0.6, now_ts=now_ts, meta=edge_meta)
                         logger.debug(f"[HotMem] Negated: ({s}, {r}, {d})")
                     except Exception as e:
                         logger.warning(f"HotMem negation failed for ({s}, {r}, {d}): {e}")
                 else:
-                    self.store.observe_edge(s, r, d, conf, now_ts)
+                    self.store.observe_edge(s, r, d, conf, now_ts, meta=edge_meta)
 
                 # Link edge to conversation turn (provenance)
                 edge_id = self.store.edge_id(s, r, d)
@@ -308,7 +319,96 @@ class HotMemory:
         if elapsed_ms > 200:
             logger.warning(f"Hot path took {elapsed_ms:.1f}ms (budget: 200ms)")
         
+        # Clear one-shot prosody after use
+        self._turn_prosody = None
         return bullets, triples
+
+    def _build_edge_meta(self, doc: Any, s: str, r: str, d: str, lang: str, text: str, neg_count: int) -> Dict[str, Any]:
+        """Build lightweight meta for an edge: surface form, morphology, polarity, lang, prosody.
+
+        This uses best-effort matching of a verb token in doc to the relation lemma.
+        """
+        meta: Dict[str, Any] = {"lang": lang}
+        if not doc:
+            meta.update({
+                "rel_surface": r,
+                "polarity": "neg" if neg_count > 0 else "pos",
+            })
+            return meta
+
+        # Find candidate token for relation r
+        rel = r or ""
+        base = rel.split("_")[-1] if "_" in rel else rel
+        cand = None
+        for tok in doc:
+            if tok.lemma_.lower() == base or tok.text.lower() == base:
+                cand = tok
+                break
+        if cand is None:
+            # fallback to first verb in doc
+            for tok in doc:
+                if tok.pos_ in {"VERB", "AUX"}:
+                    cand = tok
+                    break
+
+        if cand is not None:
+            morph = cand.morph
+            meta.update({
+                "rel_surface": cand.text,
+                "tense": (morph.get("Tense")[0] if morph and morph.get("Tense") else None),
+                "aspect": (morph.get("Aspect")[0] if morph and morph.get("Aspect") else None),
+                "mood": (morph.get("Mood")[0] if morph and morph.get("Mood") else None),
+                "voice": (morph.get("Voice")[0] if morph and morph.get("Voice") else None),
+                "person": (morph.get("Person")[0] if morph and morph.get("Person") else None),
+                "number": (morph.get("Number")[0] if morph and morph.get("Number") else None),
+                "polarity": ("neg" if any(ch.dep_ == "neg" for ch in cand.children) or neg_count > 0 else "pos"),
+            })
+        else:
+            meta.update({
+                "rel_surface": rel,
+                "polarity": "neg" if neg_count > 0 else "pos",
+            })
+
+        # Prosody certainty: prefer explicitly set turn prosody; fallback to logs
+        try:
+            if getattr(self, '_turn_prosody', None) is not None:
+                cert = getattr(self._turn_prosody, 'certainty_modifier', None)
+                if cert is None and isinstance(self._turn_prosody, dict):
+                    cert = self._turn_prosody.get('certainty_modifier')
+                if isinstance(cert, (int, float)):
+                    meta["prosody_certainty"] = float(cert)
+            else:
+                pros = self._read_last_prosody_certainty()
+                if pros is not None:
+                    meta["prosody_certainty"] = pros
+        except Exception:
+            pass
+
+        # Telemetry (optional): log meta snapshot when storing
+        import os as _os
+        if _os.getenv('MEMORY_STORE_META_TELEMETRY', '').lower() in ('1','true','yes'):
+            from loguru import logger as _logger
+            _logger.debug(f"[EdgeMeta] ({s},{r},{d}) -> {meta}")
+
+        return meta
+
+    def _read_last_prosody_certainty(self) -> Optional[float]:
+        """Try to read a recent prosody certainty from server/data/logs.log (best-effort)."""
+        import os
+        log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'logs.log')
+        try:
+            with open(log_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()[-200:]
+            for line in reversed(lines):
+                if 'ProsodyFeatures' in line and 'certainty' in line:
+                    # Extract pattern like certainty=+0.15 or certainty=-0.25
+                    import re
+                    m = re.search(r"certainty=([+\-]?[0-9]*\.?[0-9]+)", line)
+                    if m:
+                        return float(m.group(1))
+        except Exception:
+            return None
+        return None
     
     def _extract(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any, Dict[str, str]]:
         """
@@ -657,7 +757,7 @@ class HotMemory:
             for child in head.children:
                 if child.dep_ in {"dobj", "obj"}:
                     root_obj, enriched_obj = self._get_entity_with_context(child, entity_map)
-                    pred = "has" if verb in {"have", "has", "had", "own"} else verb
+                    pred = "has" if verb in {"have", "has", "had", "own"} else f"v:{verb}"
                     triples.append((subj, pred, enriched_obj))
                     entities.add(root_obj)
                     self._enriched_entities.add(root_obj)
@@ -671,25 +771,25 @@ class HotMemory:
                             obj = self._get_entity(gc, entity_map)
                             # Special patterns
                             if verb == "live" and prep == "in":
-                                triples.append((subj, "lives_in", obj))
+                                triples.append((subj, "v:live_in", obj))
                             elif verb == "work" and prep in {"at", "for"}:
-                                triples.append((subj, "works_at", obj))
+                                triples.append((subj, "v:work_at", obj))
                             elif verb in {"go", "went"} and prep == "to":
-                                triples.append((subj, "went_to", obj))
+                                triples.append((subj, "v:go_to", obj))
                             elif verb in {"move", "moved"} and prep == "from":
-                                triples.append((subj, "moved_from", obj))
+                                triples.append((subj, "v:move_from", obj))
                             elif verb in {"participate", "participated"} and prep == "in":
-                                triples.append((subj, "participated_in", obj))
+                                triples.append((subj, "v:participate_in", obj))
                             elif verb in {"born", "bear"} and prep == "in":
-                                triples.append((subj, "born_in", obj))
+                                triples.append((subj, "v:born_in", obj))
                             elif verb in {"paint", "painted"}:
-                                triples.append((subj, "painted", obj))
+                                triples.append((subj, "v:paint", obj))
                                 if prep == "in":  # temporal
                                     continue
                             elif verb in {"read"}:
-                                triples.append((subj, "read", obj))
+                                triples.append((subj, "v:read", obj))
                             else:
-                                triples.append((subj, f"{verb}_{prep}", obj))
+                                triples.append((subj, f"v:{verb}_{prep}", obj))
                             entities.add(obj)
 
             # Conjoined verbs (inherit subject unless explicit)
@@ -707,7 +807,7 @@ class HotMemory:
                 for ch in v2.children:
                     if ch.dep_ in {"dobj", "obj"}:
                         root_obj, enriched_obj = self._get_entity_with_context(ch, entity_map)
-                        pred = "has" if verb2 in {"have", "has", "had", "own"} else verb2
+                        pred = "has" if verb2 in {"have", "has", "had", "own"} else f"v:{verb2}"
                         triples.append((subj2, pred, enriched_obj))
                         entities.add(root_obj)
                         self._enriched_entities.add(root_obj)
@@ -720,19 +820,19 @@ class HotMemory:
                             if gc.dep_ == "pobj":
                                 obj = self._get_entity(gc, entity_map)
                                 if verb2 == "live" and prep == "in":
-                                    triples.append((subj2, "lives_in", obj))
+                                    triples.append((subj2, "v:live_in", obj))
                                 elif verb2 == "work" and prep in {"at", "for"}:
-                                    triples.append((subj2, "works_at", obj))
+                                    triples.append((subj2, "v:work_at", obj))
                                 elif verb2 in {"go", "went"} and prep == "to":
-                                    triples.append((subj2, "went_to", obj))
+                                    triples.append((subj2, "v:go_to", obj))
                                 elif verb2 in {"move", "moved"} and prep == "from":
-                                    triples.append((subj2, "moved_from", obj))
+                                    triples.append((subj2, "v:move_from", obj))
                                 elif verb2 in {"participate", "participated"} and prep == "in":
-                                    triples.append((subj2, "participated_in", obj))
+                                    triples.append((subj2, "v:participate_in", obj))
                                 elif verb2 in {"born", "bear"} and prep == "in":
-                                    triples.append((subj2, "born_in", obj))
+                                    triples.append((subj2, "v:born_in", obj))
                                 else:
-                                    triples.append((subj2, f"{verb2}_{prep}", obj))
+                                    triples.append((subj2, f"v:{verb2}_{prep}", obj))
                                 entities.add(obj)
     
     def _extract_object(self, token, entity_map, triples, entities):
