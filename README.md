@@ -69,6 +69,13 @@ After you run the first time and have all the models cached, you can set the HF_
 HF_HUB_OFFLINE=1 uv run bot.py
 ```
 
+## Enrollment & Session Lock
+
+- First‑time users can enroll quickly (voice samples) and get named.
+- Returning users are auto‑recognized and go straight to conversation.
+- Sessions lock to the current user; say “log me out” to switch users.
+- Configure via environment variables in `server/env.example`.
+
 # Start the web client
 
 The web client is a React app. You can connect to your local macOS agent using any client that can negotiate a serverless WebRTC connection. The client in this repo is based on [voice-ui-kit](https://github.com/pipecat-ai/voice-ui-kit) and just uses that library's standard debug console template.

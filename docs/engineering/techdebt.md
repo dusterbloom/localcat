@@ -198,6 +198,37 @@ core/memory/
 - Effort: 2–4 hours
 
 **Metrics & Regression Guards**
+
+---
+
+## 🆕 Pending/Observed (2025-10-05)
+
+### 🔐 Speaker Profile Duplication & Mid‑Conversation Name Prompts
+
+Symptoms:
+- Two auto‑enrolled profiles (e.g., `Speaker_1`, `Speaker_2`) could both partially match the same user around the recognition threshold, causing the router to flip to `name_capture` mid‑conversation.
+
+Current Mitigation (Implemented):
+- Session lock added in `EnrollmentCoordinator` that:
+  - Locks the session to the first recognized user in conversation.
+  - Ignores unknown‑speaker/enrollment events while locked.
+  - Counts consecutive different‑speaker matches and auto‑logs out when the threshold is reached (default 3).
+  - Supports explicit logout via configurable phrases with confirmation.
+
+Follow‑Ups (Backlog):
+- Profile deduplication tooling:
+  - CLI to list, compare cosine similarities, and merge/delete near‑duplicate profiles.
+  - Auto‑merge unnamed profiles into the nearest named profile above a high similarity threshold.
+- Sticky recognition heuristic:
+  - Require a confidence delta to switch away from the current speaker (e.g., +0.05 over current profile).
+  - Debounce switching within N seconds of previous recognition.
+- UI management:
+  - Add a simple page to view and rename/delete speaker profiles; export/import mappings.
+- Persistence and restart behavior:
+  - Persist last locked `speaker_id` in SessionTracker and re‑lock on next connection if the same user reconnects.
+
+Configuration (documented):
+- `SESSION_LOCK_ENABLED`, `SPEAKER_SWITCH_CONFIRM_MATCHES`, `LOGOUT_TERMS`, `YES_TERMS`, `NO_TERMS`.
 - Issue: No automated guardrails for p95 latency and bullet size
 - Impact: Performance regressions can slip in
 - Solution: Add simple perf assertions to tests; log stage timings

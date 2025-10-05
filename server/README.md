@@ -148,6 +148,16 @@ SMART_TURN_STOP_SECS=1.5                  # Turn detection timeout
 # === Development ===
 MEMORY_PROCESSOR_METRICS=true             # Enable metrics collection
 HOTMEM_LOG_LEVEL=DEBUG                    # Memory system logging
+
+# === Enrollment & Session Lock ===
+# Lock to recognized user for the session; ignore enrollment while locked
+SESSION_LOCK_ENABLED=true
+# Require this many consecutive different-speaker recognitions before auto-logout
+SPEAKER_SWITCH_CONFIRM_MATCHES=3
+# Natural-language triggers for logout and confirmation
+LOGOUT_TERMS="log me out|logout|log out|sign out|switch user|switch account"
+YES_TERMS="yes|yep|yeah|confirm|do it|please do"
+NO_TERMS="no|nope|cancel|stop|not now"
 ```
 
 ## 🧠 Memory System Features
@@ -198,6 +208,37 @@ core/memory/
 - **Memory Usage**: Shared model caching reduces resource consumption
 - **Error Handling**: Graceful fallbacks, never crashes on failures
 
+## 🔐 Enrollment UX & Session Lock
+
+LocalCat includes a first‑run enrollment UX and a robust session lock to prevent mid‑conversation name prompts.
+
+- Returning users are auto‑recognized and routed straight to conversation.
+- While the session is locked, unknown‑speaker and enrollment events are ignored.
+- Saying a logout phrase (configurable via `LOGOUT_TERMS`) asks for confirmation and returns to the sign in / sign up / anonymous choice.
+- If a different speaker repeatedly matches (default 3 times), the system auto‑logs out and returns to the choice screen.
+
+### Speaker Profile Storage
+
+- Profiles: `server/data/speaker_profiles/auto_enrolled/*.pt`
+- Name mappings: `server/data/speaker_profiles/speaker_names.json`
+
+To remove a duplicate or stale profile, delete the corresponding `.pt` file and, if needed, remove its entry from `speaker_names.json`. Profiles are loaded on startup; session lock prevents mid‑conversation flips even before restart.
+
+### Judge (Precision Booster for YAML Extractor)
+
+The extractor can run a GraphJudge‑style quality filter to remove low‑content or noisy triples after extraction.
+
+- Enable (distilled model):
+  - Set in `server/.env` (already configured):
+    - `YAML_GRAPH_JUDGE=on`
+    - `YAML_GRAPH_JUDGE_MODEL=models/graph_judge.json`
+  - The model is a tiny logistic classifier applied per triple (dot product + sigmoid), adding microseconds of overhead.
+- Train or update the model:
+  - `python -m scripts.train_graph_judge --dataset tests/data/yaml_eval_l1_en_medium.json --yaml archive/2024_12_consolidation/assets/ASI1_index_v0_9.yaml --out models/graph_judge.json --auto_calibrate`
+- Optional knobs:
+  - `YAML_GRAPH_JUDGE_THRESH` to override the embedded threshold.
+  - Leave unset to use the threshold saved in the model JSON.
+
 ## 🎯 Intent Classification
 
 Smart routing system that optimizes performance based on conversation intent:
@@ -242,6 +283,14 @@ python -m pytest --cov=core
 ```bash
 # Test coreference integration
 python -m pytest tests/unit/test_coreference_integration.py -v
+
+### Enrollment & Session Lock Testing
+
+Recommended cases:
+- Returning user recognized → session locks; no name capture.
+- Say a logout phrase → confirm yes → return to choice.
+- Say a logout phrase → say no → remain in conversation.
+- Different speaker speaks 3 times → auto‑logout → choice.
 
 # Test intent classification
 python -m pytest tests/unit/test_intent_integration.py -v

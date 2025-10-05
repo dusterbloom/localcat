@@ -1231,3 +1231,19 @@ PREWARM_MODELS=true
 - ✅ No regression in audio quality or system stability
 
 **Next Priority**: Plan and execute orderly commits for the implemented changes
+
+---
+
+## Update (2025-10-05) — Enrollment Lock and Profile Hygiene
+
+- Session lock implemented in `EnrollmentCoordinator` to prevent mid‑conversation enrollment prompts.
+  - Locks to first recognized user; ignores enrollment while locked.
+  - Logout phrases with confirmation return to choice (sign in / sign up / anonymous).
+  - Auto‑logout after N consecutive different‑speaker matches (default 3).
+- Documentation updates:
+  - server/README: added Enrollment & Session Lock section and env examples.
+  - server/env.example: added `SESSION_LOCK_ENABLED`, `SPEAKER_SWITCH_CONFIRM_MATCHES`, `LOGOUT_TERMS`, `YES_TERMS`, `NO_TERMS`.
+- Backlog tasks:
+  - Add tests for lock/unlock flows and thresholds.
+  - Admin CLI for listing/merging/deleting speaker profiles; optional auto‑dedupe.
+  - Confidence‑delta and time‑based debounce for speaker switching.
