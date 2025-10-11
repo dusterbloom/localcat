@@ -37,7 +37,7 @@ class TTSMLXUltraLowLatency(TTSService):
         sample_rate: int = 24000,
         speed: float = 1.0,
         use_boundaries: bool = True,  # Use sentence boundary detection
-        buffer_ms: int = 50,  # Target buffer size in milliseconds
+        buffer_ms: int = 40,  # Reduced buffer size for lower latency
         **kwargs,
     ):
         super().__init__(sample_rate=sample_rate, **kwargs)
@@ -69,11 +69,13 @@ class TTSMLXUltraLowLatency(TTSService):
 
     def _start_worker(self) -> bool:
         try:
-            # Set environment variables for worker configuration
+            # Optimized environment variables for consistent latency
             env = os.environ.copy()
-            env["KOKORO_MIN_TOKENS"] = "175"
-            env["KOKORO_MAX_TOKENS"] = "250"
+            env["KOKORO_MIN_TOKENS"] = "150"  # Reduced for faster first chunk
+            env["KOKORO_MAX_TOKENS"] = "200"  # Reduced for consistency
             env["KOKORO_BUFFER_MS"] = str(self._buffer_ms)
+            env["TTS_PREWARM"] = "true"  # Enable enhanced prewarming
+            env["MLX_GPU_ALLOCATOR"] = "lazy"  # Optimized memory allocation
 
             self._process = subprocess.Popen(
                 [sys.executable, self._worker_script],
@@ -83,8 +85,9 @@ class TTSMLXUltraLowLatency(TTSService):
                 text=True,
                 bufsize=0,  # Unbuffered for lowest latency
                 env=env,
+                preexec_fn=os.setsid if hasattr(os, 'setsid') else None,  # Process group isolation
             )
-            logger.info(f"Started ultra-low latency Kokoro worker (pid={self._process.pid}, buffer={self._buffer_ms}ms)")
+            logger.info(f"🚀 Started optimized Kokoro worker (pid={self._process.pid}, buffer={self._buffer_ms}ms)")
             return True
         except Exception as exc:
             logger.error(f"Failed to start Kokoro worker: {exc}")
@@ -191,10 +194,19 @@ class TTSMLXUltraLowLatency(TTSService):
                     if audio_bytes:
                         yield TTSAudioRawFrame(audio_bytes, self.sample_rate, 1)
 
-                    # Small delay to ensure smooth playback and prevent overlap
-                    # Adjust based on chunk size
+                    # Optimized delay for consistent streaming performance
                     chunk_duration = len(audio_bytes) / (self.sample_rate * 2)  # seconds
-                    await asyncio.sleep(min(chunk_duration * 0.05, 0.01))  # 5% of duration or 10ms max
+                    # Reduced delay for lower latency, but maintain stability
+                    delay = min(chunk_duration * 0.02, 0.005)  # 2% of duration or 5ms max
+                    
+                    # Adaptive delay based on performance metrics
+                    if hasattr(self, '_ttfb_ms') and self._ttfb_ms:
+                        if self._ttfb_ms > 800:  # High latency case
+                            delay = max(delay * 0.5, 0.001)  # Reduce delay further
+                        elif self._ttfb_ms < 400:  # Good performance case
+                            delay = min(delay * 1.2, 0.008)  # Slightly more delay for stability
+                    
+                    await asyncio.sleep(delay)
 
                 elif payload.get("boundary") == "sentence":
                     # Handle sentence boundaries if needed
