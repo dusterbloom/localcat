@@ -31,6 +31,7 @@ from config import VoiceAgentConfig
 from core.memory.hotpath_processor import HotPathMemoryProcessor
 from core.memory.session_tracker import SessionTracker
 from core.memory import HotMemService
+from core.memory.anonymous_context import AnonymousAwareContextAggregator
 
 # Import intent service for smart processing
 try:
@@ -287,9 +288,13 @@ class VoiceAgentFactory:
 
     def create_memory_processor(self, context_aggregator: Any, session_tracker: SessionTracker) -> HotPathMemoryProcessor:
         """Create HotMem memory processor."""
+        # Align with existing HOTMEM_* envs while supporting MEMORY_* overrides
+        sqlite_path = os.getenv("MEMORY_SQLITE_PATH") or os.getenv("HOTMEM_SQLITE") or None
+        lmdb_dir = os.getenv("MEMORY_LMDB_PATH") or os.getenv("HOTMEM_LMDB_DIR") or None
+
         memory = HotPathMemoryProcessor(
-            sqlite_path=os.getenv("MEMORY_SQLITE_PATH", ":memory:"),
-            lmdb_dir=os.getenv("MEMORY_LMDB_PATH", None),
+            sqlite_path=sqlite_path,
+            lmdb_dir=lmdb_dir,
             user_id=os.getenv("USER_ID", "default-user"),
             enable_metrics=True,
             context_aggregator=context_aggregator,
@@ -414,10 +419,30 @@ class VoiceAgentFactory:
             ),
         )
 
+        # Add a compact, model-friendly guide for using memory context
+        # Keeps small models focused and avoids parroting tags
+        guide_default = (
+            "Context Guide:\n"
+            "- You may receive Memory Context bullets like '• [convo] ...' or '• [graph] ...'.\n"
+            "- Prefer [convo] over [graph]; [summary] only for recaps.\n"
+            "- Do not quote tags or bullets verbatim; integrate facts naturally.\n"
+            "- If bullets are irrelevant to the user’s request, ignore them.\n"
+            "- When uncertain, ask one short clarifying question.\n"
+            "- Keep replies brief and helpful."
+        )
+        guide_text = os.getenv("MEMORY_CONTEXT_GUIDE", guide_default)
+        try:
+            context.add_message({"role": "system", "content": guide_text})
+        except Exception:
+            pass
+
         # Store both context and aggregator for access in event handlers
+        # Wrap with anonymous-aware functionality
+        anonymous_aggregator = AnonymousAwareContextAggregator(context_aggregator, context)
+
         self._services_cache['context'] = context
-        self._services_cache['context_aggregator'] = context_aggregator
-        return context_aggregator
+        self._services_cache['anonymous_aggregator'] = anonymous_aggregator
+        return anonymous_aggregator
 
     def create_session_tracker(self) -> SessionTracker:
         """Create session tracker."""

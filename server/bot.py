@@ -87,11 +87,8 @@ async def monitor_connections():
         except Exception as e:
             logger.error(f"Error in connection monitor: {e}")
 
-ice_servers = [
-    IceServer(
-        urls="stun:stun.l.google.com:19302",
-    )
-]
+# Offline/local default: host-only ICE (no public STUN)
+ice_servers = []
 
 
 # LocalSmartTurnAnalyzerV3 includes model weights bundled with Pipecat
