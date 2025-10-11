@@ -133,17 +133,19 @@ class HotPathMemoryProcessor(BaseProcessor):
         # Env-driven controls (Phase 0.5)
         self._enabled: bool = os.getenv("MEMORY_ENABLED", "true").lower() in ("1", "true", "yes")
         try:
-            self._bullets_max: int = int(os.getenv("MEMORY_BULLETS_MAX", "3"))
+            # Support both MEMORY_* and HOTMEM_* for bullets and interim words
+            self._bullets_max: int = int(os.getenv("MEMORY_BULLETS_MAX") or os.getenv("HOTMEM_BULLETS_MAX") or "3")
         except Exception:
             self._bullets_max = 3
         try:
-            self._interim_min_words: int = int(os.getenv("MEMORY_INTERIM_MIN_WORDS", "6"))
+            self._interim_min_words: int = int(os.getenv("MEMORY_INTERIM_MIN_WORDS") or os.getenv("HOTMEM_INTERIM_MIN_WORDS") or "6")
         except Exception:
             self._interim_min_words = 6
-        self._inject_role = os.getenv("MEMORY_INJECT_ROLE", "user").strip().lower()
+        # Support both MEMORY_* and legacy HOTMEM_* envs for injection settings
+        self._inject_role = (os.getenv("MEMORY_INJECT_ROLE") or os.getenv("HOTMEM_INJECT_ROLE") or "user").strip().lower()
         if self._inject_role not in ("user", "system"):
             self._inject_role = "user"
-        self._inject_header = os.getenv("MEMORY_INJECT_HEADER", "[Memory context]")
+        self._inject_header = os.getenv("MEMORY_INJECT_HEADER") or os.getenv("HOTMEM_INJECT_HEADER") or "[Memory context]"
         self._trace_frames = os.getenv("MEMORY_TRACE_FRAMES", "false").lower() in ("1", "true", "yes")
         self._handshake_enabled = os.getenv("MEMORY_ENABLE_HANDSHAKE", "true").lower() in ("1", "true", "yes")
         # Retrieval source controls (Phase 2-ready; used now for convo indexing)
@@ -213,6 +215,21 @@ class HotPathMemoryProcessor(BaseProcessor):
         except Exception:
             pass
         logger.debug(f"HotPathMemoryProcessor initialized for user: {user_id}")
+
+        # Ensure session is registered with the tracker up-front so headers show correct counts
+        try:
+            if self._session_tracker is not None:
+                self._session_tracker.start_session(self._user_id, self._session_id)
+        except Exception:
+            pass
+
+        # Sliding window context settings
+        try:
+            self._ctx_window_enabled = os.getenv("CONTEXT_SLIDING_WINDOW", "true").lower() in ("1", "true", "yes")
+            self._ctx_max_pairs = int(os.getenv("CONTEXT_MAX_TURN_PAIRS", "4"))
+        except Exception:
+            self._ctx_window_enabled = True
+            self._ctx_max_pairs = 4
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """
@@ -507,11 +524,9 @@ class HotPathMemoryProcessor(BaseProcessor):
             try:
                 if text.strip():
                     now_ts = int(time.time() * 1000)
-                    # Always store with session_id for summarization
-                    self.store.enqueue_mention(self._session_id, text.strip(), now_ts, self._session_id, self._turn_id)
-                    # Additionally store with user_id if convo indexing is enabled
-                    if self._convo_index_enabled:
-                        self.store.enqueue_mention(self._user_id, text.strip(), now_ts, self._session_id, self._turn_id)
+                    # Store with user_id for FTS indexing and cross-session retrieval
+                    # session_id is passed as 4th parameter for session tracking
+                    self.store.enqueue_mention(self._user_id, text.strip(), now_ts, self._session_id, self._turn_id)
                     self.store.flush_if_needed()
             except Exception as e:
                 logger.warning(f"[HotMem] Storing conversation failed: {e}")
@@ -581,6 +596,15 @@ class HotPathMemoryProcessor(BaseProcessor):
                     messages.pop(target_idx)
 
             context.set_messages(messages)
+
+            # Prune context window to keep conversation "forever" with a rolling window
+            try:
+                if self._ctx_window_enabled:
+                    pruned = self._prune_context_window(list(context.get_messages()))
+                    if pruned is not None:
+                        context.set_messages(pruned)
+            except Exception:
+                pass
             # Also emit a typed frame for downstream processors (future-proof, non-breaking)
             try:
                 await self.push_frame(MemoryContextFrame(self._inject_role, self._inject_header, bullets), None)
@@ -592,6 +616,32 @@ class HotPathMemoryProcessor(BaseProcessor):
             
         except Exception as e:
             logger.error(f"[HotMem] Failed to inject memory context: {e}")
+
+    def _prune_context_window(self, messages: list) -> list:
+        """Keep all system messages and the last N user/assistant turns.
+
+        N is defined as CONTEXT_MAX_TURN_PAIRS. This keeps the agent responsive
+        while allowing the conversation to continue indefinitely.
+        """
+        try:
+            max_pairs = max(int(self._ctx_max_pairs), 0)
+        except Exception:
+            max_pairs = 4
+        if max_pairs <= 0:
+            return messages
+
+        # Identify indices of user/assistant messages
+        ua_indices = [i for i, m in enumerate(messages) if isinstance(m, dict) and m.get('role') in ('user', 'assistant')]
+        keep_ua = set(ua_indices[-2 * max_pairs:])
+
+        pruned = []
+        for i, m in enumerate(messages):
+            if not isinstance(m, dict):
+                continue
+            role = m.get('role')
+            if role == 'system' or i in keep_ua:
+                pruned.append(m)
+        return pruned
     
     def _log_metrics(self, elapsed_ms: float):
         """Log performance metrics periodically"""
