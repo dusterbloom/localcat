@@ -12,6 +12,7 @@ store exactly as the previous implementation did.
 
 from typing import List, Tuple, Any, Dict, Optional, Set
 import time
+from .memory_constants import WEIGHT_MIN_ACTIVE, RECENCY_HALF_LIFE_MS
 from loguru import logger
 
 import os
@@ -90,6 +91,17 @@ class Retrieval:
         # Re-rank all candidates by score and deduplicate
         all_candidates.sort(key=lambda x: x[0], reverse=True)
 
+        # Optional: restrict to top-priority source for simpler context, useful for small LMs
+        try:
+            single_source = os.getenv("MEMORY_SINGLE_SOURCE", "false").lower() in ("1", "true", "yes")
+        except Exception:
+            single_source = False
+        if single_source and all_candidates:
+            top_source = source_priority[0] if source_priority else None
+            if top_source:
+                if any(src == top_source for _, _, src in all_candidates):
+                    all_candidates = [c for c in all_candidates if c[2] == top_source]
+
         final_bullets = []
         seen_bullets = set()
         for score, bullet, source in all_candidates:
@@ -164,7 +176,7 @@ class Retrieval:
             "has": 60,
         }
 
-        WEIGHT_MIN = 0.25  # Align with status thresholding used by store
+        WEIGHT_MIN = WEIGHT_MIN_ACTIVE  # Align with status thresholding used by store
         # Stricter minimum positive support for noisy relations
         REL_MIN_POS: Dict[str, int] = {
             "also_known_as": 2,
@@ -179,27 +191,52 @@ class Retrieval:
                 # Build quick lookup for (s,r)-> dst meta once per relation
                 meta_cache: Dict[Tuple[str, str], Dict[str, Tuple[float, int, int, int, int]]] = {}
 
-                for s, r, d in candidates:
-                    # Provenance scope: keep only edges that belong to current user (or current session)
-                    edge_id = self.host.store.edge_id(s, r, d)
-                    allowed_edge = edge_scope_cache.get(edge_id)
-                    if allowed_edge is None:
-                        allowed_edge = False
+                # Fix #3: Batch provenance queries to eliminate N+1 problem
+                # Collect all edge_ids that need provenance checking
+                candidate_edge_ids = [self.host.store.edge_id(s, r, d) for s, r, d in candidates]
+                uncached_edge_ids = [eid for eid in candidate_edge_ids if eid not in edge_scope_cache]
+
+                if uncached_edge_ids:
+                    # Batch query all provenance data
+                    try:
+                        prov_batch = self.host.store.get_edges_provenance_batch(uncached_edge_ids)
+                    except Exception:
+                        prov_batch = {}
+
+                    # Collect all unique session_ids from provenance for batch ownership check
+                    all_session_ids = set()
+                    for prov_list in prov_batch.values():
+                        for (_text, sess_id, _turn, _ts) in prov_list:
+                            all_session_ids.add(sess_id)
+
+                    # Batch query session ownership if we have a current user
+                    if current_user and all_session_ids:
                         try:
-                            prov = self.host.store.get_edge_provenance(edge_id)  # List[(text, session_id, turn_id, ts)]
+                            owned_sessions = self.host.store.are_sessions_owned_by_user_batch(list(all_session_ids), current_user)
                         except Exception:
-                            prov = []
-                        # If we know the current user, require any provenance session to belong to them
+                            owned_sessions = set()
+                    else:
+                        owned_sessions = set()
+
+                    # Populate edge_scope_cache from batch results
+                    for edge_id in uncached_edge_ids:
+                        prov = prov_batch.get(edge_id, [])
+                        allowed_edge = False
                         if current_user:
+                            # Check if any session belongs to user
                             for (_text, sess_id, _turn, _ts) in prov:
-                                if self.host.store.is_session_owned_by_user(sess_id, current_user):
+                                if sess_id in owned_sessions:
                                     allowed_edge = True
                                     break
-                        # Fallback: if no user scope available, allow edges from current session only
                         elif current_session:
+                            # Fallback: allow edges from current session only
                             allowed_edge = any(sess_id == current_session for (_text, sess_id, _turn, _ts) in prov)
                         edge_scope_cache[edge_id] = allowed_edge
-                    if not allowed_edge:
+
+                # Now filter candidates using the populated cache
+                for s, r, d in candidates:
+                    edge_id = self.host.store.edge_id(s, r, d)
+                    if not edge_scope_cache.get(edge_id, False):
                         continue
 
                     # Retrieve neighbor meta for this (s,r) only once
@@ -245,59 +282,96 @@ class Retrieval:
                     # Composite score: priority × weight × support × recency
                     support = 1.0 + min(max(pos, 0), 5) * 0.1  # dampen large pos
                     age_ms = max(0, now_ms - int(ts)) if ts else 0
-                    half_life_ms = 7 * 24 * 3600 * 1000  # 7 days
+                    # Recency decay
+                    half_life_ms = RECENCY_HALF_LIFE_MS
                     recency_factor = (2 ** (-(age_ms / half_life_ms))) if ts else 0.8
                     score = float(pri) * float(max(w, 0.01)) * support * recency_factor
                     scored.append((score, ts, s, r, d))
                 scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
                 for _score, _ts, s, r, d in scored:
-                    fact = f"{s} {r} {d}"
-                    if fact not in seen:
-                        suffix = self._ago_suffix(_ts)
+                    suffix = self._ago_suffix(_ts)
                     human = self._humanize_fact(s, r, d)
-                    if human:
-                        out.append(f"• [graph] {human}{suffix}")
-                        seen.add(fact)
-                        if len(out) >= max_bullets:
-                            return out
+                    if not human:
+                        continue
+                    key = human  # Dedup based on humanized fact to collapse alias/case variants
+                    if key in seen:
+                        continue
+                    out.append(f"• [graph] {human}{suffix}")
+                    seen.add(key)
+                    if len(out) >= max_bullets:
+                        return out
 
         # Fallback to recency unless an allowlist is active
         if allowed_relations is None:
             for item in reversed(list(self.host.recency_buffer)[-10:]):
-                fact = f"{item.s} {item.r} {item.d}"
-                if fact not in seen:
-                    age = self._ago_suffix(item.timestamp if hasattr(item, 'timestamp') else 0)
-                    human = self._humanize_fact(item.s, item.r, item.d)
-                    if human:
-                        out.append(f"• [graph] {human}{age}")
-                        seen.add(fact)
-                        if len(out) >= max_bullets:
-                            break
+                age = self._ago_suffix(item.timestamp if hasattr(item, 'timestamp') else 0)
+                human = self._humanize_fact(item.s, item.r, item.d)
+                if not human:
+                    continue
+                key = human
+                if key in seen:
+                    continue
+                out.append(f"• [graph] {human}{age}")
+                seen.add(key)
+                if len(out) >= max_bullets:
+                    break
 
         return out[:max_bullets]
 
     def _convo_retrieve(self, query: str, max_bullets: int, seen: set) -> List[str]:
         out: List[str] = []
         try:
-            # Sanitize query for FTS5: remove punctuation and special chars
-            # FTS5 syntax errors on: , . ? ! ( ) " ' - and other special chars
-            import re
-            sanitized = re.sub(r'[^\w\s]', ' ', query)  # Keep only alphanumeric and spaces
-            sanitized = ' '.join(sanitized.split())  # Normalize whitespace
+            # Try Enhanced FTS first (SOTA implementation)
+            try:
+                from .enhanced_fts import EnhancedFTS
+                enhanced_fts = EnhancedFTS(self.host.store)
+                
+                # Get user/session for scoped search
+                user_id = getattr(self.host, 'current_user_id', None)
+                session_id = getattr(self.host, 'current_session_id', None)
+                allowed = [e for e in [user_id, session_id] if e]
+                
+                # Use enhanced search with BM25 and query expansion
+                enhanced_results = enhanced_fts.enhanced_search(query, max_bullets * 2, eids=allowed)
+                hits = [(text, eid, ts) for score, text, eid, ts in enhanced_results]
+                
+                logger.debug(f"[Retrieval._convo] Enhanced FTS returned {len(hits)} hits for query='{query[:30]}'")
+                # If enhanced index is empty or produced no hits, fall back to basic FTS
+                if not hits:
+                    import re
+                    sanitized = re.sub(r'[^\w\s]', ' ', query)
+                    sanitized = ' '.join(sanitized.split())
+                    if not sanitized.strip():
+                        logger.debug(f"[Retrieval._convo] Query sanitized to empty string (enhanced fallback)")
+                        return []
+                    if allowed and hasattr(self.host.store, 'search_fts_scoped'):
+                        hits = self.host.store.search_fts_scoped(sanitized, allowed, limit=max_bullets * 2)
+                    else:
+                        hits = self.host.store.search_fts(sanitized, limit=max_bullets * 2)
+                
+            except ImportError:
+                logger.debug("[Retrieval._convo] Enhanced FTS not available, using basic FTS")
+                # Fallback to basic FTS with sanitization
+                import re
+                sanitized = re.sub(r'[^\w\s]', ' ', query)  # Keep only alphanumeric and spaces
+                sanitized = ' '.join(sanitized.split())  # Normalize whitespace
 
-            if not sanitized.strip():
-                logger.debug(f"[Retrieval._convo] Query sanitized to empty string")
-                return []
+                if not sanitized.strip():
+                    logger.debug(f"[Retrieval._convo] Query sanitized to empty string")
+                    return []
 
-            # Prefer user/session-scoped FTS to prevent cross-user leakage
-            user_id = getattr(self.host, 'current_user_id', None)
-            session_id = getattr(self.host, 'current_session_id', None)
-            allowed = [e for e in [user_id, session_id] if e]
-            if allowed and hasattr(self.host.store, 'search_fts_scoped'):
-                hits = self.host.store.search_fts_scoped(sanitized, allowed, limit=max_bullets * 2)
-            else:
-                # Fallback to global FTS
-                hits = self.host.store.search_fts(sanitized, limit=max_bullets * 2)
+                # Prefer user/session-scoped FTS to prevent cross-user leakage
+                user_id = getattr(self.host, 'current_user_id', None)
+                session_id = getattr(self.host, 'current_session_id', None)
+                allowed = [e for e in [user_id, session_id] if e]
+                if allowed and hasattr(self.host.store, 'search_fts_scoped'):
+                    hits = self.host.store.search_fts_scoped(sanitized, allowed, limit=max_bullets * 2)
+                else:
+                    # Fallback to global FTS
+                    hits = self.host.store.search_fts(sanitized, limit=max_bullets * 2)
+            
+            # Initialize sanitized for logging only
+            sanitized = (query or '')
             logger.debug(f"[Retrieval._convo] FTS returned {len(hits)} hits for query='{sanitized[:30]}'")
         except Exception as e:
             logger.warning(f"[Retrieval._convo] FTS search failed: {e}")
@@ -311,8 +385,8 @@ class Retrieval:
             excluded = [p.strip().lower() for p in ex_raw.split("||") if p.strip()]
             if fixed:
                 excluded.append(fixed.lower())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[Retrieval._convo] Failed to load excluded phrases: {e}")
         for text, eid, ts in hits:
             logger.debug(f"[Retrieval._convo] Processing hit: eid='{eid}' text='{text[:40]}'")
             # Filter to only conversation entries (not summary)
@@ -345,7 +419,8 @@ class Retrieval:
         out: List[str] = []
         try:
             rows = self.host.store.get_recent_chunks_by_eid("summary", limit=max_bullets * 2)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[Retrieval._summary] Failed to load summary chunks: {e}")
             rows = []
         for text, ts in rows:
             s = text.strip().replace("\n", " ")
@@ -382,6 +457,7 @@ class Retrieval:
                 return f" ({days}d {rem_h}h ago)"
             return f" ({days}d ago)"
         except Exception:
+            # Keep suffix optional on failure
             return ""
 
     def _humanize_fact(self, s: str, r: str, d: str) -> str:
@@ -397,8 +473,8 @@ class Retrieval:
                     return x.split(':', 1)[1]
                 if x.startswith('agent:'):
                     return x.split(':', 1)[1]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[Retrieval._humanize_fact] display mapping failed: {e}")
             return x
 
         ds = _display(s)
