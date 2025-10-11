@@ -20,6 +20,60 @@ The bot and web client here communicate using a low-latency, local, serverless W
 
 For a deep dive into voice AI, including network transport, optimizing for latency, and notes on designing tool calling and complex workflows, see the [Voice AI & Voice Agents Illustrated Guide](https://voiceaiandvoiceagents.com/).
 
+# Getting Started
+
+1) Configure environment
+
+```bash
+cp server/.env.example server/.env
+# Optional: edit server/.env to point LLM to your local server
+# VOICE_AGENT_LLM_BASE_URL=http://localhost:11434/v1
+# VOICE_AGENT_LLM_MODEL=gemma3n:e2b
+```
+
+2) Start the server
+
+```bash
+cd server
+# Using uv (recommended)
+uv run bot.py
+
+# Or using pip
+python3.12 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python bot.py
+```
+
+3) Start the web client
+
+```bash
+cd client
+npm i
+npm run dev
+```
+
+4) Optional: speed up model startup after first run
+
+```bash
+cd server
+HF_HUB_OFFLINE=1 uv run bot.py
+```
+
+# Environment setup
+
+- Copy the example env file and adjust values for your setup:
+  - `server/.env.example:1` → copy to `server/.env`
+  - Key variables:
+    - `VOICE_AGENT_LLM_BASE_URL`, `VOICE_AGENT_LLM_MODEL`, `VOICE_AGENT_LLM_API_KEY`
+    - `VOICE_AGENT_STT_ENGINE`, `VOICE_AGENT_TTS_ENGINE`
+    - `MEMORY_BACKEND`, `MEMORY_*` caps (optional)
+    - `AUDIO_INTELLIGENCE_ENABLED`, `AUDIO_INTEL_*` (optional)
+
+- Run a local OpenAI-compatible HTTP server for the LLM.
+  - LM Studio: start the server from the Developer tab and note the base URL.
+  - Ollama (with an OpenAI shim): point `VOICE_AGENT_LLM_BASE_URL` to the shim endpoint.
+
 # Models and dependencies
 
 Silero VAD and MLX Whisper run inside the Pipecat process. When the agent code starts, it will need to download model weights that aren't already cached, so first startup can take some time.
@@ -82,3 +136,16 @@ npm run dev
 
 # Navigate to URL shown in terminal in your web browser
 ```
+
+# Configuration quick reference
+
+- Server configuration is environment-driven and loaded from `server/.env`.
+  - Central mapping: `server/config/settings.py:96`
+  - Memory config: `server/core/memory/config.py:1`
+  - Enrollment messages: `server/core/audio/enrollment_messages.py:1`
+
+- Common tweaks:
+  - LLM streaming: set `LLM_USE_STREAMING=true` for lower latency.
+  - Switch memory backend: `MEMORY_BACKEND=hotmem` to use the service backend.
+  - Disable audio intelligence: `AUDIO_INTELLIGENCE_ENABLED=false`.
+  - Enrollment UX: `AUDIO_INTEL_INTRO_PIPELINE=true` for first-time guided enrollment.

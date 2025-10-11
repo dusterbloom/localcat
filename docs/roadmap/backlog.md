@@ -1,5 +1,11 @@
 # LocalCat Server Development Backlog
 
+## ✅ DX & Docs Update (2025-10-11)
+
+- Added `server/.env.example` with sensible, working defaults and comments
+- Updated `README.md` with environment setup and config quick reference
+- Clarified where env is loaded (`server/.env`) and key toggles
+
 ## ✅ Progress (2025-09-30)
 
 - Contextual Extraction Granularity — COMPLETED
