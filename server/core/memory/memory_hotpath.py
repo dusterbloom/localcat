@@ -8,6 +8,7 @@ import os
 import time
 from typing import List, Tuple, Set, Dict, Optional, Any
 from collections import defaultdict, deque
+from functools import lru_cache
 import heapq
 from dataclasses import dataclass
 import statistics
@@ -128,6 +129,10 @@ class HotMemory:
         self.extractor = UDExtractor(self)
         self.retriever = Retrieval(self)
 
+        # Extraction cache: LRU over (text, lang)
+        # Stores: (entities, triples, neg_count, doc, entity_aliases)
+        self._cached_extract = self._make_cached_extract()
+
         # Coreference resolution (SOLID refactored component)
         config = MemoryConfig.from_env()
         self.coref_processor = CoreferenceProcessor(
@@ -140,8 +145,18 @@ class HotMemory:
         """Load NLP resources up-front to avoid first-turn latency."""
         try:
             _load_nlp(lang)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"HotMemory prewarm failed: {e}")
+
+    def _make_cached_extract(self):
+        """Bind an LRU-cached extraction function to avoid duplicate work."""
+        extractor = self.extractor
+
+        @lru_cache(maxsize=128)
+        def _cached(text: str, lang: str):
+            return extractor.extract(text, lang)
+
+        return _cached
 
     def process_turn(self, text: str, session_id: str, turn_id: int, focus: str = 'standard', intent: Optional[Dict] = None) -> Tuple[List[str], List[Tuple[str, str, str]]]:
         """
@@ -162,12 +177,15 @@ class HotMemory:
         
         # Language detection
         lang = self._detect_language(text) if PYCLD3_AVAILABLE else "en"
-        
+
         # Stage 1: Extract entities and relations (via extractor seam)
         # NOTE: Coreference resolution exists but needs proper spacy-coref integration
         # TODO: Implement proper coref that resolves pronouns in doc before extraction
         extract_start = time.perf_counter()
-        entities, triples, neg_count, doc, entity_aliases = self.extractor.extract(text, lang)
+
+        # LRU-cached extraction to avoid duplicate work
+        entities, triples, neg_count, doc, entity_aliases = self._cached_extract(text, lang)
+
         self.metrics['extraction_ms'].append((time.perf_counter() - extract_start) * 1000)
         # Store aliases for dual registration in hot index
         self._entity_aliases = entity_aliases
@@ -217,6 +235,10 @@ class HotMemory:
 
         # Store the conversation turn FIRST (before edge extraction) for provenance
         turn_id_hash = self.store.enqueue_turn(text, session_id, turn_id, now_ts)
+
+        # Ensure immediate FTS indexing for real-time conversation retrieval
+        # CRITICAL: Use flush() not flush_if_needed() to guarantee edges are on disk before retrieval
+        self.store.flush()
 
         is_question = self._is_question(text)
         logger.debug(f"[HotMem] Text classified as question: {is_question}")
@@ -1130,7 +1152,7 @@ class HotMemory:
         Useful for validating retrieval independently of writes.
         """
         try:
-            entities, _, _, _, _ = self.extractor.extract(text, lang)
+            entities, _, _, _, _ = self._cached_extract(text, lang)
             entities = self.extractor.refine_entities(text, entities)
         except Exception:
             entities = []
@@ -1148,15 +1170,14 @@ class HotMemory:
         """
         if read_only:
             try:
-                entities, _, _, _, _ = self.extractor.extract(text, lang)
+                entities, _, _, _, _ = self._cached_extract(text, lang)
                 entities = self.extractor.refine_entities(text, entities)
             except Exception:
                 entities = []
             return self.retriever.retrieve(text, entities, turn_id=-1, intent=intent)
         else:
-            # Non read-only: reuse preview path for now; callers may have called process_turn before this.
             try:
-                entities, _, _, _, _ = self.extractor.extract(text, lang)
+                entities, _, _, _, _ = self._cached_extract(text, lang)
                 entities = self.extractor.refine_entities(text, entities)
             except Exception:
                 entities = []
