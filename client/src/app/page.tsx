@@ -17,13 +17,10 @@ export default function Home() {
           }}
           noUserVideo={true}
           transportOptions={{
-          waitForICEGathering: true,
-          iceServers: [
-            {
-              urls: "stun:stun.l.google.com:19302",
-            },
-          ],
-        }}
+            // Offline/local: use host-only ICE candidates (no public STUN)
+            waitForICEGathering: true,
+            iceServers: [],
+          }}
         />
       </FullScreenContainer>
     </ThemeProvider>
