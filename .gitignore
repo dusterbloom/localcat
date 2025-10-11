@@ -14,6 +14,9 @@ data
 server/.logs/
 server/server/.logs/
 server/base.pt
+
+.claude/
+.factory/
 # Python caches and pytest cache
 .pytest_cache/
 .mypy_cache/
