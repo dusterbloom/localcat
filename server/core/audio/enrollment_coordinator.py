@@ -53,6 +53,7 @@ class EnrollmentCoordinator(FrameProcessor):
         audio_intel: Optional[object] = None,
         memory: Optional[object] = None,
         enable_ephemeral_choice: bool = True,
+        context_aggregator: Optional[object] = None,
     ):
         """
         Initialize enrollment coordinator.
@@ -72,6 +73,7 @@ class EnrollmentCoordinator(FrameProcessor):
         self._messages = messages or EnrollmentMessages.from_env()
         self._audio_intel = audio_intel
         self._memory = memory
+        self._context_aggregator = context_aggregator
         self._enable_ephemeral_choice = enable_ephemeral_choice
         
         # State tracking
@@ -109,7 +111,7 @@ class EnrollmentCoordinator(FrameProcessor):
             )
         )
         self._sign_in_requested: bool = False
-        self._sign_in_timeout_task: Optional[asyncio.Task] = None
+        self._sign_in_timeout_task: Optional[asyncio.Task] = 5.0
         # Suppress one immediate transcription after returning-user recognition
         self._suppress_next_transcription: bool = False
         self._suppress_deadline_ts: float = 0.0
@@ -181,6 +183,19 @@ class EnrollmentCoordinator(FrameProcessor):
                     except Exception:
                         pass
                     self._suppress_next_transcription = False
+                # Conversation mode: handle logout to re-enable recognition
+                try:
+                    text = getattr(frame, 'text', '') or ''
+                    norm = text.strip().lower()
+                    if any(t in norm for t in ("logout", "log out", "sign out")):
+                        if self._audio_intel and hasattr(self._audio_intel, 'set_enabled'):
+                            self._audio_intel.set_enabled(True)
+                        self._awaiting_choice = True
+                        await self._router.update_state(EnrollmentState.CHOICE)
+                        await self._send_choice_message(direction)
+                        return
+                except Exception:
+                    pass
                 # Normal conversation: allow downstream
                 await self.push_frame(frame, direction)
                 return
@@ -333,6 +348,12 @@ class EnrollmentCoordinator(FrameProcessor):
         # Recognized returning user with a known name → fast path
         if frame.speaker_name:
             await self._handle_returning_user(frame, direction)
+            # Pause audio intelligence during recognized sessions (privacy/perf)
+            try:
+                if self._audio_intel and hasattr(self._audio_intel, 'set_enabled'):
+                    self._audio_intel.set_enabled(False)
+            except Exception:
+                pass
             return
 
         # Recognized existing unnamed profile → capture a friendly name
@@ -373,6 +394,12 @@ class EnrollmentCoordinator(FrameProcessor):
 
         # Ask for preferred ID/name
         await self._router.update_state(EnrollmentState.NAME_CAPTURE, speaker_id=frame.speaker_id)
+        # Pause audio intelligence after successful enrollment
+        try:
+            if self._audio_intel and hasattr(self._audio_intel, 'set_enabled'):
+                self._audio_intel.set_enabled(False)
+        except Exception:
+            pass
         self._name_capture_pending = True
         self._pending_speaker_id = frame.speaker_id
         await self.push_frame(TextFrame("What name or ID should I use for you? You can also type it in the UI."), direction)
@@ -425,6 +452,49 @@ class EnrollmentCoordinator(FrameProcessor):
         except Exception:
             pass
 
+    async def _handle_speaker_changed(
+        self,
+        frame: SpeakerChangedFrame,
+        direction: FrameDirection
+    ):
+        """
+        Handle speaker recognition and identity updates.
+        This is called when a speaker is recognized or auto-enrolled.
+        """
+        logger.info(
+            f"[EnrollmentCoordinator] Speaker changed: {frame.speaker_id} "
+            f"(confidence={frame.confidence:.2f}, name={frame.speaker_name}, auto_enrolled={frame.auto_enrolled})"
+        )
+        
+        # Update memory system with recognized identity
+        try:
+            if self._memory and hasattr(self._memory, 'set_user_identity'):
+                # Use speaker name if available, otherwise use speaker ID
+                name_or_id = frame.speaker_name or frame.speaker_id
+                self._memory.set_user_identity(name_or_id)
+                logger.info(f"[EnrollmentCoordinator] Updated memory user identity: {name_or_id}")
+        except Exception as e:
+            logger.warning(f"[EnrollmentCoordinator] Failed to update memory user identity: {e}")
+
+        # Update session tracker with identity if available  
+        try:
+            if hasattr(self, '_session_tracker') and self._session_tracker:
+                name_or_id = frame.speaker_name or frame.speaker_id
+                self._session_tracker.set_user_identity(name_or_id)
+                logger.info(f"[EnrollmentCoordinator] Updated session tracker identity: {name_or_id}")
+        except Exception as e:
+            logger.warning(f"[EnrollmentCoordinator] Failed to update session tracker: {e}")
+
+        # Update pipeline router with speaker info for other components
+        try:
+            await self._router.update_state(
+                EnrollmentState.CONVERSATION,
+                speaker_id=frame.speaker_id,
+                consistency=frame.confidence
+            )
+        except Exception as e:
+            logger.warning(f"[EnrollmentCoordinator] Failed to update router state: {e}")
+
     async def _handle_transcription(self, frame: TranscriptionFrame, direction: FrameDirection):
         """Handle user transcriptions during choice and name capture flows."""
         text = (frame.text or "").strip()
@@ -450,6 +520,15 @@ class EnrollmentCoordinator(FrameProcessor):
                         self._memory.set_ephemeral_mode(True)
                 except Exception as e:
                     logger.warning(f"[EnrollmentCoordinator] Failed to set ephemeral mode: {e}")
+                
+                # Clear context history and remove Context Guide in anonymous mode
+                try:
+                    if self._context_aggregator and hasattr(self._context_aggregator, 'set_anonymous_mode'):
+                        self._context_aggregator.set_anonymous_mode(True)
+                        logger.info("[EnrollmentCoordinator] Enabled anonymous mode in context aggregator")
+                except Exception as e:
+                    logger.warning(f"[EnrollmentCoordinator] Failed to set anonymous mode in context: {e}")
+                
                 await self.push_frame(TextFrame("Okay, let's chat anonymously. Nothing will be stored."), direction)
                 await self._router.update_state(EnrollmentState.CONVERSATION)
                 # Send neutral greeting to start the convo without personal data

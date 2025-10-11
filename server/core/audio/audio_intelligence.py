@@ -189,6 +189,7 @@ class AudioIntelligenceProcessor(FrameProcessor):
             device: PyTorch device ("cpu", "mps", "cuda")
         """
         super().__init__()
+        self._enabled: bool = True  # Allow runtime pause/resume
         
         if not SPEECHBRAIN_AVAILABLE:
             raise ImportError("SpeechBrain required. Install: pip install speechbrain")
@@ -294,6 +295,10 @@ class AudioIntelligenceProcessor(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Process frames - buffer audio and handle speech events"""
         await super().process_frame(frame, direction)
+        # If disabled, pass frames through without processing
+        if not self._enabled:
+            await self.push_frame(frame, direction)
+            return
         
         # Buffer audio during speech
         if isinstance(frame, InputAudioRawFrame):
@@ -320,6 +325,15 @@ class AudioIntelligenceProcessor(FrameProcessor):
         
         # Always push frame downstream (parallel pipeline pattern)
         await self.push_frame(frame, direction)
+
+    # --- Runtime control ---------------------------------------------------
+    def set_enabled(self, enabled: bool) -> None:
+        """Enable/disable audio intelligence processing at runtime."""
+        self._enabled = bool(enabled)
+        if self._enabled:
+            logger.info("[AudioIntel] Processing ENABLED")
+        else:
+            logger.info("[AudioIntel] Processing DISABLED (paused until re-enabled)")
     
     async def _process_utterance(self):
         """Process buffered audio for speaker recognition"""
@@ -595,7 +609,7 @@ class AudioIntelligenceProcessor(FrameProcessor):
                 EnrollmentProgressFrame(
                     current_sample=1,
                     total_samples=self._auto_enroll_utterances,
-                    consistency=1.0,  # First sample is 100% consistent with itself
+                    consistency=0.75,  # First sample is 100% consistent with itself
                     speaker_id="unknown"
                 )
             )
