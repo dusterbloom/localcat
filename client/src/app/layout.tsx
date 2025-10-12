@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import "@pipecat-ai/voice-ui-kit/styles.css";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Voice UI Kit - Console Template Example",
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({
