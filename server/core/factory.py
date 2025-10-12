@@ -590,6 +590,7 @@ class VoiceAgentFactory:
             audio_intel=services.get('audio_intelligence'),
             memory=services.get('memory'),
             enable_ephemeral_choice=self.config.enable_ephemeral_choice,
+            context_aggregator=services.get('context_aggregator'),
         )
         
         # Build main pipeline stages

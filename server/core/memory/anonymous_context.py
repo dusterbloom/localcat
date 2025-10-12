@@ -71,12 +71,12 @@ class AnonymousAwareContextAggregator:
             
             for msg in messages:
                 content = msg.get("content", "")
-                # Keep only the main system instruction (skip Context Guide)
+                # Keep only essential system messages; drop Context Guide and Session Context
                 if msg.get("role") == "system":
-                    if "Context Guide:" not in content:
-                        filtered_messages.append(msg)
+                    if ("Context Guide:" in content) or (isinstance(content, str) and content.startswith("[Session Context]")):
+                        logger.debug("[AnonymousContext] Removing non-essential system message for anonymous mode")
                     else:
-                        logger.debug("[AnonymousContext] Removing Context Guide system message")
+                        filtered_messages.append(msg)
                 # Skip all user/assistant messages (conversation history)
                 elif msg.get("role") in ["user", "assistant"]:
                     logger.debug(f"[AnonymousContext] Removing {msg.get('role')} message: {content[:50]}...")

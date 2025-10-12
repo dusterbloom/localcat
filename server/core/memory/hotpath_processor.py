@@ -677,6 +677,27 @@ class HotPathMemoryProcessor(BaseProcessor):
         self._ensure_session_header(stats=stats)
 
     def _ensure_session_header(self, *, stats: Optional[Dict[str, Any]] = None, initial: bool = False) -> None:
+        # In ephemeral/anonymous mode, do not inject or keep a session header
+        if getattr(self, "_ephemeral", False):
+            try:
+                if not self._context_aggregator:
+                    return
+                context = self._context_aggregator.user().context
+                messages = list(context.get_messages())
+                # Remove any existing session header
+                filtered = []
+                for m in messages:
+                    if isinstance(m, dict) and m.get("role") == "system":
+                        content = m.get("content", "")
+                        if isinstance(content, str) and content.startswith(self._session_header_tag):
+                            # skip
+                            continue
+                    filtered.append(m)
+                context.set_messages(filtered)
+            except Exception:
+                pass
+            return
+
         if not self._context_aggregator:
             return
         if self._session_tracker is None and stats is None:

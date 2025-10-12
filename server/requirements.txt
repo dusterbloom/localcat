@@ -23,19 +23,8 @@ nltk==3.9.1
 lmdb==1.5.1
 msgpack==1.0.8
 rapidfuzz==3.9.6
-# pycld3==0.22  # Language detection - temporarily disabled due to build issues
 spacy>=3.8.4  # UD parsing (download models separately) - updated for mlx-audio compatibility
 
-# ML dependencies (pinned for compatibility)
-scikit-learn==1.5.1  # Downgraded for coremltools compatibility
-torch==2.5.0  # Downgraded to tested version with coremltools
-coremltools==8.3.0
-
-# Note: vllm removed (not compatible with macOS)
-
-# DIET Intent Classification
-rasa[transformers]==3.6.20  # DIET implementation
-transformers>=4.21.0  # Transformer models for DIET
 
 # Audio Intelligence (Session 1: Speaker Recognition)
 speechbrain>=1.0.0  # Unified speaker recognition, emotion, prosody

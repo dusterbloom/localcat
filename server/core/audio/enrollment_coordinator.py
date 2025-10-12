@@ -520,7 +520,7 @@ class EnrollmentCoordinator(FrameProcessor):
                         self._memory.set_ephemeral_mode(True)
                 except Exception as e:
                     logger.warning(f"[EnrollmentCoordinator] Failed to set ephemeral mode: {e}")
-                
+
                 # Clear context history and remove Context Guide in anonymous mode
                 try:
                     if self._context_aggregator and hasattr(self._context_aggregator, 'set_anonymous_mode'):
@@ -528,6 +528,14 @@ class EnrollmentCoordinator(FrameProcessor):
                         logger.info("[EnrollmentCoordinator] Enabled anonymous mode in context aggregator")
                 except Exception as e:
                     logger.warning(f"[EnrollmentCoordinator] Failed to set anonymous mode in context: {e}")
+
+                # Disable audio intelligence in anonymous mode (privacy)
+                try:
+                    if self._audio_intel and hasattr(self._audio_intel, 'set_enabled'):
+                        self._audio_intel.set_enabled(False)
+                        logger.info("[EnrollmentCoordinator] Disabled audio intelligence for anonymous mode")
+                except Exception as e:
+                    logger.warning(f"[EnrollmentCoordinator] Failed to disable audio intelligence: {e}")
                 
                 await self.push_frame(TextFrame("Okay, let's chat anonymously. Nothing will be stored."), direction)
                 await self._router.update_state(EnrollmentState.CONVERSATION)
