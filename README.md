@@ -149,3 +149,19 @@ npm run dev
   - Switch memory backend: `MEMORY_BACKEND=hotmem` to use the service backend.
   - Disable audio intelligence: `AUDIO_INTELLIGENCE_ENABLED=false`.
   - Enrollment UX: `AUDIO_INTEL_INTRO_PIPELINE=true` for first-time guided enrollment.
+
+# Pre-commit hooks
+
+This repo includes pre-commit hooks for Python and the Next.js client.
+
+- Install hooks: `pip install pre-commit && pre-commit install`
+- Run on all files: `pre-commit run --all-files`
+
+What runs:
+- General hygiene: whitespace, EOF, YAML/TOML/JSON validity, conflict markers, secret keys, large files
+- Python (server/, scripts/): Black formatter + Flake8 linter
+- Frontend (client/): Prettier formatting + ESLint via `next lint`
+
+Notes:
+- The ESLint hook requires dependencies installed in `client/` (`npm i`).
+- Very large artifacts (e.g., `docs/locomo10.json`, `docs/mem0_github_repo.txt`, `server/uv.lock`) are excluded from Prettier.

@@ -419,22 +419,9 @@ class VoiceAgentFactory:
             ),
         )
 
-        # Add a compact, model-friendly guide for using memory context
-        # Keeps small models focused and avoids parroting tags
-        guide_default = (
-            "Context Guide:\n"
-            "- You may receive Memory Context bullets like '• [convo] ...' or '• [graph] ...'.\n"
-            "- Prefer [convo] over [graph]; [summary] only for recaps.\n"
-            "- Do not quote tags or bullets verbatim; integrate facts naturally.\n"
-            "- If bullets are irrelevant to the user’s request, ignore them.\n"
-            "- When uncertain, ask one short clarifying question.\n"
-            "- Keep replies brief and helpful."
-        )
-        guide_text = os.getenv("MEMORY_CONTEXT_GUIDE", guide_default)
-        try:
-            context.add_message({"role": "system", "content": guide_text})
-        except Exception:
-            pass
+        # Note: Context Guide removed - instructions for using memory bullets
+        # should be integrated into the system_instruction (persona prompt) instead
+        # This ensures proper message ordering: Session -> Persona -> Memory -> History
 
         # Store both context and aggregator for access in event handlers
         # Wrap with anonymous-aware functionality
@@ -448,7 +435,7 @@ class VoiceAgentFactory:
         """Create session tracker."""
         # Use database tracker if configured and available
         use_db = os.getenv("SESSION_USE_DATABASE", "false").lower() in ("true", "1", "yes")
-
+        
         if use_db and DB_TRACKER_AVAILABLE:
             logger.info("Using database-backed SessionTracker")
             tracker = DatabaseSessionTracker()

@@ -158,6 +158,13 @@ class MemoryStore:
             );
             CREATE INDEX IF NOT EXISTS idx_source_edge ON edge_source(edge_id);
             CREATE INDEX IF NOT EXISTS idx_source_turn ON edge_source(turn_id);
+
+            CREATE TABLE IF NOT EXISTS edge_usage(
+              edge_id TEXT PRIMARY KEY,
+              access_count INT DEFAULT 0,
+              last_accessed INT DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_edge_usage_last_accessed ON edge_usage(last_accessed DESC);
         """)
         
         # LMDB with proper settings (skip if lmdb_dir is None)
@@ -804,6 +811,43 @@ class MemoryStore:
             SELECT COUNT(*) FROM edge_source WHERE edge_id = ?
         """, (edge_id,)).fetchone()
         return result[0] if result else 0
+
+    def increment_edge_usage(self, edge_id: str, ts_ms: int) -> None:
+        """
+        Increment usage count and update last accessed time for an edge.
+
+        Args:
+            edge_id: Edge ID to update
+            ts_ms: Current timestamp in milliseconds
+        """
+        cur = self.sql.cursor()
+        cur.execute("""
+            INSERT INTO edge_usage (edge_id, access_count, last_accessed)
+            VALUES (?, 1, ?)
+            ON CONFLICT(edge_id) DO UPDATE SET
+                access_count = access_count + 1,
+                last_accessed = ?
+        """, (edge_id, ts_ms, ts_ms))
+        self.sql.commit()
+
+    def get_edge_usage(self, edge_id: str) -> Tuple[int, int]:
+        """
+        Get usage statistics for an edge.
+
+        Args:
+            edge_id: Edge ID to query
+
+        Returns:
+            Tuple of (access_count, last_accessed) with defaults (0, 0) if not found
+        """
+        cur = self.sql.cursor()
+        result = cur.execute("""
+            SELECT access_count, last_accessed FROM edge_usage WHERE edge_id = ?
+        """, (edge_id,)).fetchone()
+        
+        if result:
+            return result[0], result[1]
+        return 0, 0
 
     # ---------- FTS Search Methods ----------
     def _sanitize_fts_query(self, query: str) -> str:

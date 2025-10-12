@@ -452,48 +452,11 @@ class EnrollmentCoordinator(FrameProcessor):
         except Exception:
             pass
 
-    async def _handle_speaker_changed(
-        self,
-        frame: SpeakerChangedFrame,
-        direction: FrameDirection
-    ):
-        """
-        Handle speaker recognition and identity updates.
-        This is called when a speaker is recognized or auto-enrolled.
-        """
-        logger.info(
-            f"[EnrollmentCoordinator] Speaker changed: {frame.speaker_id} "
-            f"(confidence={frame.confidence:.2f}, name={frame.speaker_name}, auto_enrolled={frame.auto_enrolled})"
-        )
-        
-        # Update memory system with recognized identity
-        try:
-            if self._memory and hasattr(self._memory, 'set_user_identity'):
-                # Use speaker name if available, otherwise use speaker ID
-                name_or_id = frame.speaker_name or frame.speaker_id
-                self._memory.set_user_identity(name_or_id)
-                logger.info(f"[EnrollmentCoordinator] Updated memory user identity: {name_or_id}")
-        except Exception as e:
-            logger.warning(f"[EnrollmentCoordinator] Failed to update memory user identity: {e}")
-
-        # Update session tracker with identity if available  
-        try:
-            if hasattr(self, '_session_tracker') and self._session_tracker:
-                name_or_id = frame.speaker_name or frame.speaker_id
-                self._session_tracker.set_user_identity(name_or_id)
-                logger.info(f"[EnrollmentCoordinator] Updated session tracker identity: {name_or_id}")
-        except Exception as e:
-            logger.warning(f"[EnrollmentCoordinator] Failed to update session tracker: {e}")
-
-        # Update pipeline router with speaker info for other components
-        try:
-            await self._router.update_state(
-                EnrollmentState.CONVERSATION,
-                speaker_id=frame.speaker_id,
-                consistency=frame.confidence
-            )
-        except Exception as e:
-            logger.warning(f"[EnrollmentCoordinator] Failed to update router state: {e}")
+    # NOTE: A duplicate _handle_speaker_changed was previously defined later in this
+    # file, which unconditionally transitioned to CONVERSATION and bypassed the
+    # onboarding gating. That method has been removed to preserve the intended
+    # flow defined above (auto-enroll -> NAME_CAPTURE; returning user -> CONVERSATION
+    # with audio intelligence paused and next transcription suppressed).
 
     async def _handle_transcription(self, frame: TranscriptionFrame, direction: FrameDirection):
         """Handle user transcriptions during choice and name capture flows."""

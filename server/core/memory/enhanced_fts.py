@@ -6,18 +6,30 @@ SOTA full-text search for the memory system
 import re
 import math
 import time
-from typing import List, Tuple, Dict, Set
+from typing import List, Tuple, Dict, Set, Optional
+from functools import lru_cache
 from loguru import logger
+
+# Import constants for cache configuration
+try:
+    from .memory_constants import CacheConfig
+except ImportError:
+    # Fallback if constants not available
+    class CacheConfig:
+        QUERY_EXPANSION_CACHE_SIZE = 128
+        BM25_STATS_TTL_SECONDS = 60
+
 
 class EnhancedFTS:
     """
     State-of-the-Art FTS with BM25 ranking, query expansion, and multi-factor scoring
+    WITH CACHING for improved performance
     """
-    
+
     def __init__(self, store):
         self.store = store
         self._init_enhanced_schema()
-        
+
         # Query expansion dictionary
         self.expansions = {
             "live": ["reside", "dwell", "inhabit", "stay", "located"],
@@ -31,6 +43,16 @@ class EnhancedFTS:
             "food": ["eat", "meal", "cuisine", "dish"],
             "travel": ["trip", "journey", "visit", "go"],
         }
+
+        # BM25 statistics cache (TTL-based)
+        self._stats_cache: Optional[Tuple[int, float]] = None
+        self._stats_cache_time: float = 0
+        self._stats_ttl: float = CacheConfig.BM25_STATS_TTL_SECONDS
+
+        # Bind cached query expansion method
+        self._cached_expand_query = lru_cache(maxsize=CacheConfig.QUERY_EXPANSION_CACHE_SIZE)(
+            self._expand_query_impl
+        )
     
     def _init_enhanced_schema(self):
         """Initialize enhanced FTS schema with BM25 support"""
@@ -82,35 +104,70 @@ class EnhancedFTS:
     
     def expand_query(self, query: str) -> str:
         """
-        Intelligently expand query with synonyms and related terms
-        
+        Intelligently expand query with synonyms and related terms (CACHED)
+
         Args:
             query: Original query string
-            
+
         Returns:
             Expanded query with OR terms for better recall
         """
+        # Delegate to cached implementation
+        return self._cached_expand_query(query)
+
+    def _expand_query_impl(self, query: str) -> str:
+        """
+        Internal implementation of query expansion (cached via LRU)
+
+        This method should NOT be called directly - use expand_query() instead.
+        """
         # Clean and normalize terms
-        import re
         cleaned = re.sub(r'[^\w\s]', ' ', query.lower())
         terms = cleaned.split()
-        
+
+        # Common stopwords to filter out
+        stopwords = {"a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+                     "have", "has", "had", "do", "does", "did", "will", "would", "could",
+                     "should", "may", "might", "can", "of", "at", "by", "for", "with", "to", "in", "on"}
+
         expanded_terms = []
         seen = set()
-        
-        for term in terms:
-            if term and term not in seen:
-                expanded_terms.append(f'"{term}"')
+
+        # Limit to first 5 terms to prevent query explosion
+        for term in terms[:5]:
+            if term and term not in seen and term not in stopwords and len(term) > 2:
+                # Remove quotes - FTS5 needs bareword matching, not exact phrase
+                expanded_terms.append(term)
                 seen.add(term)
-                
-                # Add synonyms for meaningful terms
+
+                # Add selective synonyms (max 2 per term)
                 if term in self.expansions:
-                    for synonym in self.expansions[term]:
+                    for synonym in self.expansions[term][:2]:
                         if synonym not in seen:
-                            expanded_terms.append(f'"{synonym}"')
+                            expanded_terms.append(synonym)
                             seen.add(synonym)
-        
+
         return " OR ".join(expanded_terms) if expanded_terms else ""
+
+    def _get_collection_stats(self) -> Tuple[int, float]:
+        """
+        Get collection statistics with TTL-based caching
+
+        Returns:
+            Tuple of (total_docs, avg_doc_length)
+        """
+        now = time.time()
+
+        # Check cache validity
+        if self._stats_cache is None or (now - self._stats_cache_time) > self._stats_ttl:
+            # Cache miss or expired - fetch from DB
+            cur = self.store.sql.cursor()
+            stats = cur.execute("SELECT COUNT(*), AVG(document_length) FROM chunks_content").fetchone()
+            self._stats_cache = stats if stats else (0, 100)
+            self._stats_cache_time = now
+            logger.debug(f"[EnhancedFTS] BM25 stats cache refreshed: {self._stats_cache}")
+
+        return self._stats_cache
     
     def calculate_bm25_score(self, term_freq: float, doc_length: int, avg_doc_length: float, 
                            total_docs: int, docs_with_term: int, k1: float = 1.2, b: float = 0.75) -> float:
@@ -133,36 +190,48 @@ class EnhancedFTS:
         tf_component = (term_freq * (k1 + 1)) / (term_freq + k1 * (1 - b + b * doc_length / avg_doc_length))
         return idf * tf_component
     
-    def enhanced_search(self, query: str, limit: int = 10, eids: List[str] = None) -> List[Tuple[float, str, str, int]]:
+    def enhanced_search(self, query: str, limit: int = 10, session_ids: List[str] = None, eids: List[str] = None) -> List[Tuple[float, str, str, int]]:
         """
-        SOTA FTS search with BM25 ranking and multi-factor scoring
-        
+        SOTA FTS search with BM25 ranking and multi-factor scoring (WITH CACHING)
+
         Args:
             query: Search query
             limit: Maximum results
-            eids: Optional entity ID filter for scoped search
-            
+            session_ids: Optional session ID filter for scoped search (preferred for convo)
+            eids: Optional entity ID filter (kept for compatibility)
+
         Returns:
             List of (score, text, eid, timestamp) tuples
         """
         if not query.strip():
             return []
-        
-        expanded_query = self.expand_query(query)
+
+        expanded_query = self.expand_query(query)  # Uses LRU cache
         logger.debug(f"[EnhancedFTS] Expanded query: {expanded_query}")
-        
+
         cur = self.store.sql.cursor()
-        
-        # Get collection statistics for BM25
-        stats = cur.execute("SELECT COUNT(*), AVG(document_length) FROM chunks_content").fetchone()
-        total_docs, avg_doc_length = stats if stats else (0, 100)
-        
+
+        # Get collection statistics for BM25 (WITH TTL CACHE)
+        total_docs, avg_doc_length = self._get_collection_stats()
+
         if total_docs == 0:
             return []
         
         try:
             # Base query with BM25
-            if eids:
+            if session_ids:
+                placeholders = ','.join('?' * len(session_ids))
+                sql = f"""
+                    SELECT c.text AS text, c.eid, c.ts, c.term_frequency, c.document_length, c.entity_boost,
+                           bm25(chunks_fts_enhanced) AS bm25_score
+                    FROM chunks_fts_enhanced 
+                    JOIN chunks_content c ON chunks_fts_enhanced.rowid = c.rowid
+                    WHERE chunks_fts_enhanced MATCH ? AND c.session_id IN ({placeholders})
+                    ORDER BY bm25_score DESC, c.ts DESC
+                    LIMIT ?
+                """
+                params = [expanded_query] + session_ids + [limit * 2]
+            elif eids:
                 placeholders = ','.join('?' * len(eids))
                 sql = f"""
                     SELECT c.text AS text, c.eid, c.ts, c.term_frequency, c.document_length, c.entity_boost,

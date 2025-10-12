@@ -18,7 +18,8 @@ from pipecat.processors.frame_processor import FrameProcessor as BaseProcessor, 
 
 from .memory_store import MemoryStore, Paths
 from .memory_hotpath import HotMemory
-from .context import format_bullets as _fmt_bullets, build_message as _build_msg, MemoryContextFrame
+from .context import MemoryContextFrame
+from .context_formatter import ContextFormatter
 from .session_tracker import SessionTracker
 
 # Import intent service for smart processing
@@ -142,10 +143,18 @@ class HotPathMemoryProcessor(BaseProcessor):
         except Exception:
             self._interim_min_words = 6
         # Support both MEMORY_* and legacy HOTMEM_* envs for injection settings
-        self._inject_role = (os.getenv("MEMORY_INJECT_ROLE") or os.getenv("HOTMEM_INJECT_ROLE") or "user").strip().lower()
+        self._inject_role = (os.getenv("MEMORY_INJECT_ROLE") or os.getenv("HOTMEM_INJECT_ROLE") or "system").strip().lower()
         if self._inject_role not in ("user", "system"):
-            self._inject_role = "user"
-        self._inject_header = os.getenv("MEMORY_INJECT_HEADER") or os.getenv("HOTMEM_INJECT_HEADER") or "[Memory context]"
+            self._inject_role = "system"
+        self._inject_header = os.getenv("MEMORY_INJECT_HEADER") or os.getenv("HOTMEM_INJECT_HEADER") or "Use the following factual context if helpful."
+
+        # Initialize context formatter for bullet formatting and message building
+        self._context_formatter = ContextFormatter(
+            max_bullets=self._bullets_max,
+            inject_role=self._inject_role,
+            inject_header=self._inject_header
+        )
+
         self._trace_frames = os.getenv("MEMORY_TRACE_FRAMES", "false").lower() in ("1", "true", "yes")
         self._handshake_enabled = os.getenv("MEMORY_ENABLE_HANDSHAKE", "true").lower() in ("1", "true", "yes")
         # Retrieval source controls (Phase 2-ready; used now for convo indexing)
@@ -206,6 +215,8 @@ class HotPathMemoryProcessor(BaseProcessor):
         stats = None
         if self._session_tracker:
             stats = self._session_tracker.start_session(self._user_id, self._session_id)
+        else:
+            logger.warning("[HotMem] No session tracker available during initialization")
         self._ensure_session_header(stats=stats, initial=True)
         # Provide role-aware IDs to HotMemory
         try:
@@ -216,12 +227,7 @@ class HotPathMemoryProcessor(BaseProcessor):
             pass
         logger.debug(f"HotPathMemoryProcessor initialized for user: {user_id}")
 
-        # Ensure session is registered with the tracker up-front so headers show correct counts
-        try:
-            if self._session_tracker is not None:
-                self._session_tracker.start_session(self._user_id, self._session_id)
-        except Exception:
-            pass
+        # Session already registered above - no need to call start_session again
 
         # Sliding window context settings
         try:
@@ -407,27 +413,121 @@ class HotPathMemoryProcessor(BaseProcessor):
                 return True
         return False
 
+    def _is_quality_conversation(self, text: str) -> bool:
+        """
+        Quality filter for conversation storage (Layer 2 defense)
+        Returns True if the text should be stored, False if it should be filtered out.
+
+        Filters out:
+        1. Meta-commentary about the conversation itself
+        2. Confusion indicators
+        3. Overly short or vague utterances
+        4. System-like messages
+
+        Example filtered texts:
+        - "think it's just confusing"
+        - "Context unclear"
+        - "I don't know"
+        - "that's confusing"
+        """
+        if not text or not text.strip():
+            return False
+
+        t = text.lower().strip()
+
+        # Filter very short utterances (< 10 chars)
+        if len(t) < 10:
+            return False
+
+        # Filter meta-commentary about confusion or conversation quality
+        confusion_patterns = [
+            "confus",  # confusing, confused
+            "unclear",
+            "don't understand",
+            "doesn't make sense",
+            "not sure what",
+            "what do you mean",
+            "what are you",
+            "i don't know",
+            "dunno",
+            "no idea",
+            "meta",
+            "context unclear",
+            "repetitive",
+        ]
+
+        for pattern in confusion_patterns:
+            if pattern in t:
+                logger.debug(f"[HotMem] Filtering confused/meta utterance: '{text[:50]}...'")
+                return False
+
+        # Filter system-like messages
+        system_patterns = [
+            "[memory",
+            "[session",
+            "[system",
+            "context]",
+            "summary:",
+        ]
+
+        for pattern in system_patterns:
+            if pattern in t:
+                logger.debug(f"[HotMem] Filtering system-like message: '{text[:50]}...'")
+                return False
+
+        # Filter utterances that are just questions without assertions
+        # (questions don't provide factual context for retrieval)
+        if t.endswith("?"):
+            # Check if it contains any facts or assertions (has verbs besides question words)
+            assertion_verbs = [" am ", " is ", " are ", " was ", " were ", " have ", " has ", " had ", " like ", " love ", " want ", " need "]
+            has_assertion = any(verb in f" {t} " for verb in assertion_verbs)
+            if not has_assertion:
+                logger.debug(f"[HotMem] Filtering pure question without assertions: '{text[:50]}...'")
+                return False
+
+        return True
+
     def set_user_identity(self, user_id: str) -> None:
         """Switch the active user identity for headers and future indexing."""
         try:
             user_id = (user_id or "").strip() or self._user_id
             if user_id != self._user_id:
-                self._user_id = user_id
-                logger.info(f"[HotMem] User identity set to: {self._user_id}")
-                # Namespaced 'you' so future facts are user-scoped
-                try:
-                    self.hot.user_eid = f"you:{self._user_id}"
-                except Exception:
-                    pass
-                # Provide scope for retrieval
-                try:
-                    self.hot.current_user_id = self._user_id
-                    self.hot.current_session_id = self._session_id
-                except Exception:
-                    pass
-                self._ensure_session_header()
+                # Store original user_id for session tracking to avoid case sensitivity issues
+                self._display_user_id = user_id  # For display purposes
+                # Keep the original case for session tracking compatibility
+                session_user_id = self._normalize_user_id_for_session(user_id)
+                
+                if session_user_id != self._user_id:
+                    logger.info(f"[HotMem] User identity changed from '{self._user_id}' to '{session_user_id}' (display: '{user_id}')")
+                    self._user_id = session_user_id
+                    # Namespaced 'you' so future facts are user-scoped
+                    try:
+                        self.hot.user_eid = f"you:{self._user_id}"
+                    except Exception:
+                        pass
+                    # Provide scope for retrieval
+                    try:
+                        self.hot.current_user_id = self._user_id
+                        self.hot.current_session_id = self._session_id
+                    except Exception:
+                        pass
+                    self._ensure_session_header()
         except Exception as e:
             logger.warning(f"[HotMem] Failed to set user identity: {e}")
+    
+    def _normalize_user_id_for_session(self, user_id: str) -> str:
+        """Normalize user_id for session tracking to avoid case sensitivity issues.
+        
+        This ensures that session tracking works consistently regardless of
+        how the user's name is capitalized by speaker recognition.
+        """
+        # Use the original environment variable value if available
+        env_user_id = os.getenv("USER_ID", "")
+        if env_user_id.lower() == user_id.lower():
+            return env_user_id
+        
+        # Otherwise use lowercase for consistency
+        return user_id.lower()
     
     async def _process_transcription(self, frame: TranscriptionFrame, direction: FrameDirection):
         """Process final user transcription with intent awareness"""
@@ -521,13 +621,16 @@ class HotPathMemoryProcessor(BaseProcessor):
                 self._pending_bullets = []
 
             # Store conversation text for retrieval (needed for summarization and optional FTS)
+            # LAYER 2 DEFENSE: Apply quality filter before storing
             try:
-                if text.strip():
+                if text.strip() and self._is_quality_conversation(text):
                     now_ts = int(time.time() * 1000)
                     # Store with user_id for FTS indexing and cross-session retrieval
                     # session_id is passed as 4th parameter for session tracking
                     self.store.enqueue_mention(self._user_id, text.strip(), now_ts, self._session_id, self._turn_id)
                     self.store.flush_if_needed()
+                elif text.strip():
+                    logger.debug(f"[HotMem] Filtered out low-quality conversation: '{text[:50]}...'")
             except Exception as e:
                 logger.warning(f"[HotMem] Storing conversation failed: {e}")
 
@@ -566,12 +669,25 @@ class HotPathMemoryProcessor(BaseProcessor):
             if not self._context_aggregator:
                 logger.warning("[HotMem] No context aggregator available for injection")
                 return
-                
+
             # Get the context object from the user aggregator
             context = self._context_aggregator.user().context
             messages = list(context.get_messages())
-            bullets = _fmt_bullets(self._pending_bullets, max_bullets=getattr(self, "_bullets_max", 3))
-            memory_message = _build_msg(self._inject_role, self._inject_header, bullets)
+
+            # Use ContextFormatter for better bullet cleaning and formatting
+            bullets = self._context_formatter.format_bullets(
+                self._pending_bullets,
+                max_bullets=getattr(self, "_bullets_max", 3)
+            )
+            # Optionally truncate bullets to fit within reasonable context length
+            bullets = self._context_formatter.truncate_bullets(bullets, max_length=500)
+
+            # Build the memory message using the formatter
+            memory_message = self._context_formatter.build_message(
+                self._inject_role,
+                self._inject_header,
+                bullets
+            )
 
             logger.debug(f"[HotMem] Injecting {len(bullets)} memory bullets directly into context")
             try:
@@ -585,12 +701,15 @@ class HotPathMemoryProcessor(BaseProcessor):
                 logger.debug(f"[HotMem] Memory bullets: {bullets[:2]}")
 
             target_idx = self._find_context_message(messages, self._inject_header)
-            if bullets:
+            if bullets and memory_message:
                 if target_idx is None:
-                    insert_idx = self._session_header_index(messages)
+                    # Insert after persona prompt, before conversation history
+                    insert_idx = self._persona_prompt_index(messages)
                     messages.insert(insert_idx, memory_message)
+                    logger.debug(f"[HotMem] Inserted memory context at position {insert_idx} (after persona prompt)")
                 else:
                     messages[target_idx] = memory_message
+                    logger.debug(f"[HotMem] Updated existing memory context at position {target_idx}")
             else:
                 if target_idx is not None:
                     messages.pop(target_idx)
@@ -704,7 +823,13 @@ class HotPathMemoryProcessor(BaseProcessor):
             return
         context = self._context_aggregator.user().context
         messages = list(context.get_messages())
-        stats = stats or (self._session_tracker.get_stats(self._user_id, self._session_id) if self._session_tracker else {})
+        
+        # Get session stats if not provided
+        if stats is None and self._session_tracker is not None:
+            stats = self._session_tracker.get_stats(self._user_id, self._session_id)
+        elif self._session_tracker is None:
+            logger.debug("[HotMem] No session tracker available")
+        
         header_message = self._build_session_header(stats)
         if not header_message:
             return
@@ -726,6 +851,13 @@ class HotPathMemoryProcessor(BaseProcessor):
             )
             session_elapsed = float(stats.get("session_elapsed", time.time() - self._session_start))
             total_time = float(stats.get("total_time_seconds", session_elapsed))
+            
+            # Debug logging (can be removed after fixing the regression)
+            if total_sessions == 0:
+                logger.warning(f"[HotMem] Session regression detected - total_sessions=0 for {self._user_id}/{self._session_id}")
+                logger.debug(f"[HotMem] Available stats: {stats}")
+            else:
+                logger.debug(f"[HotMem] Building session header - total_sessions: {total_sessions}, current_session: {stats.get('current_session')}")
             # Use coarse-grained values to preserve LLM KV cache
             # Only show date without time to avoid cache invalidation
             system_date = time.strftime("%Y-%m-%d")
@@ -737,7 +869,12 @@ class HotPathMemoryProcessor(BaseProcessor):
             total_minutes_rounded = (total_minutes // 5) * 5
 
             # Show anonymous label in ephemeral mode
-            display_user = "anonymous" if getattr(self, "_ephemeral", False) else self._user_id
+            if getattr(self, "_ephemeral", False):
+                display_user = "anonymous"
+            elif hasattr(self, "_display_user_id"):
+                display_user = self._display_user_id  # Use the original case for display
+            else:
+                display_user = self._user_id
 
             lines = [
                 self._session_header_tag,
@@ -769,6 +906,55 @@ class HotPathMemoryProcessor(BaseProcessor):
         if idx is not None:
             return idx + 1
         return 1 if len(messages) > 1 else len(messages)
+
+    def _persona_prompt_index(self, messages: List[dict]) -> int:
+        """Find insertion point after persona prompt, before conversation history.
+
+        Returns the index where memory context should be inserted:
+        - After the AI persona/system prompt
+        - Before the conversation history (user/assistant exchanges)
+
+        P0.4: Explicit ordering replaces keyword heuristics for robustness.
+        Correct order: Session Header → Persona Prompt → [Memory Context] → Conversation
+        """
+        # P0.4: Use explicit ordering instead of keyword matching
+        # Phase 1: Identify system message indices (excluding known special messages)
+        session_header_idx = None
+        memory_context_idx = None
+        persona_prompt_idx = None
+
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, dict) or msg.get('role') != 'system':
+                continue
+
+            content = msg.get('content', '').strip()
+
+            # Identify special system messages by their headers
+            if content.startswith(self._session_header_tag):
+                session_header_idx = i
+            elif content.startswith(self._inject_header):
+                memory_context_idx = i
+            elif persona_prompt_idx is None:
+                # First unrecognized system message is the persona prompt
+                # (assumes persona prompt doesn't start with session/memory headers)
+                persona_prompt_idx = i
+
+        # Phase 2: Determine insertion point based on explicit ordering
+        # Memory context should go after session header and persona prompt
+        if persona_prompt_idx is not None:
+            # Insert immediately after persona prompt
+            return persona_prompt_idx + 1
+        elif session_header_idx is not None:
+            # No persona found, insert after session header
+            return session_header_idx + 1
+
+        # Phase 3: Fallback - insert before first user message (after all system messages)
+        for i, msg in enumerate(messages):
+            if isinstance(msg, dict) and msg.get('role') == 'user':
+                return i
+
+        # Last resort: append to end (empty conversation)
+        return len(messages)
 
     def _format_duration(self, seconds: float) -> str:
         seconds = max(float(seconds), 0.0)
@@ -835,7 +1021,27 @@ class HotPathMemoryProcessor(BaseProcessor):
         import urllib.request
         import urllib.error
 
-        sys_prompt = "You are a concise summarizer. Summarize the user's recent utterances as helpful context bullets. Keep it under 400 characters. Provide ONLY the final summary."
+        # LAYER 3 DEFENSE: Improved prompt to extract facts, not confusion
+        sys_prompt = """You are a fact-focused summarizer. Extract only clear, actionable facts from the user's utterances.
+
+RULES:
+1. Extract ONLY positive facts (what they like, want, have, do)
+2. IGNORE negations, confusion, and meta-commentary
+3. Skip phrases like "I don't know", "confusing", "unclear"
+4. Focus on names, preferences, experiences, and concrete details
+5. Keep under 400 characters
+
+EXAMPLES:
+Input: "I'm not interested in this classic detail, it's confusing"
+Output: [skip - only negation and confusion]
+
+Input: "My name is John and I love hiking in Colorado"
+Output: "User's name is John. Loves hiking in Colorado."
+
+Input: "I have a dog named Max and I'm not sure about cats"
+Output: "Has a dog named Max."
+
+Provide ONLY the final summary or nothing if no clear facts exist."""
 
         # Build OpenAI-compatible chat request
         payload = {

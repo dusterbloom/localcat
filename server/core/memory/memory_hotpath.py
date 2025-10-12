@@ -141,6 +141,19 @@ class HotMemory:
             lang=config.coreference.lang
         ) if config.coreference.enabled else None
 
+        # P0.3: Entity enrichment cache to avoid repeated spaCy tree traversals
+        # Maps (doc_id, token_idx, max_length) -> (root, enriched) tuple
+        # Using doc_id (memory address) as cache key since tokens aren't hashable
+        try:
+            from .memory_constants import CacheConfig
+            self._enrichment_cache_size = CacheConfig.ENTITY_ENRICHMENT_CACHE_SIZE
+        except (ImportError, AttributeError):
+            self._enrichment_cache_size = 256
+
+        self._enrichment_cache: Dict[Tuple[int, int, int], Tuple[str, str]] = {}
+        self._enrichment_cache_hits = 0
+        self._enrichment_cache_misses = 0
+
     def prewarm(self, lang: str = "en") -> None:
         """Load NLP resources up-front to avoid first-turn latency."""
         try:
@@ -290,15 +303,10 @@ class HotMemory:
                 # Score confidence
                 conf = self.confidence.score(edge_obj, context_obj)
 
-                # Apply negation to verb-based relations when negation detected
-                if neg_count > 0:
-                    try:
-                        self.store.negate_edge(s, r, d, conf=0.6, now_ts=now_ts)
-                        logger.debug(f"[HotMem] Negated: ({s}, {r}, {d})")
-                    except Exception as e:
-                        logger.warning(f"HotMem negation failed for ({s}, {r}, {d}): {e}")
-                else:
-                    self.store.observe_edge(s, r, d, conf, now_ts)
+                # CRITICAL FIX: Removed global negation logic
+                # Negation now handled per-triple during extraction
+                # This prevents accidentally negating ALL facts when only some are negated
+                self.store.observe_edge(s, r, d, conf, now_ts)
 
                 # Link edge to conversation turn (provenance)
                 edge_id = self.store.edge_id(s, r, d)
@@ -338,6 +346,9 @@ class HotMemory:
         """
         Extract entities and relations using USGS 27-pattern approach
         Returns: (entities, triples, negation_count, doc, entity_aliases)
+
+        CRITICAL FIX: Track negation per-token, not globally.
+        This prevents negating ALL triples when only some are negated.
         """
         nlp = _load_nlp(lang)
 
@@ -347,19 +358,42 @@ class HotMemory:
         doc = nlp(text)
         entities = set()
         triples = []
-        neg_count = 0
 
         # Initialize per-extraction tracking
         self._entity_aliases = {}  # enriched -> base mapping
         self._enriched_entities = set()  # base entities that were enriched
-        
+
+        # Stage 0: Build negation map (which tokens are negated)
+        # This allows us to check if a verb/head is negated before extracting.
+        # Important: spaCy often attaches 'neg' to an AUX (e.g., "do" in "don't like").
+        # We propagate negation from the AUX up to its governing lexical predicate
+        # so that handlers checking the main verb see the negation.
+        negated_tokens = set()
+        for token in doc:
+            if token.dep_ == "neg":
+                head = token.head
+                # Always mark the immediate head (covers copula cases like "isn't happy")
+                negated_tokens.add(head.i)
+                # If the head is an auxiliary, walk up to the governing predicate
+                # (e.g., do/does/did/have/has/had → main verb)
+                walk = head
+                while walk.pos_ == "AUX" and walk.head != walk:
+                    walk = walk.head
+                # Mark the governing predicate if different
+                if walk.i != head.i:
+                    negated_tokens.add(walk.i)
+
+        # Store negation map for extraction handlers to check
+        self._negated_tokens = negated_tokens
+        neg_count = len(negated_tokens)  # Keep for backward compatibility
+
         # Stage 1: Build entity map
         entity_map = self._build_entity_map(doc, entities)
-        
+
         # Stage 2: Process all 27 dependency types
         for token in doc:
             dep = token.dep_
-            
+
             # Core grammatical relations
             if dep in {"nsubj", "nsubjpass"}:
                 self._extract_subject(token, entity_map, triples, entities)
@@ -371,7 +405,7 @@ class HotMemory:
                 self._extract_attribute(token, entity_map, triples, entities)
             elif dep == "acomp":
                 self._extract_acomp(token, entity_map, triples, entities)
-            
+
             # Modifiers
             elif dep == "amod":
                 self._extract_amod(token, entity_map, triples, entities)
@@ -381,7 +415,7 @@ class HotMemory:
                 self._extract_nummod(token, entity_map, triples, entities)
             elif dep == "nmod":
                 self._extract_nmod(token, entity_map, triples, entities)
-            
+
             # Structural
             elif dep == "compound":
                 self._extract_compound(token, entity_map, triples, entities)
@@ -395,7 +429,7 @@ class HotMemory:
                 self._extract_prep(token, entity_map, triples, entities)
             elif dep == "pobj":
                 pass  # Handled by prep
-            
+
             # Clausal
             elif dep == "acl":
                 self._extract_acl(token, entity_map, triples, entities)
@@ -407,16 +441,14 @@ class HotMemory:
                 self._extract_csubj(token, entity_map, triples, entities)
             elif dep == "xcomp":
                 self._extract_xcomp(token, entity_map, triples, entities)
-            
+
             # Special
             elif dep == "agent":
                 self._extract_agent(token, entity_map, triples, entities)
             elif dep == "oprd":
                 self._extract_oprd(token, entity_map, triples, entities)
-            
-            # Count negations
-            elif dep == "neg":
-                neg_count += 1
+
+            # Note: negation tokens handled in Stage 0
 
         return list(entities), triples, neg_count, doc, self._entity_aliases
     
@@ -538,6 +570,15 @@ class HotMemory:
         import time
         start = time.perf_counter()
 
+        # P0.3: Check enrichment cache first (doc_id, token_idx, max_length)
+        # Use id(token.doc) as cache key since spaCy tokens aren't hashable
+        cache_key = (id(token.doc), token.i, max_length)
+        if cache_key in self._enrichment_cache:
+            self._enrichment_cache_hits += 1
+            return self._enrichment_cache[cache_key]
+
+        self._enrichment_cache_misses += 1
+
         # Get root entity (canonical form) - NEVER MODIFIED
         # IMPORTANT: entity_map may already contain full noun chunks ("red car"),
         # so derive the true head from the token itself before consulting the map.
@@ -622,6 +663,18 @@ class HotMemory:
         if enriched != root:
             self._entity_aliases[enriched] = root
 
+        # P0.3: Store in cache (with LRU eviction)
+        if len(self._enrichment_cache) >= self._enrichment_cache_size:
+            # Simple FIFO eviction (could be optimized to true LRU if needed)
+            # Remove oldest 25% of entries to avoid frequent evictions
+            excess = len(self._enrichment_cache) - int(self._enrichment_cache_size * 0.75)
+            if excess > 0:
+                keys_to_remove = list(self._enrichment_cache.keys())[:excess]
+                for key in keys_to_remove:
+                    del self._enrichment_cache[key]
+
+        self._enrichment_cache[cache_key] = (root, enriched)
+
         return root, enriched
 
     def _is_person2_pronoun(self, token) -> bool:
@@ -640,6 +693,19 @@ class HotMemory:
         person = token.morph.get("Person")
         return person and person[0] == "2"
 
+    def _is_negated(self, token) -> bool:
+        """
+        Check if a token (typically a verb/predicate) is negated.
+
+        Returns:
+            True if the token is in the negated set, False otherwise
+
+        Example:
+            "I'm NOT interested" → verb "interested" returns True
+            "I like cats" → verb "like" returns False
+        """
+        return hasattr(self, '_negated_tokens') and token.i in self._negated_tokens
+
     def _extract_subject(self, token, entity_map, triples, entities):
         """nsubj, nsubjpass - nominal subject"""
         # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
@@ -648,7 +714,13 @@ class HotMemory:
 
         subj = self._get_entity(token, entity_map)
         head = token.head
-        
+
+        # CRITICAL FIX: Skip extraction if the verb/predicate is negated
+        # This prevents extracting "interested" from "NOT interested"
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated verb: {head.text} in '{head.doc.text[:50]}...'")
+            return
+
         # Passive: "My son is named Jake"
         if token.dep_ == "nsubjpass" and head.pos_ == "VERB":
             verb = head.lemma_.lower()
@@ -772,6 +844,11 @@ class HotMemory:
         root_obj, enriched_obj = self._get_entity_with_context(token, entity_map)
         head = token.head
 
+        # CRITICAL FIX: Skip extraction if the verb is negated
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated verb: {head.text} in '{head.doc.text[:50]}...'")
+            return
+
         if head.pos_ == "VERB":
             for child in head.children:
                 if child.dep_ in {"nsubj", "nsubjpass"}:
@@ -792,6 +869,11 @@ class HotMemory:
         root_iobj, enriched_iobj = self._get_entity_with_context(token, entity_map)
         head = token.head
 
+        # CRITICAL FIX: Skip extraction if the verb is negated
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated verb: {head.text} in '{head.doc.text[:50]}...'")
+            return
+
         # Find subject
         for child in head.children:
             if child.dep_ in {"nsubj", "nsubjpass"}:
@@ -808,8 +890,14 @@ class HotMemory:
     def _extract_attribute(self, token, entity_map, triples, entities):
         """attr - attribute (copula complement)"""
         root_attr, enriched_attr = self._get_entity_with_context(token, entity_map)
+        head = token.head
 
-        for child in token.head.children:
+        # CRITICAL FIX: Skip extraction if the copula is negated
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated copula: {head.text} in '{head.doc.text[:50]}...'")
+            return
+
+        for child in head.children:
             if child.dep_ in {"nsubj", "nsubjpass"}:
                 # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
                 if self._is_person2_pronoun(child):
@@ -826,6 +914,11 @@ class HotMemory:
         # Handle patterns like "Caroline is single"
         root_adj, enriched_adj = self._get_entity_with_context(token, entity_map)
         head = token.head
+
+        # CRITICAL FIX: Skip extraction if the copula is negated
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated copula: {head.text} in '{head.doc.text[:50]}...'")
+            return
 
         # Find subject of copula
         for child in head.children:
@@ -919,6 +1012,12 @@ class HotMemory:
         """ccomp - clausal complement"""
         # Handle patterns like "Melanie has read [Nothing is Impossible]"
         head = token.head
+
+        # CRITICAL FIX: Skip extraction if the verb is negated
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated verb: {head.text} in '{head.doc.text[:50]}...'")
+            return
+
         if head.pos_ == "VERB":
             verb = head.lemma_.lower()
             if verb in {"read", "write", "say", "think", "know"}:
@@ -950,6 +1049,12 @@ class HotMemory:
         """xcomp - open clausal complement"""
         # Handle patterns like "likes reading", "wants to go"
         head = token.head
+
+        # CRITICAL FIX: Skip extraction if the main verb is negated
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated verb: {head.text} in '{head.doc.text[:50]}...'")
+            return
+
         if head.pos_ == "VERB":
             # Find subject of main verb (Caroline is nsubj of "likes")
             subj = None
@@ -1210,8 +1315,14 @@ class HotMemory:
         if not s_norm or not d_norm or len(d_norm) < 2:
             return False
 
-        # Ignore filler subjects/objects
-        stop_entities = {"it", "this", "that", "there", "here", "been"}
+        # Ignore filler subjects/objects (EXPANDED)
+        stop_entities = {
+            "it", "this", "that", "there", "here", "been",
+            # wh-words (typically questions, not facts)
+            "which", "what", "who", "where", "when", "how", "why",
+            # vague references
+            "thing", "stuff", "something", "anything", "everything", "nothing"
+        }
         if s_norm in stop_entities or d_norm in stop_entities:
             return False
 
@@ -1235,6 +1346,14 @@ class HotMemory:
             "known_as",
         }
         if r_norm in stop_relations:
+            return False
+
+        # Ignore low-information "is" or "quality" relations with subjective adjectives
+        quality_adjectives = {
+            "amazing", "good", "bad", "nice", "fine", "ok", "okay", "great",
+            "awesome", "terrible", "horrible", "wonderful", "fantastic", "excellent"
+        }
+        if r_norm in {"is", "quality"} and d_norm in quality_adjectives:
             return False
 
         # Guard generic "is" facts unless subject is meaningful
