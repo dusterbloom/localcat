@@ -60,6 +60,14 @@ class MLXKokoroTTSService(TTSService):
 
         logger.debug(f"✅ MLX Kokoro TTS initialized with voice: {self._voice}")
 
+    def can_generate_metrics(self) -> bool:
+        """Check if this service can generate processing metrics.
+
+        Returns:
+            True, as this service supports metrics generation.
+        """
+        return True
+
     def _initialize_mlx_pipeline(self):
         """Initialize the MLX Kokoro pipeline"""
         try:
@@ -190,6 +198,10 @@ class MLXKokoroTTSService(TTSService):
         overall_start_time = time.time()
         first_audio_sent = False
 
+        # Start metrics tracking
+        await self.start_ttfb_metrics()
+        await self.start_processing_metrics()
+
         yield TTSStartedFrame()
 
         try:
@@ -214,6 +226,7 @@ class MLXKokoroTTSService(TTSService):
                         if not first_audio_sent:
                             ttfb = (time.time() - overall_start_time) * 1000
                             logger.debug(f"🚀 MLX KOKORO TTFB: {ttfb:.1f}ms")
+                            await self.stop_ttfb_metrics()
                             first_audio_sent = True
 
                         chunk_latency = (time.time() - chunk_start_time) * 1000
@@ -253,6 +266,14 @@ class MLXKokoroTTSService(TTSService):
             logger.error(f"MLX Kokoro TTS error: {e}")
             yield ErrorFrame(error=str(e))
         finally:
+            # Stop metrics tracking
+            await self.stop_processing_metrics()
+            if not first_audio_sent:
+                await self.stop_ttfb_metrics()
+
+            # Send usage metrics for the full text
+            await self.start_tts_usage_metrics(text)
+
             yield TTSStoppedFrame()
 
     async def __aenter__(self):

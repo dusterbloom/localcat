@@ -91,6 +91,14 @@ class ParakeetStreamingSTT(STTService):
         # Initialize model
         self._init_parakeet_model()
 
+    def can_generate_metrics(self) -> bool:
+        """Check if this service can generate processing metrics.
+
+        Returns:
+            True, as this service supports metrics generation.
+        """
+        return True
+
     def _normalize_audio(self, audio_np: np.ndarray) -> np.ndarray:
         """Normalize audio volume to optimal levels for transcription"""
         # Calculate RMS and peak

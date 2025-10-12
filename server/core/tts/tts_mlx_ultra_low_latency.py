@@ -57,6 +57,14 @@ class TTSMLXUltraLowLatency(TTSService):
         self._ttfb_ms = None
         self._total_chunks = 0
 
+    def can_generate_metrics(self) -> bool:
+        """Check if this service can generate processing metrics.
+
+        Returns:
+            True, as this service supports metrics generation.
+        """
+        return True
+
     def _get_worker_script_path(self) -> str:
         current_dir = Path(__file__).parent
         # Use optimized worker

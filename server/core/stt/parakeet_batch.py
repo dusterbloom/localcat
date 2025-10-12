@@ -83,6 +83,14 @@ class ParakeetBatchSTT(STTService):
         self._buffered_audio: list[np.ndarray] = []  # float32 [-1,1] segments @ 16kHz
         self._buffer_duration: float = 0.0
 
+    def can_generate_metrics(self) -> bool:
+        """Check if this service can generate processing metrics.
+
+        Returns:
+            True, as this service supports metrics generation.
+        """
+        return True
+
     def _init_parakeet_model(self):
         """Initialize the Parakeet model for batch processing"""
         try:
@@ -205,59 +213,48 @@ class ParakeetBatchSTT(STTService):
         # Cap at reasonable maximum
         return min(confidence, 0.9)
 
-    def _process_audio_batch(self, audio_bytes: bytes) -> str:
-        """Process complete audio utterance in batch mode"""
-        try:
-            # Convert to temporary WAV file
-            audio_path = self._audio_bytes_to_wav(audio_bytes)
+    def _process_audio_batch_sync(self, audio_bytes: bytes) -> tuple[str, str]:
+        """Synchronous batch processing - returns (text, audio_path)"""
+        # Convert to temporary WAV file
+        audio_path = self._audio_bytes_to_wav(audio_bytes)
 
-            # Generate transcription (use model's transcribe API to avoid shape issues)
-            if PARAKEET_OLD_FORMAT:
-                # Legacy mlx_audio API may expect raw path for generate
-                result = self._model.generate(audio_path)
-            else:
-                # New parakeet_mlx API exposes transcribe(path) → AlignedResult
-                result = self._model.transcribe(audio_path)
+        # Generate transcription (use model's transcribe API to avoid shape issues)
+        if PARAKEET_OLD_FORMAT:
+            # Legacy mlx_audio API may expect raw path for generate
+            result = self._model.generate(audio_path)
+        else:
+            # New parakeet_mlx API exposes transcribe(path) → AlignedResult
+            result = self._model.transcribe(audio_path)
 
-            # Extract text and confidence from result
-            text = ""
-            confidence = 0.0
+        # Extract text and confidence from result
+        text = ""
+        confidence = 0.0
 
-            if hasattr(result, 'text'):
-                text = result.text.strip()
-            elif hasattr(result, 'transcription'):
-                text = result.transcription.strip()
-            else:
-                logger.warning(f"Unexpected result format from Parakeet: {type(result)}")
-                return ""
+        if hasattr(result, 'text'):
+            text = result.text.strip()
+        elif hasattr(result, 'transcription'):
+            text = result.transcription.strip()
+        else:
+            logger.warning(f"Unexpected result format from Parakeet: {type(result)}")
+            return "", audio_path
 
-            # Try to extract confidence score
-            if hasattr(result, 'confidence'):
-                confidence = float(result.confidence)
-            elif hasattr(result, 'score'):
-                confidence = float(result.score)
-            else:
-                # Estimate confidence based on text characteristics
-                confidence = self._estimate_confidence(text)
+        # Try to extract confidence score
+        if hasattr(result, 'confidence'):
+            confidence = float(result.confidence)
+        elif hasattr(result, 'score'):
+            confidence = float(result.score)
+        else:
+            # Estimate confidence based on text characteristics
+            confidence = self._estimate_confidence(text)
 
-            logger.debug(f"Parakeet batch transcription: '{text}' (confidence: {confidence:.2f})")
+        logger.debug(f"Parakeet batch transcription: '{text}' (confidence: {confidence:.2f})")
 
-            # Filter out low-confidence transcriptions
-            if confidence < self._confidence_threshold:
-                logger.debug(f"Filtered low-confidence transcription: '{text}' (confidence: {confidence:.2f} < {self._confidence_threshold})")
-                return ""
+        # Filter out low-confidence transcriptions
+        if confidence < self._confidence_threshold:
+            logger.debug(f"Filtered low-confidence transcription: '{text}' (confidence: {confidence:.2f} < {self._confidence_threshold})")
+            return "", audio_path
 
-            return text
-
-        except Exception as e:
-            logger.error(f"Parakeet batch inference failed: {e}")
-            return ""
-        finally:
-            # Clean up temporary file
-            try:
-                os.unlink(audio_path)
-            except:
-                pass
+        return text, audio_path
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame, None]:
         """Buffer audio during speech; produce final on end-of-turn (see process_frame)."""
@@ -284,9 +281,26 @@ class ParakeetBatchSTT(STTService):
                 self._reset_buffer()
                 if not audio_bytes:
                     return
-                text = await asyncio.get_event_loop().run_in_executor(
-                    None, self._process_audio_batch, audio_bytes
+
+                # Start metrics
+                await self.start_processing_metrics()
+                await self.start_ttfb_metrics()
+
+                # Run transcription in executor
+                text, audio_path = await asyncio.get_event_loop().run_in_executor(
+                    None, self._process_audio_batch_sync, audio_bytes
                 )
+
+                # Stop metrics
+                await self.stop_ttfb_metrics()
+                await self.stop_processing_metrics()
+
+                # Clean up temporary file
+                try:
+                    os.unlink(audio_path)
+                except:
+                    pass
+
                 if text:
                     await self.push_frame(
                         TranscriptionFrame(
@@ -297,3 +311,5 @@ class ParakeetBatchSTT(STTService):
                     )
             except Exception as e:
                 logger.error(f"Parakeet batch finalize error: {e}")
+                await self.stop_ttfb_metrics()
+                await self.stop_processing_metrics()
