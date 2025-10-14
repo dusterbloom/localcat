@@ -21,6 +21,7 @@ import threading
 from functools import lru_cache
 from .memory_constants import WEIGHT_MIN_ACTIVE, RECENCY_HALF_LIFE_MS
 from loguru import logger
+from .quality_filter import QualityFilter
 
 import os
 
@@ -180,6 +181,10 @@ class Retrieval:
             max_sessions=50  # Keep caches for last 50 sessions
         )
 
+        # Initialize quality filter for Layer 4 defense (retrieval-time filtering)
+        self.quality_filter = QualityFilter()
+        self._scoring_clock_ms: Optional[int] = None
+
     def _check_edge_visibility_impl(self, edge_id: str, user_id: Optional[str], session_id: Optional[str]) -> bool:
         """
         Internal implementation for checking edge visibility (cached via LRU).
@@ -298,11 +303,16 @@ class Retrieval:
         # Composite re-rank all candidates
         scored_candidates: List[Tuple[float, Candidate, Dict[str, float]]] = []
         start_time = time.time()
-        
-        for candidate in all_candidates:
-            total_score, components = self._composite_score(query, candidate, source_priority, all_candidates)
-            scored_candidates.append((total_score, candidate, components))
-        
+
+        previous_clock = self._scoring_clock_ms
+        self._scoring_clock_ms = int(time.time()) * 1000
+        try:
+            for candidate in all_candidates:
+                total_score, components = self._composite_score(query, candidate, source_priority, all_candidates)
+                scored_candidates.append((total_score, candidate, components))
+        finally:
+            self._scoring_clock_ms = previous_clock
+
         rerank_time_ms = (time.time() - start_time) * 1000
         logger.debug(f"[Retrieval] Composite reranking took {rerank_time_ms:.1f}ms for {len(all_candidates)} candidates")
 
@@ -531,8 +541,34 @@ class Retrieval:
             return True
         
         # Very short queries that are likely conversational fillers
-        if len(q.split()) <= 2 and q not in ("my name", "i live", "i work", "i have"):
-            return True
+        if len(q.split()) <= 2:
+            short_fillers = {
+                "ok",
+                "okay",
+                "sure",
+                "thanks",
+                "thank you",
+                "cool",
+                "awesome",
+                "great",
+                "nice",
+                "sounds good",
+                "all good",
+                "alright",
+                "right",
+                "yep",
+                "yeah",
+                "yup",
+                "no",
+                "nah",
+                "wow",
+                "lol",
+                "hmm",
+                "hm",
+                "mm",
+            }
+            if q in short_fillers:
+                return True
             
         # Questions about capabilities or general knowledge
         capability_questions = (
@@ -1083,75 +1119,9 @@ class Retrieval:
         LAYER 4 DEFENSE: Enhanced quality filter for retrieved conversation bullets.
         Returns True if the bullet should be shown, False if filtered out.
 
-        Stricter filtering to drop interjections and low-quality content.
+        REFACTORED: Delegates to QualityFilter.is_quality_for_retrieval()
         """
-        if not text or not text.strip():
-            return False
-
-        t = text.lower().strip()
-
-        # Filter very short utterances (< 15 chars for stricter filtering)
-        if len(t) < 15:
-            return False
-
-        # Filter common interjections/fillers unless followed by substantive content
-        interjections = [
-            "oh", "wow", "lol", "yeah", "hmm", "uh", "ok", "okay", "right", "sure", "thanks",
-            "omg", "whoa", "yay", "eww", "ugh", "huh", "meh", "nah", "yep", "yup", "nope",
-            "awesome", "amazing", "cool", "nice", "great", "good", "bad", "terrible"
-        ]
-        
-        # Check if text starts with or is mostly interjection
-        words = t.split()
-        if words and words[0] in interjections and len(t) < 30:
-            return False
-        
-        # Filter pure interjections (very short after removing interjection words)
-        filtered_text = ' '.join([w for w in words if w not in interjections])
-        if len(filtered_text.strip()) < 10:
-            return False
-
-        # Filter meta-commentary about confusion
-        confusion_patterns = [
-            "confus", "unclear", "don't understand", "doesn't make sense",
-            "not sure what", "what do you mean", "what are you", "i don't know",
-            "dunno", "no idea", "meta", "context unclear", "repetitive",
-        ]
-
-        for pattern in confusion_patterns:
-            if pattern in t:
-                return False
-
-        # Filter system-like messages
-        system_patterns = ["[memory", "[session", "[system", "context]", "summary:"]
-        for pattern in system_patterns:
-            if pattern in t:
-                return False
-
-        # Filter pure questions without assertions
-        if t.endswith("?"):
-            assertion_verbs = [" am ", " is ", " are ", " was ", " were ", " have ", " has ", " had ", " like ", " love ", " want ", " need "]
-            has_assertion = any(verb in f" {t} " for verb in assertion_verbs)
-            if not has_assertion:
-                return False
-
-        # Require at least one content token (heuristic: contains a content verb/noun pattern)
-        # Content indicators: verbs suggesting actions/states, or substantive nouns
-        content_patterns = [
-            " work", " job", " live", " home", " family", " friend", " school", " college",
-            " university", " company", " business", " project", " task", " meeting", " appointment",
-            " travel", " trip", " vacation", " movie", " book", " music", " food", " restaurant",
-            " cook", " eat", " drink", " buy", " purchase", " sell", " rent", " own", " have",
-            " think", " believe", " feel", " want", " need", " prefer", " like", " love", " hate",
-            " go", " come", " move", " drive", " fly", " walk", " run", " play", " watch",
-            " make", " create", " build", " design", " write", " read", " learn", " teach"
-        ]
-        
-        has_content = any(pattern in t for pattern in content_patterns)
-        if not has_content and len(t) < 40:  # Allow longer utterances even without obvious content patterns
-            return False
-
-        return True
+        return self.quality_filter.is_quality_for_retrieval(text)
 
     def _convo_retrieve(self, query: str, max_bullets: int, seen: set) -> List[str]:
         out: List[str] = []
@@ -1546,7 +1516,7 @@ class Retrieval:
         components["wconf"] = confidence * self.weights["wconf"]
         
         # Recency (wrec)
-        now_ms = int(time.time() * 1000)
+        now_ms = self._scoring_clock_ms or (int(time.time()) * 1000)
         age_ms = max(0, now_ms - candidate.ts) if candidate.ts else float('inf')
         recency_factor = (2 ** (-(age_ms / RECENCY_HALF_LIFE_MS))) if candidate.ts else 0.0
         components["wrec"] = recency_factor * self.weights["wrec"]

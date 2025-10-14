@@ -171,7 +171,7 @@ class StreamingIntegrationTester:
             llm = OpenAILLMService(
                 api_key="test-key",
                 model="test-model",
-                base_url="http://localhost:11434",
+                base_url="http://127.0.0.1:11434",
                 stream=True
             )
 
@@ -250,7 +250,7 @@ class StreamingIntegrationTester:
             llm = OpenAILLMService(
                 api_key="test-key",
                 model="test-model",
-                base_url="http://localhost:11434",
+                base_url="http://127.0.0.1:11434",
                 stream=False  # Batch mode
             )
 

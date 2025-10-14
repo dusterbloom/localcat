@@ -1,13 +1,16 @@
 """
 Memory management system for voice agents.
 
-Components:
-- hotpath_processor: Core memory processing with USGS pattern extraction
-- memory_store: Persistent memory storage and retrieval
-- session_tracker: Session-based memory management
-- hotmem_service: Pipecat-compatible tool-based memory service
+Provides lazy exports to avoid importing heavyweight Pipecat dependencies
+during module discovery or unit testing.
 """
 
-from .hotmem_service import HotMemService
+__all__ = ["HotMemService"]
 
-__all__ = ['HotMemService']
+
+def __getattr__(name):
+    if name == "HotMemService":
+        from .hotmem_service import HotMemService
+
+        return HotMemService
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

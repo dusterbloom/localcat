@@ -28,6 +28,7 @@ from .confidence_strategy import (
 )
 from .processors.coreference import CoreferenceProcessor
 from .config import MemoryConfig
+from .entity_resolver import EntityResolver
 
 # Try to import language detection
 try:
@@ -141,6 +142,10 @@ class HotMemory:
             lang=config.coreference.lang
         ) if config.coreference.enabled else None
 
+        # EntityResolver: Unified entity resolution (SOLID refactored - DRY principle)
+        # Lazy initialization on first use to avoid loading NLP model in __init__
+        self._entity_resolver = None
+
         # P0.3: Entity enrichment cache to avoid repeated spaCy tree traversals
         # Maps (doc_id, token_idx, max_length) -> (root, enriched) tuple
         # Using doc_id (memory address) as cache key since tokens aren't hashable
@@ -160,6 +165,17 @@ class HotMemory:
             _load_nlp(lang)
         except Exception as e:
             logger.debug(f"HotMemory prewarm failed: {e}")
+
+    def _get_entity_resolver(self, lang: str = "en") -> EntityResolver:
+        """Lazy-load EntityResolver with NLP model."""
+        if self._entity_resolver is None:
+            nlp = _load_nlp(lang)
+            self._entity_resolver = EntityResolver(
+                user_eid=self.user_eid,
+                agent_eid=self.agent_eid,
+                nlp=nlp
+            )
+        return self._entity_resolver
 
     def _make_cached_extract(self):
         """Bind an LRU-cached extraction function to avoid duplicate work."""
@@ -453,67 +469,23 @@ class HotMemory:
         return list(entities), triples, neg_count, doc, self._entity_aliases
     
     def _build_entity_map(self, doc, entities: Set[str]) -> Dict[int, str]:
-        """Build entity map from document"""
-        entity_map = {}
-        
-        # Named entities
-        for ent in doc.ents:
-            norm_text = _canon_entity_text(ent.text)
-            entities.add(norm_text)
-            for token in ent:
-                entity_map[token.i] = norm_text
-        
-        # Noun chunks
-        for chunk in doc.noun_chunks:
-            # Map noun chunks with pronouns to role-aware IDs
-            if chunk.root.pos_ == "PRON":
-                person = chunk.root.morph.get("Person")
-                person_val = person[0] if person else None
-                if person_val == "1":
-                    # Actor (speaker)
-                    entities.add(self.user_eid)
-                    entity_map[chunk.root.i] = self.user_eid
-                    continue
-                if person_val == "2":
-                    # Addressee (agent in dyadic chat)
-                    entities.add(self.agent_eid)
-                    entity_map[chunk.root.i] = self.agent_eid
-                    continue
+        """
+        Build entity map from document (delegates to EntityResolver).
 
-            chunk_text = _canon_entity_text(chunk.text)
-            entities.add(chunk_text)
-            entity_map[chunk.root.i] = chunk_text
-        
-        # Individual tokens
-        for token in doc:
-            if token.i not in entity_map:
-                if token.pos_ in {"NOUN", "PROPN", "PRON"}:
-                    # Person-aware pronoun handling using UD morphology
-                    if token.pos_ == "PRON":
-                        person = token.morph.get("Person")
-                        person_val = person[0] if person else None
+        REFACTORED: Uses EntityResolver to eliminate duplicate entity resolution logic.
+        This was previously duplicated in _build_entity_map and retrieval.py.
+        """
+        # Get the EntityResolver (lazy-loaded)
+        resolver = self._get_entity_resolver()
 
-                        if person_val == "1":
-                            # First person: actor (speaker)
-                            entity_text = self.user_eid
-                        elif person_val == "2":
-                            # Second person: addressee (agent in dyadic chat)
-                            entity_text = self.agent_eid
-                        elif person_val == "3":
-                            # Third person: keep as-is (he, she, they)
-                            entity_text = _canon_entity_text(token.lemma_)
-                        else:
-                            # Fallback: use old logic for pronouns without Person feature
-                            entity_text = _canon_entity_text(token.text)
-                            if entity_text in _PRON_FIRST:
-                                entity_text = self.user_eid
-                    else:
-                        # NOUN/PROPN: use current logic
-                        entity_text = _canon_entity_text(token.text)
+        # Use EntityResolver's build_entity_map method
+        entity_map = resolver.build_entity_map(doc)
 
-                    entities.add(entity_text)
-                    entity_map[token.i] = entity_text
-        
+        # Extract entities from the entity_map and add to the entities set
+        # (maintain backward compatibility with existing code that expects entities set to be populated)
+        for entity_text in entity_map.values():
+            entities.add(entity_text)
+
         return entity_map
     
     # === 27 Dependency Handlers ===
