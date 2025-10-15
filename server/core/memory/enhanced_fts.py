@@ -133,8 +133,10 @@ class EnhancedFTS:
         expanded_terms = []
         seen = set()
 
-        # Limit to first 5 terms to prevent query explosion
-        for term in terms[:5]:
+        # Include all meaningful terms from the query (no early truncation)
+        # Rationale: recall questions often place key entities later (e.g., proper nouns)
+        # and truncation can drop the most important word.
+        for term in terms:
             if term and term not in seen and term not in stopwords and len(term) > 2:
                 # Remove quotes - FTS5 needs bareword matching, not exact phrase
                 expanded_terms.append(term)
@@ -190,7 +192,7 @@ class EnhancedFTS:
         tf_component = (term_freq * (k1 + 1)) / (term_freq + k1 * (1 - b + b * doc_length / avg_doc_length))
         return idf * tf_component
     
-    def enhanced_search(self, query: str, limit: int = 10, session_ids: List[str] = None, eids: List[str] = None) -> List[Tuple[float, str, str, int]]:
+    def enhanced_search(self, query: str, limit: int = 10, session_ids: List[str] = None, eids: List[str] = None) -> List[Tuple[float, str, str, int, Optional[int]]]:
         """
         SOTA FTS search with BM25 ranking and multi-factor scoring (WITH CACHING)
 
@@ -201,7 +203,7 @@ class EnhancedFTS:
             eids: Optional entity ID filter (kept for compatibility)
 
         Returns:
-            List of (score, text, eid, timestamp) tuples
+            List of (score, text, eid, timestamp, turn_id) tuples
         """
         if not query.strip():
             return []
@@ -222,7 +224,7 @@ class EnhancedFTS:
             if session_ids:
                 placeholders = ','.join('?' * len(session_ids))
                 sql = f"""
-                    SELECT c.text AS text, c.eid, c.ts, c.term_frequency, c.document_length, c.entity_boost,
+                    SELECT c.text AS text, c.eid, c.ts, c.turn_id, c.term_frequency, c.document_length, c.entity_boost,
                            bm25(chunks_fts_enhanced) AS bm25_score
                     FROM chunks_fts_enhanced 
                     JOIN chunks_content c ON chunks_fts_enhanced.rowid = c.rowid
@@ -234,7 +236,7 @@ class EnhancedFTS:
             elif eids:
                 placeholders = ','.join('?' * len(eids))
                 sql = f"""
-                    SELECT c.text AS text, c.eid, c.ts, c.term_frequency, c.document_length, c.entity_boost,
+                    SELECT c.text AS text, c.eid, c.ts, c.turn_id, c.term_frequency, c.document_length, c.entity_boost,
                            bm25(chunks_fts_enhanced) AS bm25_score
                     FROM chunks_fts_enhanced 
                     JOIN chunks_content c ON chunks_fts_enhanced.rowid = c.rowid
@@ -245,7 +247,7 @@ class EnhancedFTS:
                 params = [expanded_query] + eids + [limit * 2]
             else:
                 sql = """
-                    SELECT c.text AS text, c.eid, c.ts, c.term_frequency, c.document_length, c.entity_boost,
+                    SELECT c.text AS text, c.eid, c.ts, c.turn_id, c.term_frequency, c.document_length, c.entity_boost,
                            bm25(chunks_fts_enhanced) AS bm25_score
                     FROM chunks_fts_enhanced 
                     JOIN chunks_content c ON chunks_fts_enhanced.rowid = c.rowid
@@ -265,7 +267,7 @@ class EnhancedFTS:
         scored_results = []
         current_time = int(time.time() * 1000)
         
-        for text, eid, ts, term_freq, doc_length, entity_boost, bm25_score in results:
+        for text, eid, ts, turn_id, term_freq, doc_length, entity_boost, bm25_score in results:
             # Recency boost (newer = higher score, 1-week decay)
             age_hours = (current_time - ts) / (1000 * 60 * 60)
             recency_boost = max(0.1, 1.0 - (age_hours / 168))
@@ -292,13 +294,13 @@ class EnhancedFTS:
                 entity_boost * 0.1           # Custom boost
             )
             
-            scored_results.append((final_score, text, eid, ts))
+            scored_results.append((final_score, text, eid, ts, turn_id))
         
         # Sort by final score and return top results
         scored_results.sort(key=lambda x: x[0], reverse=True)
         return scored_results[:limit]
     
-    def _fallback_search(self, query: str, limit: int, eids: List[str] = None) -> List[Tuple[float, str, str, int]]:
+    def _fallback_search(self, query: str, limit: int, eids: List[str] = None) -> List[Tuple[float, str, str, int, Optional[int]]]:
         """Fallback to basic FTS if enhanced search fails"""
         try:
             if eids:
@@ -312,7 +314,8 @@ class EnhancedFTS:
             for text, eid, ts in results:
                 age_hours = (current_time - ts) / (1000 * 60 * 60)
                 recency_score = max(0.1, 1.0 - (age_hours / 168))
-                scored.append((recency_score, text, eid, ts))
+                # Fallback doesn't provide turn_id, so use None
+                scored.append((recency_score, text, eid, ts, None))
             
             scored.sort(key=lambda x: x[0], reverse=True)
             return scored

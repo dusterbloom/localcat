@@ -213,6 +213,7 @@ class ProsodyAwareConfidence:
             from core.audio import ConfidenceFusion
             self.fusion = ConfidenceFusion()
         except ImportError:
+            from loguru import logger
             logger.warning("ConfidenceFusion not available, falling back to baseline")
             self.fusion = None
     
@@ -248,8 +249,102 @@ class ProsodyAwareConfidence:
             
             return fusion_conf
         
+        # NEW: Fallback to stored prosody if inline prosody not provided
+        elif (context.prosody_features is None and 
+              context.session_id is not None and 
+              context.turn_id is not None and
+              context.store is not None):
+            return self._score_with_stored_prosody(edge, context)
+        
         # Fallback to baseline when no audio intelligence
         return self.baseline.score(edge, context)
+    
+    def _score_with_stored_prosody(self, edge: Edge, context: Context) -> float:
+        """
+        Calculate confidence using stored prosody data from MemoryStore
+        
+        Args:
+            edge: Edge to score
+            context: Context with session_id and turn_id for retrieving stored prosody
+            
+        Returns:
+            Confidence score adjusted by stored prosody certainty
+        """
+        # Get stored prosody data
+        try:
+            certainty, meta = context.store.get_turn_prosody(context.session_id, context.turn_id)
+        except Exception:
+            # If store retrieval fails, fall back to baseline
+            from loguru import logger
+            logger.warning(f"Failed to retrieve stored prosody for session={context.session_id}, turn={context.turn_id}")
+            return self.baseline.score(edge, context)
+        
+        # Create synthetic ProsodyFeatures from stored certainty
+        # Map certainty to certainty_modifier in range [-0.3, +0.3]
+        certainty_modifier = max(-0.3, min(0.3, certainty - 0.5))
+        
+        # Create a simple prosody features object with just the certainty modifier
+        class SyntheticProsodyFeatures:
+            def __init__(self, certainty_modifier):
+                self.certainty_modifier = certainty_modifier
+                # Set other fields to neutral defaults
+                self.pitch_std = 0.0
+                self.energy_mean = 0.0
+                self.speaking_rate = 0.0
+        
+        synthetic_prosody = SyntheticProsodyFeatures(certainty_modifier)
+        
+        # Create new context with synthetic prosody
+        synthetic_context = Context(
+            store=context.store,
+            text=context.text,
+            session_id=context.session_id,
+            turn_id=context.turn_id,
+            prosody_features=synthetic_prosody,
+            emotion=getattr(context, 'emotion', None),
+            arousal=getattr(context, 'arousal', None)
+        )
+        
+        # Re-use fusion logic with synthetic prosody
+        if self.fusion and context.text:
+            emotion = getattr(synthetic_context, 'emotion', None)
+            arousal = getattr(synthetic_context, 'arousal', None)
+            
+            # Calculate fusion confidence
+            fusion_conf = self.fusion.calculate(
+                relation=edge.rel,
+                text=context.text,
+                prosody=synthetic_prosody,
+                emotion=emotion,
+                arousal=arousal
+            )
+            
+            # Apply usage-based adjustments
+            if hasattr(self.baseline, '_reinforcement_multiplier'):
+                reinforcement = self.baseline._reinforcement_multiplier(edge)
+                recency = self.baseline._recency_multiplier(edge)
+                source_count = self.baseline._source_count_multiplier(edge, synthetic_context)
+                
+                # Combine fusion with usage signals
+                final_conf = fusion_conf * reinforcement * recency * source_count
+                return min(1.0, max(0.0, final_conf))
+            
+            return fusion_conf
+        
+        # If fusion not available, apply simple confidence adjustment to baseline
+        baseline_conf = self.baseline.score(edge, context)
+        
+        # Simple adjustment: boost or reduce baseline based on stored certainty
+        # High certainty (> 0.7) boosts, low certainty (< 0.3) reduces
+        if certainty > 0.7:
+            adjustment = 1.0 + (certainty - 0.7) * 0.5  # Up to 15% boost
+        elif certainty < 0.3:
+            adjustment = 1.0 - (0.3 - certainty) * 0.5  # Up to 15% reduction
+        else:
+            adjustment = 1.0
+        
+        adjusted_conf = baseline_conf * adjustment
+        return min(1.0, max(0.0, adjusted_conf))
 
 
 def create_confidence_strategy(name: str = "relation_type") -> ConfidenceStrategy:

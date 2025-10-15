@@ -83,6 +83,14 @@ class VoiceAgentConfig:
     pipeline_frame_size_ms: int = 20
 
     # ============================================================================
+    # Video Processing Configuration
+    # ============================================================================
+    video_input_enabled: bool = True
+    video_target_fps: float = 2.0
+    video_out_enabled: bool = False
+    vision_model_enabled: bool = False
+
+    # ============================================================================
     # Optimization Settings (based on research findings)
     # ============================================================================
     # Kokoro chunking: 25 chars = 487ms TTFB (optimal)
@@ -159,6 +167,12 @@ class VoiceAgentConfig:
             config.speaker_profile_dir = os.getenv("SPEAKER_PROFILE_DIR")
         # Ephemeral choice on startup
         config.enable_ephemeral_choice = os.getenv("ENABLE_EPHEMERAL_CHOICE", str(config.enable_ephemeral_choice)).lower() == "true"
+
+        # Video Processing Configuration
+        config.video_input_enabled = os.getenv("VIDEO_INPUT_ENABLED", "false").lower() == "true"
+        config.video_target_fps = float(os.getenv("VIDEO_TARGET_FPS", str(config.video_target_fps)))
+        config.video_out_enabled = os.getenv("VIDEO_OUT_ENABLED", "false").lower() == "true"
+        config.vision_model_enabled = os.getenv("VISION_MODEL_ENABLED", "false").lower() == "true"
 
         # Legacy environment variable support for backward compatibility
         config._load_legacy_env_vars()

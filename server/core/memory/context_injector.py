@@ -137,6 +137,50 @@ class ContextInjector:
             logger.error(f"[ContextInjector] Failed to inject memory context: {e}")
             return False
 
+    def inject_into_messages(self, messages: List[dict]) -> List[dict]:
+        """
+        Inject pending memory bullets into a provided messages list and return the updated list.
+
+        Mirrors inject_memory_context but operates purely on the given messages,
+        allowing callers with an LLMMessagesFrame to modify it in-place.
+        """
+        try:
+            if not self._pending_bullets:
+                return messages
+
+            # Use ContextFormatter to prepare bullets
+            bullets = self.formatter.format_bullets(
+                self._pending_bullets,
+                max_bullets=self.config.bullets_max
+            )
+            bullets = self.formatter.truncate_bullets(bullets, max_length=self.config.token_budget)
+
+            memory_message = self.formatter.build_message(
+                self.config.inject_role,
+                self.config.inject_header,
+                bullets
+            )
+
+            target_idx = self._find_context_message(messages, self.config.inject_header)
+            if bullets and memory_message:
+                if target_idx is None:
+                    insert_idx = self._persona_prompt_index(messages)
+                    messages.insert(insert_idx, memory_message)
+                else:
+                    messages[target_idx] = memory_message
+            else:
+                if target_idx is not None:
+                    messages.pop(target_idx)
+
+            # Update metrics and clear pending
+            self._injection_count += 1
+            self._last_injected_bullets = list(bullets)
+            self._pending_bullets = []
+            return messages
+        except Exception as e:
+            logger.debug(f"[ContextInjector] inject_into_messages failed: {e}")
+            return messages
+
     async def retrieve_and_prepare_bullets(self, query: str, read_only: bool = True, intent: Optional[Dict] = None) -> List[str]:
         """
         Retrieve memory bullets for query and prepare them for injection.

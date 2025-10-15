@@ -12,6 +12,7 @@ import hashlib
 import time
 import shutil
 import contextlib
+import json
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict, Any
 from collections import defaultdict
@@ -165,6 +166,16 @@ class MemoryStore:
               last_accessed INT DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_edge_usage_last_accessed ON edge_usage(last_accessed DESC);
+
+            -- Turn prosody meta table
+            CREATE TABLE IF NOT EXISTS turn_meta(
+              session_id TEXT NOT NULL,
+              turn_id INT NOT NULL,
+              key TEXT NOT NULL,
+              value TEXT NOT NULL,
+              PRIMARY KEY(session_id, turn_id, key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_turn_meta_session_turn ON turn_meta(session_id, turn_id);
         """)
         
         # LMDB with proper settings (skip if lmdb_dir is None)
@@ -848,6 +859,85 @@ class MemoryStore:
         if result:
             return result[0], result[1]
         return 0, 0
+
+    def set_turn_prosody(self, session_id: str, turn_id: int, certainty: float, meta: Optional[dict] = None) -> None:
+        """
+        Store prosody certainty and metadata for a conversation turn.
+
+        Args:
+            session_id: Session identifier
+            turn_id: Turn number within session
+            certainty: Prosody certainty score (0.0 to 1.0)
+            meta: Optional metadata dictionary (will be JSON encoded)
+        """
+        cur = self.sql.cursor()
+        try:
+            # Store certainty
+            cur.execute("""
+                INSERT OR REPLACE INTO turn_meta(session_id, turn_id, key, value)
+                VALUES(?, ?, 'prosody_certainty', ?)
+            """, (session_id, turn_id, f"{certainty:.3f}"))
+            
+            # Store metadata if provided
+            if meta is not None:
+                meta_json = json.dumps(meta)
+                cur.execute("""
+                    INSERT OR REPLACE INTO turn_meta(session_id, turn_id, key, value)
+                    VALUES(?, ?, 'prosody_meta', ?)
+                """, (session_id, turn_id, meta_json))
+            
+            self.sql.commit()
+        except Exception as e:
+            logger.error(f"Failed to store turn prosody for session={session_id}, turn={turn_id}: {e}")
+            self.sql.rollback()
+
+    def get_turn_prosody(self, session_id: str, turn_id: int) -> Tuple[float, dict]:
+        """
+        Retrieve prosody certainty and metadata for a conversation turn.
+
+        Args:
+            session_id: Session identifier
+            turn_id: Turn number within session
+
+        Returns:
+            Tuple of (certainty, meta_dict) with defaults (0.5, {}) if missing or parse failure
+        """
+        cur = self.sql.cursor()
+        certainty = 0.5  # Default baseline
+        meta_dict = {}   # Default empty meta
+        
+        try:
+            # Get certainty
+            result = cur.execute("""
+                SELECT value FROM turn_meta WHERE session_id = ? AND turn_id = ? AND key = 'prosody_certainty'
+            """, (session_id, turn_id)).fetchone()
+            
+            if result:
+                try:
+                    certainty = float(result[0])
+                    certainty = max(0.0, min(1.0, certainty))  # Clamp to [0,1]
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid prosody certainty value for session={session_id}, turn={turn_id}: {result[0]}")
+            
+            # Get metadata
+            result = cur.execute("""
+                SELECT value FROM turn_meta WHERE session_id = ? AND turn_id = ? AND key = 'prosody_meta'
+            """, (session_id, turn_id)).fetchone()
+            
+            if result:
+                try:
+                    meta_dict = json.loads(result[0])
+                    if not isinstance(meta_dict, dict):
+                        logger.warning(f"Invalid prosody meta for session={session_id}, turn={turn_id}: not a dict")
+                        meta_dict = {}
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(f"Invalid prosody meta JSON for session={session_id}, turn={turn_id}: {result[0]}")
+                    meta_dict = {}
+                    
+        except Exception as e:
+            logger.error(f"Failed to retrieve turn prosody for session={session_id}, turn={turn_id}: {e}")
+        
+        return certainty, meta_dict
 
     # ---------- FTS Search Methods ----------
     def _sanitize_fts_query(self, query: str) -> str:

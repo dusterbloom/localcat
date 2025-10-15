@@ -47,3 +47,10 @@ server/results/*.json
 server/results/**/*.json
 server/tts_performance_report_*.json
 server/core/tts/*.backup
+
+# Database files (local development only)
+memory.db
+*.db
+
+# Backup files
+*.backup

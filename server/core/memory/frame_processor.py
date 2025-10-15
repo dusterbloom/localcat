@@ -72,6 +72,14 @@ if not PIPECAT_AVAILABLE:
 from .config_manager import MemoryConfiguration
 from .quality_filter import QualityFilter
 
+# Import AudioIntelligenceFrame for prosody capture
+try:
+    from core.audio.audio_intelligence import AudioIntelligenceFrame
+    AUDIO_INTEL_AVAILABLE = True
+except ImportError:
+    AUDIO_INTEL_AVAILABLE = False
+    logger.debug("AudioIntelligenceFrame not available - prosody capture disabled")
+
 
 class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
     """
@@ -122,6 +130,9 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
         # Frame processing state
         self._turn_id = 0
         self._ephemeral = config.ephemeral_mode
+        
+        # Prosody tracking
+        self._last_prosody_certainty: Optional[float] = None
 
     async def process_frame(
         self,
@@ -153,6 +164,43 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
         # Handle TranscriptionFrame (final processing)
         if isinstance(frame, TranscriptionFrame):
             await self._handle_transcription_frame(frame)
+            yield frame
+            return
+
+        # Handle AudioIntelligenceFrame (prosody capture)
+        if AUDIO_INTEL_AVAILABLE and isinstance(frame, AudioIntelligenceFrame):
+            # Capture prosody certainty for storage on next transcription
+            if hasattr(frame, 'prosody_certainty'):
+                self.capture_prosody_certainty(frame.prosody_certainty)
+                logger.debug(f"[FrameProcessor] Captured prosody from AudioIntelligenceFrame: {frame.prosody_certainty:.3f}")
+            yield frame
+            return
+
+        # Handle typed messages (LLMMessagesFrame): unify with voice by running retrieval
+        if 'LLMMessagesFrame' in globals() and isinstance(frame, LLMMessagesFrame):  # type: ignore
+            try:
+                # Extract latest user message text
+                messages = getattr(frame, 'messages', []) or []
+                latest_user_message = None
+                for msg in reversed(messages):
+                    if isinstance(msg, dict) and msg.get('role') == 'user' and isinstance(msg.get('content'), str):
+                        latest_user_message = msg.get('content')
+                        break
+
+                if latest_user_message and self.context_injector:
+                    # Retrieve bullets (read-only) and inject into this messages batch
+                    bullets = await self.context_injector.retrieve_and_prepare_bullets(latest_user_message, read_only=True)
+                    if bullets:
+                        new_messages = self.context_injector.inject_into_messages(list(messages))
+                        try:
+                            frame.messages = new_messages  # type: ignore[attr-defined]
+                        except Exception:
+                            pass
+                
+            except Exception as e:
+                logger.debug(f"[FrameProcessor] LLMMessagesFrame handling failed: {e}")
+
+            # Forward (possibly modified) frame
             yield frame
             return
 
@@ -227,9 +275,67 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
         # WhisperSTTServiceMLX doesn't set is_final, so treat None as final (non-streaming)
         if is_final is True or is_final is None:
             logger.debug(f"[FrameProcessor] Processing transcription (is_final={is_final}): '{text}'")
+            
+            # Store prosody certainty if available
+            await self._store_prosody_for_turn()
+            
             await self._process_transcription(text)
         else:
             logger.debug(f"[FrameProcessor] Skipping non-final transcription")
+
+    async def _store_prosody_for_turn(self) -> None:
+        """
+        Store prosody certainty for the current turn if available.
+        
+        This method extracts prosody information from the transcription frame
+        and persists it for later use in confidence scoring and summarization.
+        """
+        try:
+            if self._last_prosody_certainty is not None:
+                session_id = self.session_manager.session_id
+                turn_id = self._turn_id
+                
+                if session_id and turn_id > 0 and self.hot_memory and self.hot_memory.store:
+                    # Store the prosody certainty with metadata
+                    meta = {
+                        "source": "frame_processor",
+                        "captured_at": int(asyncio.get_event_loop().time() * 1000)
+                    }
+                    
+                    self.hot_memory.store.set_turn_prosody(
+                        session_id, 
+                        turn_id, 
+                        self._last_prosody_certainty, 
+                        meta
+                    )
+                    
+                    logger.debug(f"[FrameProcessor] Stored prosody certainty {self._last_prosody_certainty:.3f} for session={session_id}, turn={turn_id}")
+                
+                # Clear the stored prosody after persisting
+                self._last_prosody_certainty = None
+                
+        except Exception as e:
+            logger.warning(f"[FrameProcessor] Failed to store prosody for turn: {e}")
+            # Clear on error to avoid affecting next turn
+            self._last_prosody_certainty = None
+
+    def capture_prosody_certainty(self, certainty: float) -> None:
+        """
+        Capture prosody certainty from audio processing pipeline.
+        
+        This method should be called by audio intelligence components
+        when prosody features are extracted for the current utterance.
+        
+        Args:
+            certainty: Prosody certainty value (0.0-1.0)
+        """
+        # Validate certainty range
+        if isinstance(certainty, (int, float)):
+            certainty = max(0.0, min(1.0, float(certainty)))
+            self._last_prosody_certainty = certainty
+            logger.debug(f"[FrameProcessor] Captured prosody certainty: {certainty:.3f}")
+        else:
+            logger.warning(f"[FrameProcessor] Invalid prosody certainty type: {type(certainty)}")
 
     async def _process_transcription(self, text: str) -> None:
         """

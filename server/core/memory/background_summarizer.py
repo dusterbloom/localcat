@@ -8,6 +8,7 @@ import asyncio
 import json
 import urllib.request
 import urllib.error
+import os
 from typing import List, Optional, Dict, Any
 from loguru import logger
 from .config_manager import MemoryConfiguration
@@ -283,7 +284,7 @@ Provide ONLY the final summary or nothing if no clear facts exist."""
 
     def _get_conversation_chunks(self, session_id: str, limit: int = 10) -> List[tuple]:
         """
-        Get recent conversation chunks for a session.
+        Get recent conversation chunks for a session with optional prosody bias.
         
         Args:
             session_id: Session identifier
@@ -296,11 +297,89 @@ Provide ONLY the final summary or nothing if no clear facts exist."""
             return []
 
         try:
-            # Use the store's get_recent_chunks_by_session method
-            return self.store.get_recent_chunks_by_session("conversation", session_id, limit)
+            # Check if prosody bias is enabled
+            prosody_enabled = os.getenv("SUMMARY_PROSODY_ENABLED", "false").lower() in ("1", "true", "yes")
+            
+            if prosody_enabled:
+                return self._get_conversation_chunks_with_prosody_bias(session_id, limit)
+            else:
+                # Default behavior without prosody bias
+                # Use "conversation" as the user_id for conversation chunks
+                return self.store.get_recent_chunks_by_session("conversation", session_id, limit)
         except Exception as e:
             logger.debug(f"[BackgroundSummarizer] Failed to get conversation chunks: {e}")
             return []
+
+    def _get_conversation_chunks_with_prosody_bias(self, session_id: str, limit: int = 10) -> List[tuple]:
+        """
+        Get conversation chunks with prosody bias toward high-certainty turns.
+        
+        Args:
+            session_id: Session identifier
+            limit: Maximum number of chunks to return
+            
+        Returns:
+            List of (text, timestamp) tuples biased toward high certainty
+        """
+        if not self.store:
+            return []
+
+        try:
+            # Get more chunks than needed to allow for filtering
+            extended_limit = limit * 2
+            chunks = self.store.get_recent_chunks_by_session("conversation", session_id, extended_limit)
+            
+            if not chunks:
+                return []
+
+            # Try to get turn information for each chunk
+            chunks_with_certainty = []
+            
+            for i, (text, ts) in enumerate(chunks):
+                try:
+                    # Try to extract turn_id from metadata if available
+                    # Note: This is a best-effort approach - if turn_id is not available,
+                    # we'll use the chunk position as a proxy
+                    turn_id = None
+                    
+                    # Some stores might have turn info in chunk metadata
+                    # For now, we'll use reverse position as turn proxy
+                    turn_id = len(chunks) - i
+                    
+                    if turn_id is not None:
+                        certainty, _ = self.store.get_turn_prosody(session_id, turn_id)
+                        chunks_with_certainty.append((text, ts, certainty))
+                    else:
+                        # No turn info available, use neutral certainty
+                        chunks_with_certainty.append((text, ts, 0.5))
+                        
+                except Exception as e:
+                    logger.debug(f"[BackgroundSummarizer] Failed to get prosody for chunk: {e}")
+                    # Default to neutral certainty if prosody retrieval fails
+                    chunks_with_certainty.append((text, ts, 0.5))
+
+            # Sort by certainty (high to low) while preserving recentness
+            # We want to prioritize high certainty but still maintain some recency
+            # Sort by certainty descending, then timestamp descending
+            chunks_with_certainty.sort(key=lambda x: (x[2], x[1]), reverse=True)
+
+            # Filter out very low certainty chatter (< 0.3)
+            filtered_chunks = [
+                (text, ts) for text, ts, certainty in chunks_with_certainty
+                if certainty >= 0.3
+            ]
+
+            # Return top chunks, ensuring we get some content even if all are low certainty
+            if not filtered_chunks:
+                # Fallback: return the most recent chunks without filtering
+                return [(text, ts) for text, ts, _ in chunks_with_certainty[:limit]]
+
+            return filtered_chunks[:limit]
+            
+        except Exception as e:
+            logger.debug(f"[BackgroundSummarizer] Failed to get conversation chunks with prosody bias: {e}")
+            # Fallback to regular chunks without bias
+            return self.store.get_recent_chunks_by_session("conversation", session_id, limit)
 
     def increment_turn_count(self) -> None:
         """Increment turn counter for delta mode tracking."""

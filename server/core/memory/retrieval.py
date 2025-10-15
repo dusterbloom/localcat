@@ -184,6 +184,9 @@ class Retrieval:
         # Initialize quality filter for Layer 4 defense (retrieval-time filtering)
         self.quality_filter = QualityFilter()
         self._scoring_clock_ms: Optional[int] = None
+        
+        # Per-retrieve prosody cache to avoid repeated store hits for convo candidates
+        self._prosody_cache: Dict[Tuple[str, int], Tuple[float, dict]] = {}
 
     def _check_edge_visibility_impl(self, edge_id: str, user_id: Optional[str], session_id: Optional[str]) -> bool:
         """
@@ -239,6 +242,9 @@ class Retrieval:
         Returns:
             List of formatted bullet strings
         """
+        # Clear per-retrieve prosody cache to avoid cross-retrieve contamination
+        self._prosody_cache.clear()
+        
         # Source control via env (defaults to graph only for backward compatibility)
         enabled_sources = [s.strip() for s in os.getenv("MEMORY_SOURCES", "graph").split(",") if s.strip()]
         logger.debug(f"[Retrieval] enabled_sources={enabled_sources} query='{query[:50]}'")
@@ -461,15 +467,22 @@ class Retrieval:
                 logger.debug(f"[Retrieval] Skipping duplicate candidate: '{candidate.text[:50]}...'")
                 continue
                 
-            # Format the bullet based on source
-            if candidate.source == "graph":
-                bullet = f"• [graph] {candidate.text}{self._ago_suffix(candidate.ts)}"
-            elif candidate.source == "convo":
-                bullet = f"• [convo] {self._smart_truncate(candidate.text, 120)}{self._ago_suffix(candidate.ts)}"
-            elif candidate.source == "semantic":
-                bullet = f"• [semantic] {self._smart_truncate(candidate.text, 140)}{self._ago_suffix(candidate.ts)}"
-            else:  # summary
-                bullet = f"• [summary] {self._smart_truncate(candidate.text, 160)}{self._ago_suffix(candidate.ts)}"
+            # Format the bullet based on source and injection mode
+            injection_mode = os.getenv("MEMORY_INJECTION_MODE", "bullets").lower()
+            header_expand_threshold = float(os.getenv("MEMORY_HEADER_EXPAND_THRESHOLD", "0.65"))
+            
+            if injection_mode == "headers":
+                bullet = self._format_header_bullet(candidate, components, score, header_expand_threshold)
+            else:
+                # Legacy bullet formatting
+                if candidate.source == "graph":
+                    bullet = f"• [graph] {candidate.text}{self._ago_suffix(candidate.ts)}"
+                elif candidate.source == "convo":
+                    bullet = f"• [convo] {self._smart_truncate(candidate.text, 120)}{self._ago_suffix(candidate.ts)}"
+                elif candidate.source == "semantic":
+                    bullet = f"• [semantic] {self._smart_truncate(candidate.text, 140)}{self._ago_suffix(candidate.ts)}"
+                else:  # summary
+                    bullet = f"• [summary] {self._smart_truncate(candidate.text, 160)}{self._ago_suffix(candidate.ts)}"
             
             # Estimate token count (heuristic: chars/4 for English)
             estimated_tokens = len(bullet) // 4
@@ -489,8 +502,8 @@ class Retrieval:
             seen_normalized_texts.add(normalized_text)
             used_tokens += estimated_tokens
             
-            # Log top-k components for debugging
-            if len(final_bullets) <= 3:
+            # Log top-k components for debugging (optional)
+            if len(final_bullets) <= 3 and os.getenv("MEMORY_LOG_COMPONENTS", "false").lower() in ("1", "true", "yes"):
                 logger.debug(f"[Retrieval] Top-{len(final_bullets)} candidate components: {components}")
         
         logger.debug(f"[Retrieval] Token budget: {used_tokens}/{max_tokens}, Bullets: {len(final_bullets)}/{bullet_cap}")
@@ -513,17 +526,17 @@ class Retrieval:
     def _should_suppress_memory_injection(self, query: str) -> bool:
         """
         Enhanced greeting and intent gating to suppress memory injection for inappropriate queries.
-        
+
         Returns True if memory injection should be suppressed.
         """
         if not query:
             return False
-            
+
         q = query.strip().lower()
-        
+
         # Greeting detection (expanded)
         greeting_terms = (
-            "hello", "hi", "hey", "good morning", "good afternoon", "good evening", 
+            "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
             "top of the morning", "howdy", "greetings", "what's up", "sup", "yo"
         )
         is_greeting = any(term in q for term in greeting_terms) and len(q.split()) <= 5
@@ -531,7 +544,7 @@ class Retrieval:
             # Only allow name-related memories for greetings
             name_terms = ("name", "call me", "called", "my name is")
             return not any(term in q for term in name_terms)
-        
+
         # Meta-conversational queries that don't need memory
         meta_queries = (
             "how are you", "how do you work", "what can you do", "who are you",
@@ -539,7 +552,7 @@ class Retrieval:
         )
         if any(mq in q for mq in meta_queries):
             return True
-        
+
         # Very short queries that are likely conversational fillers
         if len(q.split()) <= 2:
             short_fillers = {
@@ -569,15 +582,22 @@ class Retrieval:
             }
             if q in short_fillers:
                 return True
-            
+
         # Questions about capabilities or general knowledge
+        # CRITICAL FIX: Don't suppress memory recall questions!
         capability_questions = (
             "can you", "will you", "would you", "could you", "should you",
             "do you know", "are you able", "is it possible"
         )
         if any(cq in q for cq in capability_questions) and "?" in q:
+            # EXCEPTION: If query contains personal memory indicators, it's memory recall
+            memory_indicators = ("my", "our", "we", "i", "me", "name", "dog", "cat", "pet",
+                                "favorite", "friend", "family", "parent", "sibling", "child",
+                                "where", "when", "what", "who", "live", "work", "from")
+            if any(indicator in q for indicator in memory_indicators):
+                return False  # DON'T suppress - this is memory recall!
             return True
-            
+
         return False
 
     def _graph_collect_candidates(self, query: str, entities: List[str], turn_id: int, max_bullets: int, seen: set, allowed_relations: Optional[Set[str]] = None) -> List[Candidate]:
@@ -775,11 +795,21 @@ class Retrieval:
                 from .enhanced_fts import EnhancedFTS
                 enhanced_fts = EnhancedFTS(self.host.store)
 
+                # User-wide scope by default: include all sessions owned by current user
                 session_id = getattr(self.host, 'current_session_id', None)
-                allowed_sessions = [session_id] if session_id else []
+                user_id = getattr(self.host, 'current_user_id', None)
+                allowed_sessions = []
+                try:
+                    if user_id and hasattr(self.host.store, 'get_sessions_by_user'):
+                        allowed_sessions = list(self.host.store.get_sessions_by_user(user_id) or [])
+                except Exception:
+                    allowed_sessions = []
+                if not allowed_sessions and session_id:
+                    # Fallback to current session if user mapping not available
+                    allowed_sessions = [session_id]
 
                 enhanced_results = enhanced_fts.enhanced_search(query, max_bullets * 2, session_ids=allowed_sessions)
-                hits = [(score, text, eid, ts) for score, text, eid, ts in enhanced_results]
+                hits = [(score, text, eid, ts, turn_id) for score, text, eid, ts, turn_id in enhanced_results]
 
                 logger.debug(f"[Retrieval._convo_collect] Enhanced FTS returned {len(hits)} hits")
                 if not hits:
@@ -791,9 +821,9 @@ class Retrieval:
                     if session_id and hasattr(self.host.store, 'search_fts_scoped'):
                         # Note: basic FTS scopes by eid; conversation turns are stored with eid='conversation'.
                         # As a conservative fallback, use global search to avoid scoping everything away.
-                        hits = [(0.0, text, eid, ts) for text, eid, ts in self.host.store.search_fts(sanitized, limit=max_bullets * 2)]
+                        hits = [(0.0, text, eid, ts, None) for text, eid, ts in self.host.store.search_fts(sanitized, limit=max_bullets * 2)]
                     else:
-                        hits = [(0.0, text, eid, ts) for text, eid, ts in self.host.store.search_fts(sanitized, limit=max_bullets * 2)]
+                        hits = [(0.0, text, eid, ts, None) for text, eid, ts in self.host.store.search_fts(sanitized, limit=max_bullets * 2)]
                 
             except ImportError:
                 logger.debug("[Retrieval._convo_collect] Enhanced FTS not available")
@@ -808,9 +838,9 @@ class Retrieval:
                 session_id = getattr(self.host, 'current_session_id', None)
                 allowed = [e for e in [user_id, session_id] if e]
                 if allowed and hasattr(self.host.store, 'search_fts_scoped'):
-                    hits = [(0.0, text, eid, ts) for text, eid, ts in self.host.store.search_fts_scoped(sanitized, allowed, limit=max_bullets * 2)]
+                    hits = [(0.0, text, eid, ts, None) for text, eid, ts in self.host.store.search_fts_scoped(sanitized, allowed, limit=max_bullets * 2)]
                 else:
-                    hits = [(0.0, text, eid, ts) for text, eid, ts in self.host.store.search_fts(sanitized, limit=max_bullets * 2)]
+                    hits = [(0.0, text, eid, ts, None) for text, eid, ts in self.host.store.search_fts(sanitized, limit=max_bullets * 2)]
             
         except Exception as e:
             logger.warning(f"[Retrieval._convo_collect] FTS search failed: {e}")
@@ -827,7 +857,16 @@ class Retrieval:
         except Exception:
             pass
 
-        for bm25_score, text, eid, ts in hits:
+        for hit in hits:
+            # Handle the new (score, text, eid, ts, turn_id) format
+            if len(hit) >= 5:
+                bm25_score, text, eid, ts, turn_id = hit[:5]
+            elif len(hit) >= 4:
+                bm25_score, text, eid, ts = hit[:4]
+                turn_id = None  # Fallback when turn_id not available
+            else:
+                continue
+                
             # Only allow conversation rows; filter summaries and other eids
             if not eid or eid != "conversation":
                 continue
@@ -844,13 +883,13 @@ class Retrieval:
             # Apply quality filter
             if not self._is_quality_bullet(s):
                 continue
-
+            
             candidates.append(Candidate(
                 text=s,
                 source="convo",
                 score_hint=bm25_score,
                 ts=ts,
-                meta={"bm25_score": bm25_score, "eid": eid}
+                meta={"bm25_score": bm25_score, "eid": eid, "turn_id": turn_id}
             ))
             
             seen.add(s)
@@ -1131,11 +1170,19 @@ class Retrieval:
                 from .enhanced_fts import EnhancedFTS
                 enhanced_fts = EnhancedFTS(self.host.store)
 
-                # Get session for scoped search (conversation turns are session-scoped)
+                # User-wide scope by default for conversation retrieval
                 session_id = getattr(self.host, 'current_session_id', None)
-                allowed_sessions = [session_id] if session_id else []
+                user_id = getattr(self.host, 'current_user_id', None)
+                allowed_sessions = []
+                try:
+                    if user_id and hasattr(self.host.store, 'get_sessions_by_user'):
+                        allowed_sessions = list(self.host.store.get_sessions_by_user(user_id) or [])
+                except Exception:
+                    allowed_sessions = []
+                if not allowed_sessions and session_id:
+                    allowed_sessions = [session_id]
 
-                # Use enhanced search with BM25 and query expansion, scoped by session_id
+                # Use enhanced search with BM25 and query expansion, scoped by user sessions
                 enhanced_results = enhanced_fts.enhanced_search(query, max_bullets * 2, session_ids=allowed_sessions)
                 hits = [(text, eid, ts) for score, text, eid, ts in enhanced_results]
 
@@ -1506,7 +1553,9 @@ class Retrieval:
                 confidence = min(1.0, max(0.0, confidence / 10.0))  # Normalize BM25 ~0-10 to 0-1
         elif candidate.source == "semantic":
             # For semantic: use provided score or fallback
-            confidence = candidate.meta.get("semantic_score", candidate.meta.get("similarity_score", candidate.score_hint, 0.5))
+            similarity_score = candidate.meta.get("similarity_score")
+            semantic_score = candidate.meta.get("semantic_score")
+            confidence = semantic_score if semantic_score is not None else (similarity_score if similarity_score is not None else candidate.score_hint)
         else:  # summary
             # For summary: use constant prior
             confidence = 0.5
@@ -1539,6 +1588,20 @@ class Retrieval:
             components["wsim"] = wsim * self.weights["wsim"]
         else:
             components["wsim"] = 0.0
+        
+        # Prosody component (wpro) - for convo candidates only
+        wpro = 0.0
+        if candidate.source == "convo":
+            # Get prosody weight from environment
+            prosody_weight = float(os.getenv("MEMORY_WEIGHT_PROSODY", "0.0"))
+            
+            if prosody_weight > 0.0:
+                wpro = self._calculate_prosody_component(candidate)
+                components["wpro"] = wpro * prosody_weight
+            else:
+                components["wpro"] = 0.0
+        else:
+            components["wpro"] = 0.0
         
         # Diversity penalty (wdiv) - penalize similar candidates
         diversity_penalty = 0.0
@@ -1601,6 +1664,120 @@ class Retrieval:
         text = re.sub(r'[^\w\s]', ' ', text)  # Replace punctuation with spaces
         text = re.sub(r'\s+', ' ', text).strip()  # Normalize spaces
         return text
+
+    def _calculate_prosody_component(self, candidate: Candidate) -> float:
+        """
+        Calculate prosody component for convo candidates.
+        
+        Args:
+            candidate: Convo candidate to score
+            
+        Returns:
+            Prosody certainty value [0, 1]
+        """
+        # Get session_id and turn_id from candidate metadata or host
+        session_id = getattr(self.host, 'current_session_id', None)
+        turn_id = candidate.meta.get('turn_id')
+        
+        if not session_id or turn_id is None:
+            return 0.0
+        
+        # Check cache first
+        cache_key = (session_id, turn_id)
+        if cache_key in self._prosody_cache:
+            certainty, _ = self._prosody_cache[cache_key]
+            return certainty
+        
+        # Retrieve from store
+        try:
+            certainty, meta = self.host.store.get_turn_prosody(session_id, turn_id)
+            
+            # Cache the result
+            self._prosody_cache[cache_key] = (certainty, meta)
+            
+            return certainty
+            
+        except Exception as e:
+            logger.warning(f"[Retrieval] Failed to retrieve prosody for session={session_id}, turn={turn_id}: {e}")
+            return 0.0
+
+    def _format_header_bullet(self, candidate: Candidate, components: Dict[str, float], total_score: float, expand_threshold: float) -> str:
+        """
+        Format candidate as compact header with automatic expansion based on score.
+        
+        Args:
+            candidate: Candidate to format
+            components: Scoring components from _composite_score
+            total_score: Combined score for the candidate
+            expand_threshold: Score below which to expand to full text
+            
+        Returns:
+            Formatted header (or expanded header + full text)
+        """
+        # Extract small scalars for bracket block
+        confidence = components.get("wconf", 0.0) / self.weights.get("wconf", 1.0)  # Normalize back to [0,1]
+        recency = components.get("wrec", 0.0) / self.weights.get("wrec", 1.0)  # Normalize back to [0,1]
+        usage = components.get("wuse", 0.0) / self.weights.get("wuse", 1.0)  # Normalize back to [0,1]
+        prosody = components.get("wpro", 0.0)
+        prosody_weight = float(os.getenv("MEMORY_WEIGHT_PROSODY", "0.0"))
+        if prosody_weight > 0:
+            prosody = prosody / prosody_weight  # Normalize back to [0,1]
+        
+        # Format based on source type
+        if candidate.source == "graph":
+            # Graph: relation-typed header
+            # Extract relation from candidate text by simple parsing
+            text = candidate.text
+            
+            # Try to extract relation and entity for compact header
+            # Example: "Alice lives in NYC" -> "lives_in: Alice [conf=0.95 rec=0.85]"
+            if " is " in text and " named " in text:
+                # "Alice is named Smith" -> "name: Alice [conf=0.95 rec=0.85]"
+                parts = text.split(" is named ")
+                if len(parts) == 2:
+                    entity, value = parts[0].strip(), parts[1].strip()
+                    header = f"name: {entity} [conf={confidence:.2f} rec={recency:.2f} use={usage:.0f}]"
+                else:
+                    header = f"fact: {self._smart_truncate(text, 100)} [conf={confidence:.2f} rec={recency:.2f}]"
+            elif " has " in text:
+                # "Alice has cat" -> "has: Alice [conf=0.95 rec=0.85]"
+                parts = text.split(" has ")
+                if len(parts) == 2:
+                    entity, value = parts[0].strip(), parts[1].strip()
+                    header = f"has: {entity} [conf={confidence:.2f} rec={recency:.2f} use={usage:.0f}]"
+                else:
+                    header = f"has: {self._smart_truncate(text, 100)} [conf={confidence:.2f} rec={recency:.2f}]"
+            else:
+                # Fallback: generic relation header (INCREASED from 40 → 100 chars)
+                header = f"fact: {self._smart_truncate(text, 100)} [conf={confidence:.2f} rec={recency:.2f}]"
+
+        elif candidate.source == "convo":
+            # Convo: short gist with scalars (INCREASED from 60 → 150 chars)
+            gist = self._smart_truncate(candidate.text, 150)
+            header = f"convo: {gist} [conf={confidence:.2f} pro={prosody:.2f} rec={recency:.2f}]"
+            
+        elif candidate.source == "semantic":
+            # Semantic: similarity-based header (INCREASED from 50 → 120 chars)
+            similarity_score = candidate.meta.get("similarity_score")
+            semantic_score = candidate.meta.get("semantic_score")
+            similarity = semantic_score if semantic_score is not None else (similarity_score if similarity_score is not None else candidate.score_hint)
+            gist = self._smart_truncate(candidate.text, 120)
+            header = f"semantic: {gist} [sim={similarity:.2f} conf={confidence:.2f}]"
+
+        else:  # summary
+            # Summary: gist with recency (INCREASED from 50 → 120 chars)
+            gist = self._smart_truncate(candidate.text, 120)
+            header = f"summary: {gist} [conf={confidence:.2f} rec={recency:.2f}]"
+        
+        # Auto-expand rule: expand if combined score below threshold OR confidence near-zero
+        # CRITICAL FIX: Expand low-confidence bullets to provide full context
+        if total_score < expand_threshold or confidence < 0.1:
+            # Add full text after header
+            full_text = candidate.text.replace("\n", " ").strip()
+            return f"• {header} -> {full_text}"
+        else:
+            # Compact header only
+            return f"• {header}"
 
     def _get_source_priority(self, query: str, intent: Optional[Dict] = None) -> List[str]:
         """

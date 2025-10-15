@@ -57,6 +57,16 @@ class TTSMLXUltraLowLatency(TTSService):
         self._ttfb_ms = None
         self._total_chunks = 0
 
+        # Barge-in cancellation support
+        self._cancel_event: asyncio.Event = asyncio.Event()
+
+    async def request_cancel(self) -> None:
+        """Signal the TTS stream to stop as soon as possible (barge-in)."""
+        try:
+            self._cancel_event.set()
+        except Exception:
+            pass
+
     def can_generate_metrics(self) -> bool:
         """Check if this service can generate processing metrics.
 
@@ -152,7 +162,8 @@ class TTSMLXUltraLowLatency(TTSService):
             if not await self._initialize_if_needed():
                 raise RuntimeError("Failed to initialize Kokoro worker")
 
-            # Start metrics
+            # Clear previous cancel signal and start metrics
+            self._cancel_event.clear()
             start_time = time.time()
             await self.start_ttfb_metrics()
             await self.start_processing_metrics()
@@ -183,6 +194,23 @@ class TTSMLXUltraLowLatency(TTSService):
                     raise RuntimeError("Kokoro worker stopped unexpectedly")
 
                 payload = json.loads(line.strip())
+
+                # Check for cancellation before handling payload
+                if self._cancel_event.is_set():
+                    logger.debug("TTS cancel requested; stopping stream mid-generation")
+                    # Drain until done without yielding audio
+                    if payload.get("done"):
+                        metrics = {
+                            "chunks": payload.get("chunks", 0),
+                            "ttfb_ms": payload.get("ttfb_ms", self._ttfb_ms),
+                            "total_ms": payload.get("total_ms"),
+                            "audio_bytes": 0
+                        }
+                        logger.info(f"TTS completed (canceled): {metrics}")
+                        break
+                    else:
+                        # Skip any audio chunks after cancellation
+                        continue
 
                 if "chunk" in payload:
                     audio_bytes = base64.b64decode(payload["chunk"])
@@ -227,7 +255,10 @@ class TTSMLXUltraLowLatency(TTSService):
                         "total_ms": payload.get("total_ms"),
                         "audio_bytes": total_audio_bytes
                     }
-                    logger.info(f"TTS completed: {metrics}")
+                    if total_audio_bytes == 0:
+                        logger.warning(f"TTS completed with zero audio; skipping playback: {metrics}")
+                    else:
+                        logger.info(f"TTS completed: {metrics}")
                     break
 
                 elif "error" in payload:

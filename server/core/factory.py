@@ -97,6 +97,8 @@ class VoiceAgentFactory:
             params=TransportParams(
                 audio_in_enabled=True,
                 audio_out_enabled=True,
+                video_in_enabled=self.config.video_input_enabled,
+                video_out_enabled=self.config.video_out_enabled,
                 vad_analyzer=SileroVADAnalyzer(params=vad_params),
                 turn_analyzer=LocalSmartTurnAnalyzerV3(
                     params=SmartTurnParams(
@@ -107,6 +109,9 @@ class VoiceAgentFactory:
                 ),
             ),
         )
+
+        if self.config.video_input_enabled:
+            logger.info(f"📹 Video input ENABLED (target_fps={self.config.video_target_fps})")
 
         self._services_cache['transport'] = transport
         return transport
@@ -540,13 +545,50 @@ class VoiceAgentFactory:
         
         # Define conversation pipeline (full processing)
         # IMPORTANT: Memory processor should only run in conversation branch
+        
+        # Enable barge-in: cancel TTS on user interruption
+        async def _cancel_tts_on_interruption(frame) -> bool:
+            try:
+                from pipecat.frames.frames import InterruptionTaskFrame
+                if isinstance(frame, InterruptionTaskFrame):
+                    tts = services.get('tts')
+                    if tts and hasattr(tts, 'request_cancel'):
+                        await tts.request_cancel()
+                    # Drop the interruption frame from downstream processors
+                    return False
+            except Exception:
+                # Proceed if anything goes wrong; don't block pipeline
+                return True
+            return True
+
+        from pipecat.processors.filters.function_filter import FunctionFilter as _FF
         conversation_processors = [
+            _FF(_cancel_tts_on_interruption),  # Barge-in handler
+        ]
+
+        # Vision context injector (if video enabled) - must be in conversation pipeline to see TranscriptionFrames
+        if self.config.video_input_enabled:
+            from core.video import VisionContextInjector
+            context = services.get('context')
+            if context:
+                vision_injector = VisionContextInjector(
+                    context=context,
+                    target_fps=self.config.video_target_fps,
+                    inject_on_text=True
+                )
+                conversation_processors.append(vision_injector)
+                logger.info(f"📹 Vision context injector added to conversation pipeline ({self.config.video_target_fps} fps)")
+            else:
+                logger.warning("📹 Video enabled but context not available - skipping vision injection")
+
+        # Continue with rest of conversation pipeline
+        conversation_processors.extend([
             services['memory'],
             services['context_aggregator'].user(),
             services['llm'],
             services['tts'],  # Main TTS instance
             services['context_aggregator'].assistant(),
-        ]
+        ])
         
         # Determine enrollment sample count from AudioIntelligence (single source of truth)
         total_samples = 3
@@ -582,12 +624,12 @@ class VoiceAgentFactory:
         
         # Build main pipeline stages
         stages = [transport.input()]
-        
+
         # Optional mic probe
         mic_probe = services.get('mic_probe')
         if mic_probe:
             stages.append(mic_probe)
-        
+
         # Core processing before router
         stages.extend([
             services['stt'],
@@ -615,7 +657,7 @@ class VoiceAgentFactory:
         if self.config.enable_intro_pipeline and services.get('audio_intelligence'):
             logger.info("🎭 Using intro-aware pipeline for enrollment UX")
             return self.create_intro_aware_pipeline(transport, services)
-        
+
         # Standard pipeline (no enrollment UX)
         stages = [transport.input()]
 
@@ -629,11 +671,30 @@ class VoiceAgentFactory:
         if audio_intel:
             logger.info("🎤 Audio Intelligence enabled - speaker recognition active")
             stages.append(audio_intel)
-        
-        # Main processing pipeline
+
+        # Main processing pipeline - start with STT
         stages.extend([
             services['stt'],
             services['rtvi'],
+        ])
+
+        # Vision context injector (if video enabled) - MUST be after STT to see TranscriptionFrames
+        if self.config.video_input_enabled:
+            from core.video import VisionContextInjector
+            context = services.get('context')
+            if context:
+                vision_injector = VisionContextInjector(
+                    context=context,
+                    target_fps=self.config.video_target_fps,
+                    inject_on_text=True
+                )
+                stages.append(vision_injector)
+                logger.info(f"📹 Vision context injector added after STT ({self.config.video_target_fps} fps)")
+            else:
+                logger.warning("📹 Video enabled but context not available - skipping vision injection")
+
+        # Continue with rest of pipeline
+        stages.extend([
             services['memory'],
             services['context_aggregator'].user(),
             services['llm'],
