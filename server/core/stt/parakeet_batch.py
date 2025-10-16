@@ -52,7 +52,7 @@ class ParakeetBatchSTT(STTService):
     HALLUCINATION_PATTERNS = {
         "yeah", "yep", "yes", "mmhmm", "mmhmmm", "mhm", "uhhuh",
         "im just", "thank you", "thanks", "okay", "ok",
-        "uh", "um", "hmm", "ah", "oh",
+        "uh", "um", "hmm", "ah", "oh", "Почему?","Scary."
     }
 
     def __init__(
@@ -60,7 +60,6 @@ class ParakeetBatchSTT(STTService):
         *,
         model_path: str = "mlx-community/parakeet-tdt-0.6b-v3",
         language: str = "en",
-        confidence_threshold: float = 0.3,
         temperature: float = 0.0,
         **kwargs
     ):
@@ -72,14 +71,13 @@ class ParakeetBatchSTT(STTService):
         self._model_path = model_path
         self._language = language
         self._sample_rate = 16000  # Parakeet expects 16kHz
-        self._confidence_threshold = confidence_threshold
         self._temperature = temperature
 
         # Model initialization
         self._model = None
         self._init_parakeet_model()
 
-        logger.info(f"✅ Parakeet Batch STT initialized: {model_path} (confidence_threshold: {confidence_threshold})")
+        logger.info(f"✅ Parakeet Batch STT initialized: {model_path}")
 
         # Streaming/VAD integration state for batch mode
         self._vad_active: bool = False

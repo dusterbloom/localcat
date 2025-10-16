@@ -26,7 +26,6 @@ async def test_parakeet_with_harvard():
         # Create optimized STT service
         stt_optimized = ParakeetStreamingSTT(
             chunk_duration=1.0,  # Optimal 1s chunks
-            confidence_threshold=0.2,  # Lower threshold to accept more
             sentence_pause_threshold=1.2,  # Longer pause to avoid cutting words
             max_chunk_duration=4.0,  # Reduced max for better responsiveness
             volume_threshold=0.001,  # Much lower volume threshold

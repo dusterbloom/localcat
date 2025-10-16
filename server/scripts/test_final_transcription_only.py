@@ -29,7 +29,6 @@ async def test_final_transcription_only():
         # Initialize STT
         stt = ParakeetStreamingSTT(
             enable_vad=False,
-            confidence_threshold=0.1,
             volume_threshold=0.0001,
             chunk_duration=1.0,
             context_size=(256, 256),

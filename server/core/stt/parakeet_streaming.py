@@ -52,7 +52,6 @@ class ParakeetStreamingSTT(STTService):
                  chunk_duration: float = 1.0,  # Reduced for more responsive transcription
                  enable_vad: bool = False,
                  temperature: float = 0.1,
-                 confidence_threshold: float = 0.4,
                  sentence_pause_threshold: float = 1.2,
                  max_chunk_duration: float = 2.0,
                  context_size: tuple = (256, 256),
@@ -66,7 +65,6 @@ class ParakeetStreamingSTT(STTService):
         self.chunk_duration = chunk_duration
         self.enable_vad = enable_vad
         self.temperature = temperature
-        self.confidence_threshold = confidence_threshold
         self.sentence_pause_threshold = sentence_pause_threshold
         self.max_chunk_duration = max_chunk_duration
         self.context_size = context_size
