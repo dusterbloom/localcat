@@ -598,6 +598,7 @@ class VoiceAgentFactory:
             services['memory'],
             services['context_aggregator'].user(),
             services['llm'],
+            services['text_aggregator'],  # Intelligent sentence boundary detection
             services['tts'],  # Main TTS instance
             services['context_aggregator'].assistant(),
         ])
@@ -719,6 +720,7 @@ class VoiceAgentFactory:
             services['memory'],
             services['context_aggregator'].user(),
             services['llm'],
+            services['text_aggregator'],  # Intelligent sentence boundary detection
             services['tts'],
             transport.output(),
             services['context_aggregator'].assistant(),
@@ -804,6 +806,9 @@ class VoiceAgentFactory:
         # Create audio intelligence processor (Session 1: Speaker recognition)
         audio_intelligence = self.create_audio_intelligence_processor()
 
+        # Create text aggregator for intelligent sentence boundaries
+        text_aggregator = self.create_text_aggregator()
+
         # Assemble all services
         services = {
             'transport': transport,
@@ -818,6 +823,7 @@ class VoiceAgentFactory:
             'mic_probe': mic_probe,
             'intent': intent_service,  # Intent classification service (optional)
             'audio_intelligence': audio_intelligence,  # Audio intelligence (speaker, emotion, prosody)
+            'text_aggregator': text_aggregator,  # Token-aware text aggregator for sentence boundaries
         }
 
         # Create pipeline

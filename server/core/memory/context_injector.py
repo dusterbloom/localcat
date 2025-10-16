@@ -306,31 +306,90 @@ class ContextInjector:
 
     def _prune_context_window(self, messages: list) -> list:
         """
-        Keep all system messages and the last N user/assistant turns.
+        Token-aware context pruning: Keep system messages + recent turns that fit budget.
 
-        N is defined as CONTEXT_MAX_TURN_PAIRS. This keeps the agent responsive
-        while allowing the conversation to continue indefinitely.
+        Strategy:
+        1. Calculate token budget from config
+        2. Keep all system messages (session, persona, memory)
+        3. Calculate remaining budget for conversation history
+        4. Keep most recent turn pairs that fit within budget
+        5. Always keep minimum turns for coherence
+
+        This prevents performance degradation in long conversations while maintaining
+        context coherence through the memory system.
         """
         try:
-            max_pairs = max(int(self.config.ctx_max_pairs), 0)
-        except Exception:
-            max_pairs = 4
-            
-        if max_pairs <= 0:
-            return messages
+            from .token_estimator import TokenEstimator
 
-        # Identify indices of user/assistant messages
-        ua_indices = [i for i, m in enumerate(messages) if isinstance(m, dict) and m.get('role') in ('user', 'assistant')]
-        keep_ua = set(ua_indices[-2 * max_pairs:])
+            max_tokens = self.config.llm_context_max_tokens or 3000
+            prune_threshold = self.config.llm_context_prune_threshold or 0.70
+            min_turns = max(self.config.llm_context_min_turns or 3, 1)
 
-        pruned = []
-        for i, m in enumerate(messages):
-            if not isinstance(m, dict):
-                continue
-            role = m.get('role')
-            if role == 'system' or i in keep_ua:
-                pruned.append(m)
-        return pruned
+            # Calculate available budget (with safety margin)
+            available_budget = int(max_tokens * prune_threshold)
+
+            # Separate system vs user/assistant messages
+            system_msgs = []
+            ua_msgs = []
+
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    continue
+                role = msg.get('role')
+                if role == 'system':
+                    system_msgs.append(msg)
+                elif role in ('user', 'assistant'):
+                    ua_msgs.append(msg)
+
+            # Calculate tokens in system messages (always kept)
+            system_tokens = sum(TokenEstimator.estimate_message_tokens(m) for m in system_msgs)
+
+            # Remaining budget for conversation history
+            remaining_budget = available_budget - system_tokens
+
+            if remaining_budget <= 0:
+                logger.warning(f"[ContextInjector] System messages exceed token budget!")
+                return system_msgs + ua_msgs[-2 * min_turns:]  # Keep minimum turns
+
+            # Keep most recent turn pairs that fit within budget
+            kept_ua = []
+            current_tokens = 0
+
+            # Iterate from most recent to oldest
+            for msg in reversed(ua_msgs):
+                msg_tokens = TokenEstimator.estimate_message_tokens(msg)
+                if current_tokens + msg_tokens <= remaining_budget or len(kept_ua) < (2 * min_turns):
+                    kept_ua.insert(0, msg)  # Prepend to maintain order
+                    current_tokens += msg_tokens
+                else:
+                    break
+
+            # Ensure we keep pairs (user + assistant)
+            if len(kept_ua) % 2 == 1:
+                kept_ua = kept_ua[:-1]  # Remove incomplete pair
+
+            pruned_count = len(ua_msgs) - len(kept_ua)
+            if pruned_count > 0:
+                logger.info(f"[ContextInjector] Pruned {pruned_count} messages "
+                           f"({system_tokens + current_tokens}/{available_budget} tokens used)")
+
+            return system_msgs + kept_ua
+
+        except Exception as e:
+            logger.error(f"[ContextInjector] Token-aware pruning failed: {e}, using fallback")
+            # Fallback to original message-count based pruning
+            max_pairs = max(int(self.config.ctx_max_pairs), 0) or 4
+            ua_indices = [i for i, m in enumerate(messages) if isinstance(m, dict) and m.get('role') in ('user', 'assistant')]
+            keep_ua = set(ua_indices[-2 * max_pairs:])
+
+            pruned = []
+            for i, m in enumerate(messages):
+                if not isinstance(m, dict):
+                    continue
+                role = m.get('role')
+                if role == 'system' or i in keep_ua:
+                    pruned.append(m)
+            return pruned
 
     def get_injection_metrics(self) -> Dict[str, Any]:
         """Get injection metrics"""

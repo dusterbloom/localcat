@@ -66,6 +66,11 @@ class MemoryConfiguration:
     ctx_window_enabled: bool = True
     ctx_max_pairs: int = 4
 
+    # Token-aware context management (prevent degradation in long chats)
+    llm_context_max_tokens: int = 3000
+    llm_context_prune_threshold: float = 0.70
+    llm_context_min_turns: int = 3
+
     # Token budget and filtering
     token_budget: int = 300
     max_bullets: int = 2
@@ -171,6 +176,11 @@ class MemoryConfiguration:
         ctx_window_enabled = _parse_bool(get_env("CONTEXT_SLIDING_WINDOW", "CTX_PRUNE_ENABLED") or "true")
         ctx_max_pairs = _parse_int(get_env("CONTEXT_MAX_TURN_PAIRS", "CTX_MAX_PAIRS"), default=4)
 
+        # Token-aware context management
+        llm_context_max_tokens = _parse_int(os.getenv("LLM_CONTEXT_MAX_TOKENS"), default=3000)
+        llm_context_prune_threshold = _parse_float(os.getenv("LLM_CONTEXT_PRUNE_THRESHOLD"), default=0.70)
+        llm_context_min_turns = _parse_int(os.getenv("LLM_CONTEXT_MIN_TURNS"), default=3)
+
         # Token budget and filtering
         token_budget = _parse_int(get_env("TOKEN_BUDGET"), default=300)
         max_bullets = _parse_int(get_env("MAX_BULLETS"), default=2)
@@ -258,6 +268,11 @@ class MemoryConfiguration:
             max_turn_pairs=max_turn_pairs,
             ctx_window_enabled=ctx_window_enabled,
             ctx_max_pairs=ctx_max_pairs,
+
+            # Token-aware context management
+            llm_context_max_tokens=llm_context_max_tokens,
+            llm_context_prune_threshold=llm_context_prune_threshold,
+            llm_context_min_turns=llm_context_min_turns,
 
             # Token budget and filtering
             token_budget=token_budget,

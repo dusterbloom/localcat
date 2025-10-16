@@ -24,6 +24,7 @@ lmdb==1.5.1
 msgpack==1.0.8
 rapidfuzz==3.9.6
 spacy>=3.8.4  # UD parsing (download models separately) - updated for mlx-audio compatibility
+tiktoken>=0.7.0  # Accurate token counting for context management
 
 
 # Audio Intelligence (Session 1: Speaker Recognition)

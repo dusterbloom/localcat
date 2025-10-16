@@ -65,6 +65,13 @@ class VoiceAgentConfig:
     memory_cleanup_interval_minutes: int = 60
 
     # ============================================================================
+    # Context Management (prevent performance degradation in long chats)
+    # ============================================================================
+    llm_context_max_tokens: int = 3000  # Reserve ~1000 tokens for response
+    llm_context_prune_threshold: float = 0.70  # Prune at 70% capacity
+    llm_context_min_turns: int = 3  # Always keep at least 3 recent turns
+
+    # ============================================================================
     # Audio Intelligence & Enrollment UX
     # ============================================================================
     audio_intelligence_enabled: bool = True
@@ -158,6 +165,11 @@ class VoiceAgentConfig:
         config.memory_enabled = os.getenv("VOICE_AGENT_MEMORY_ENABLED", "true").lower() == "true"
         config.hotpath_enabled = os.getenv("VOICE_AGENT_HOTPATH_ENABLED", "true").lower() == "true"
         config.session_persistence = os.getenv("VOICE_AGENT_SESSION_PERSISTENCE", "true").lower() == "true"
+
+        # Context Management
+        config.llm_context_max_tokens = int(os.getenv("LLM_CONTEXT_MAX_TOKENS", config.llm_context_max_tokens))
+        config.llm_context_prune_threshold = float(os.getenv("LLM_CONTEXT_PRUNE_THRESHOLD", config.llm_context_prune_threshold))
+        config.llm_context_min_turns = int(os.getenv("LLM_CONTEXT_MIN_TURNS", config.llm_context_min_turns))
 
         # Development & Debugging
         config.debug_mode = os.getenv("VOICE_AGENT_DEBUG_MODE", "false").lower() == "true"
