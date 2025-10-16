@@ -3,6 +3,9 @@ Configuration Management for Memory Systems
 
 Centralized configuration following the Single Responsibility Principle.
 Handles parsing and validation of 40+ environment variables with type safety.
+
+NOTE: This module now uses the unified configuration base classes and parsing
+utilities from config.base_config and config.parsers to eliminate code duplication.
 """
 
 import os
@@ -10,46 +13,22 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
 from loguru import logger
 
-
-def _parse_bool(value: str) -> bool:
-    """Parse bool from env var"""
-    return value.lower() in ("true", "1", "yes", "on")
-
-
-def _parse_int(value: Optional[str], default: int) -> int:
-    """Parse int from env var with fallback"""
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        return default
-
-
-def _parse_float(value: Optional[str], default: float) -> float:
-    """Parse float from env var with fallback"""
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except ValueError:
-        return default
-
-
-def _parse_list(value: Optional[str], default: List[str]) -> List[str]:
-    """Parse comma-separated list from env var"""
-    if value is None:
-        return default
-    return [item.strip() for item in value.split(',') if item.strip()]
+# Import unified configuration base and parsers
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+from config.base_config import BaseConfiguration
+from config.parsers import _parse_bool, _parse_int, _parse_float, _parse_list
 
 
 @dataclass
-class MemoryConfiguration:
+class MemoryConfiguration(BaseConfiguration):
     """
     Complete configuration for HotPath memory system.
 
     Single source of truth for all memory-related settings.
     Consolidates configuration from the hotpath_processor.py god object.
+
+    Inherits from BaseConfiguration for unified config management and validation.
     """
 
     # Core settings

@@ -8,6 +8,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- **Technical Debt Elimination - Phase 1: Configuration Unification** (2025-10-16)
+  - **Unified Configuration Architecture**: Eliminated duplicate parsing code and improved maintainability
+    - Created `config/parsers.py` (114 lines) with reusable type-safe parsing utilities (`_parse_bool`, `_parse_int`, `_parse_float`, `_parse_list`, `_parse_enum`)
+    - Created `config/base_config.py` (287 lines) with `BaseConfiguration` abstract base and specialized configs (LLM, STT, TTS, Vision)
+    - Refactored `VoiceAgentConfig` using composition pattern with property delegation for backward compatibility
+    - Integrated `MemoryConfiguration` with `BaseConfiguration` for unified config management
+  - **Comprehensive Test Coverage**: Created 56 new configuration tests (was 7)
+    - `test_config_parsers.py` (22 tests) - parsing utility validation
+    - `test_base_config.py` (24 tests) - configuration class validation
+    - `test_voice_agent_config.py` (17 tests) - composition and backward compatibility
+  - **Key Innovations**:
+    - Property delegation pattern maintains flat API while enabling modular internal structure
+    - Validation composition - each section validates itself, aggregated at top level
+    - Full type safety with comprehensive type hints throughout
+  - **Metrics**: 87.5% reduction in duplicate code (8 locations → 1), 800% increase in test coverage, 100% backward compatible
+
+- **Technical Debt Elimination - Phase 2.1: ServiceFactory Extraction** (2025-10-16)
+  - **ServiceFactory Module**: Extracted all service creation logic from monolithic factory
+    - Created `core/factories/service_factory.py` (507 lines) with 14 service creation methods
+    - Reduced `core/factory.py` from 934 to 572 lines (**38.7% reduction, -362 lines**)
+    - VoiceAgentFactory now uses composition pattern, delegating to ServiceFactory
+  - **Services Extracted**:
+    - Transport creation (WebRTC with VAD and turn detection)
+    - STT service (Parakeet streaming/batch, Whisper MLX fallback)
+    - TTS service (Kokoro Professional/MLX, boundary control)
+    - LLM service (OpenAI-compatible with streaming)
+    - Memory processor (HotPath memory system)
+    - Audio Intelligence (speaker recognition, emotion, prosody)
+    - HotMem service (Pipecat-compatible memory backend)
+    - Intent service (classification for smart processing)
+    - Context aggregator (LLM context with anonymous-aware wrapper)
+    - Session tracker (database or JSON-based)
+    - RTVI processor (client UI events)
+    - Mic probe (optional debugging tool)
+    - Text aggregator (sentence boundary detection)
+  - **Architectural Improvements**:
+    - Separation of concerns - service creation isolated in dedicated module
+    - Independent testability - each service method can be unit tested
+    - Improved maintainability - changes localized to ServiceFactory
+    - Zero breaking changes - all existing signatures preserved
+  - **Metrics**: 362 lines extracted, improved testability, modular architecture
+
+- **Token-Aware Context Management** (2025-10-16)
+  - **TokenEstimator**: Added `core/memory/token_estimator.py` for accurate LLM context tracking
+    - Character-based estimation (4 chars/token) with tiktoken support for precision
+    - Context message token counting for proactive overflow prevention
+    - Comprehensive validation and error handling
+  - **Smart Context Pruning**: Prevents performance degradation in long conversations
+    - Configurable token limits (`LLM_CONTEXT_MAX_TOKENS=3000`)
+    - Prune threshold (`LLM_CONTEXT_PRUNE_THRESHOLD=0.70`)
+    - Minimum turn retention (`LLM_CONTEXT_MIN_TURNS=3`)
+  - **Test Coverage**: Created `test_token_aware_context.py` with 7 tests
+    - Token estimation accuracy validation
+    - Pruning behavior verification
+    - Edge case handling (empty context, single message)
+  - **Documentation**: Added `docs/token-aware-context-management.md` with configuration guide
+  - **Impact**: Prevents context overflow, maintains conversation quality in extended sessions
+
 - **Vision Processing Optimizations** (2025-10-16)
   - Image preprocessing with configurable resize (384×384px default, ~75% token reduction)
   - Context pruning to limit images (default 2, prevents bloat in long conversations)

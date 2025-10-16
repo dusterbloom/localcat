@@ -2,6 +2,32 @@
 
 ## Completed (2025-10-16)
 
+### ✅ Technical Debt Elimination - Phase 1: Configuration Unification
+**Goal:** Eliminate duplicate configuration code and improve maintainability
+- Created unified parsing utilities (`config/parsers.py`, 114 lines)
+- Base configuration architecture (`config/base_config.py`, 287 lines)
+- Composition pattern for VoiceAgentConfig (LLM, STT, TTS, Vision sections)
+- Property delegation pattern for backward compatibility
+- Eliminated 87.5% of duplicate parsing code (8 locations → 1)
+- Increased test coverage by 800% (7 tests → 63 tests)
+- **Impact:** Zero breaking changes, 100% backward compatible
+
+### ✅ Technical Debt Elimination - Phase 2.1: ServiceFactory Extraction
+**Goal:** Decompose monolithic factory into testable, modular services
+- Extracted 14 service creation methods to `ServiceFactory` (507 lines)
+- Reduced `core/factory.py` from 934 lines to 572 lines (38.7% reduction)
+- Composition pattern: VoiceAgentFactory delegates to ServiceFactory
+- Each service independently testable and maintainable
+- **Impact:** Improved testability, separation of concerns, zero breaking changes
+
+### ✅ Token-Aware Context Management
+**Goal:** Prevent performance degradation in long conversations
+- Token estimation for LLM context tracking
+- Smart pruning maintaining minimum conversation turns
+- Configurable limits (3000 tokens max, 70% prune threshold)
+- Comprehensive test suite (7 tests)
+- **Impact:** Prevents context overflow, maintains conversation quality
+
 ### ✅ Vision Processing Optimizations
 **Goal:** Reduce LLM vision processing latency by 50-75%
 - Image preprocessing (resize, compress, aspect ratio preservation)
