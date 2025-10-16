@@ -122,4 +122,69 @@ For questions or suggestions about documentation, please open an issue or contac
 
 ---
 
-*Last Updated: October 14, 2025*
+---
+
+## 🎯 Current Project Status (October 2025)
+
+### Latest Architecture (v2.0 - Factory Pattern Refactor)
+
+**Major Components:**
+- **Unified Configuration**: VoiceAgentConfig with centralized settings management
+- **Service Factory**: Factory pattern for all service creation (STT, TTS, LLM, Memory, Transport)
+- **Token-Aware Context**: Prevents LLM degradation with intelligent pruning (3000 tokens, 70% threshold)
+- **HotMem Service**: Modular memory system with prosody-enhanced retrieval
+- **Vision Processing**: Keyword-filtered vision with deduplication
+- **Audio Intelligence**: Speaker recognition with automatic enrollment
+
+**Current Model Pipeline:**
+```
+┌─ Voice Pipeline ──────────────────────────────────────────┐
+│  Silero VAD → Smart Turn → Parakeet STT → LLM (MiniCPM-V) │
+│                                                  ↓          │
+│  Kokoro TTS ← Token Pruning ← Memory Injection ←┘         │
+└───────────────────────────────────────────────────────────┘
+
+┌─ Memory System (HotMem Service) ─────────────────────────┐
+│  Background Summarizer → Context Injector → Frame Processor │
+│         ↓                       ↓                  ↓        │
+│  Session Manager ← Quality Filter ← Entity Resolver        │
+│         ↓                                                  │
+│  Multi-source Retrieval (convo, graph, summary, semantic)  │
+└───────────────────────────────────────────────────────────┘
+```
+
+### Recent Milestones (September-October 2025)
+
+**October 16, 2025 - Config Unification & Factory Decomposition**
+- Centralized configuration with VoiceAgentConfig
+- Factory pattern for service creation
+- Reduced coupling and improved testability
+- Comprehensive test coverage for configuration
+
+**October 16, 2025 - Token-Aware Context Management**
+- Prevents LLM degradation in long conversations
+- Token counting with tiktoken
+- Intelligent context pruning at 70% capacity
+- Maintains minimum conversation coherence (4 turns)
+
+**October 15-16, 2025 - Vision/TTS/STT Performance Optimizations**
+- Keyword-filtered vision processing (saves tokens)
+- Image deduplication
+- Parakeet STT hallucination filtering
+- Kokoro TTS ultra-low latency improvements
+
+**October 15, 2025 - Prosody-Aware Retrieval**
+- Audio intelligence integration with memory
+- Prosody confidence scoring
+- Video frame processing
+- Enhanced retrieval with multi-signal scoring
+
+**October 14, 2025 - Complete HotMem Modularization**
+- Broke up 1,100-line God-object into focused components
+- 66% code reduction (1,100 → 373 lines)
+- SOLID compliance across all components
+- Comprehensive test suite (8 unit + 1 integration test)
+
+---
+
+*Last Updated: October 16, 2025*

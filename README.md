@@ -1,20 +1,24 @@
-# Local voice agents on macOS with Pipecat
+# LocalCat - Local Voice Agent on macOS with Pipecat
 
 ![screenshot](assets/debug-console-screenshot.png)
 
 Pipecat is an open-source, vendor-neutral framework for building real-time voice (and video) AI applications.
 
-This repository contains an example of a voice agent running with all local models on macOS. On an M-series mac, you can achieve voice-to-voice latency of <800 ms with relatively strong models.
+This repository contains a production-ready voice agent running entirely with local models on macOS. On an M-series Mac, you can achieve voice-to-voice latency of <800ms with relatively strong models, featuring persistent memory, vision processing, and speaker recognition.
 
-The [server/bot.py](server/bot.py) file uses these models:
+## Current Model Pipeline
 
-  - Silero VAD
-  - smart-turn v2
-  - MLX Whisper
-  - Gemma3n 4B 
-  - Kokoro TTS
+The [server/bot.py](server/bot.py) file uses:
 
-But you can swap any of them out for other models, or completely reconfigure the pipeline. It's easy to add tool calling, MCP server integrations, use parallel pipelines to do async inference alongside the voice conversations, add custom processing steps, configure interrupt handling to work differently, etc.
+  - **VAD**: Silero (voice activity detection)
+  - **Turn Management**: Smart-turn v2
+  - **STT**: Parakeet (batch processing with hallucination filtering)
+  - **LLM**: Configurable via local OpenAI-compatible server (Gemma3n 4B, MiniCPM-V 4.5, etc.)
+  - **TTS**: Kokoro MLX (ultra-low latency 40-80ms TTFB)
+  - **Memory**: HotMem service (token-aware, prosody-enhanced)
+  - **Vision**: Optional video processing with keyword filtering
+
+You can swap any of these out for other models or completely reconfigure the pipeline. The system supports tool calling, MCP server integrations, parallel pipelines for async inference, custom processing steps, and flexible interrupt handling.
 
 The bot and web client here communicate using a low-latency, local, serverless WebRTC connection. For more information on serverless WebRTC, see the Pipecat [SmallWebRTCTransport docs](https://docs.pipecat.ai/server/services/transport/small-webrtc) and this [article](https://www.daily.co/blog/you-dont-need-a-webrtc-server-for-your-voice-agents/). You could switch over to a different Pipecat transport (for example, a WebSocket-based transport), but WebRTC is the best choice for realtime audio.
 
@@ -22,16 +26,39 @@ For a deep dive into voice AI, including network transport, optimizing for laten
 
 # Getting Started
 
-1) Configure environment
+## Quick Start
+
+1) **Configure environment**
 
 ```bash
 cp server/.env.example server/.env
-# Optional: edit server/.env to point LLM to your local server
-# VOICE_AGENT_LLM_BASE_URL=http://localhost:11434/v1
-# VOICE_AGENT_LLM_MODEL=gemma3n:e2b
+# Edit server/.env to configure your setup
 ```
 
-2) Start the server
+Key configuration variables:
+```bash
+# LLM Configuration (LM Studio or Ollama)
+LLM_BASE_URL=http://127.0.0.1:1234/v1
+LLM_MODEL=minicpm-v-4_5  # or llama3.2:1b, gemma3n:4b, etc.
+
+# Core Agent Settings
+USER_ID=your_username
+AGENT_ID=locat
+
+# Memory System
+MEMORY_ENABLED=true
+MEMORY_HOTPATH_ENABLED=true
+
+# Audio Intelligence (Speaker Recognition)
+AUDIO_INTELLIGENCE_ENABLED=true
+AUDIO_INTEL_INTRO_PIPELINE=true
+
+# Vision Processing
+VIDEO_INPUT_ENABLED=true
+VISION_KEYWORD_FILTER=true
+```
+
+2) **Start the server**
 
 ```bash
 cd server
@@ -45,7 +72,7 @@ pip install -r requirements.txt
 python bot.py
 ```
 
-3) Start the web client
+3) **Start the web client**
 
 ```bash
 cd client
@@ -53,26 +80,55 @@ npm i
 npm run dev
 ```
 
-4) Optional: speed up model startup after first run
+4) **Optional: Speed up startup after first run**
 
 ```bash
 cd server
 HF_HUB_OFFLINE=1 uv run bot.py
 ```
 
-# Environment setup
+# Key Features
 
-- Copy the example env file and adjust values for your setup:
-  - `server/.env.example:1` → copy to `server/.env`
-  - Key variables:
-    - `VOICE_AGENT_LLM_BASE_URL`, `VOICE_AGENT_LLM_MODEL`, `VOICE_AGENT_LLM_API_KEY`
-    - `VOICE_AGENT_STT_ENGINE`, `VOICE_AGENT_TTS_ENGINE`
-    - `MEMORY_BACKEND`, `MEMORY_*` caps (optional)
-    - `AUDIO_INTELLIGENCE_ENABLED`, `AUDIO_INTEL_*` (optional)
+## Advanced Capabilities
 
-- Run a local OpenAI-compatible HTTP server for the LLM.
-  - LM Studio: start the server from the Developer tab and note the base URL.
-  - Ollama (with an OpenAI shim): point `VOICE_AGENT_LLM_BASE_URL` to the shim endpoint.
+- **🧠 HotMem Memory Service**: Token-aware persistent memory with prosody-enhanced retrieval
+  - Prevents LLM degradation with intelligent context pruning (3000 token limit, 70% threshold)
+  - Multi-source retrieval: conversation history, graph facts, summaries, semantic search
+  - Session management with speaker-specific memory
+
+- **🎤 Audio Intelligence**: Speaker recognition and enrollment
+  - Automatic speaker enrollment (3 utterances)
+  - Privacy-first with ephemeral/anonymous modes
+  - Prosody-aware confidence scoring
+
+- **👁️ Vision Processing**: Context-aware video frame processing
+  - Keyword-filtered vision injection (only for vision-related queries)
+  - Image deduplication to reduce token usage
+  - Configurable image quality and size
+
+- **⚡ Ultra-Low Latency**: <800ms end-to-end response time
+  - Parakeet STT with hallucination filtering
+  - Kokoro TTS with 40-80ms TTFB
+  - Token-based streaming and chunking
+
+## Environment Setup
+
+Copy the example env file and adjust values for your setup:
+```bash
+cp server/.env.example server/.env
+```
+
+**Core Configuration Variables:**
+- `LLM_BASE_URL`, `LLM_MODEL` - Your local LLM server (LM Studio or Ollama)
+- `STT_ENGINE` - Speech-to-text engine (parakeet, parakeet_batch, parakeet_streaming)
+- `VOICE_AGENT_TTS_ENGINE` - Text-to-speech (kokoro_mlx recommended)
+- `MEMORY_ENABLED`, `MEMORY_HOTPATH_ENABLED` - Memory system toggles
+- `AUDIO_INTELLIGENCE_ENABLED` - Speaker recognition
+- `VIDEO_INPUT_ENABLED`, `VISION_MODEL_ENABLED` - Vision processing
+
+**Run a local OpenAI-compatible LLM server:**
+- **LM Studio**: Start server from Developer tab, supports vision models (MiniCPM-V, etc.)
+- **Ollama**: Supports text-only models with OpenAI-compatible endpoint
 
 # Models and dependencies
 
@@ -137,18 +193,51 @@ npm run dev
 # Navigate to URL shown in terminal in your web browser
 ```
 
-# Configuration quick reference
+# Configuration Quick Reference
 
-- Server configuration is environment-driven and loaded from `server/.env`.
-  - Central mapping: `server/config/settings.py:96`
-  - Memory config: `server/core/memory/config.py:1`
-  - Enrollment messages: `server/core/audio/enrollment_messages.py:1`
+Server configuration is environment-driven and loaded from `server/.env`:
+- **Unified Config**: `server/config/settings.py` - VoiceAgentConfig with factory pattern
+- **Memory Config**: `server/core/memory/config_manager.py` - MemoryConfiguration
+- **Service Factory**: `server/core/factories/service_factory.py` - Centralized service creation
 
-- Common tweaks:
-  - LLM streaming: set `LLM_USE_STREAMING=true` for lower latency.
-  - Switch memory backend: `MEMORY_BACKEND=hotmem` to use the service backend.
-  - Disable audio intelligence: `AUDIO_INTELLIGENCE_ENABLED=false`.
-  - Enrollment UX: `AUDIO_INTEL_INTRO_PIPELINE=true` for first-time guided enrollment.
+## Common Configuration Tweaks
+
+**Performance Optimization:**
+```bash
+# Token-aware context management (prevents LLM degradation)
+LLM_CONTEXT_MAX_TOKENS=3000           # Maximum context size
+LLM_CONTEXT_PRUNE_THRESHOLD=0.70      # Prune at 70% capacity
+LLM_CONTEXT_MIN_TURNS=4               # Minimum conversation history to keep
+
+# Ultra-low latency TTS
+TTS_BUFFER_MS=40                      # 40-80ms TTFB target
+TTS_MIN_TOKENS=150
+TTS_MAX_TOKENS=200
+```
+
+**Memory System:**
+```bash
+MEMORY_HOTPATH_ENABLED=true           # Enable HotMem service
+MEMORY_TOKEN_BUDGET=600               # Token budget for memory context
+MEMORY_MAX_BULLETS=5                  # Maximum memory bullets
+MEMORY_INJECTION_MODE=bullets         # bullets or headers
+MEMORY_SOURCES=convo,summary,graph,semantic  # Retrieval sources
+```
+
+**Vision Processing:**
+```bash
+VISION_KEYWORD_FILTER=true            # Only inject for vision queries
+VISION_KEYWORDS=see,look,show,what,describe...
+VISION_MAX_IMAGES_IN_CONTEXT=2        # Limit images to save tokens
+VISION_ENABLE_DEDUPLICATION=true      # Prevent duplicate frames
+```
+
+**Audio Intelligence:**
+```bash
+AUDIO_INTEL_INTRO_PIPELINE=true       # Guided speaker enrollment
+AUDIO_INTEL_SKIP_FOR_RETURNING=false  # Re-enroll or skip for known speakers
+SPEAKER_AUTO_ENROLL_UTTERANCES=3      # Utterances needed for enrollment
+```
 
 # Pre-commit hooks
 

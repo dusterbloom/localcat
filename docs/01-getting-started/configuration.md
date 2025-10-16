@@ -23,61 +23,129 @@ LocalCat uses environment variables for configuration, loaded from `server/.env`
 ### LLM Configuration
 
 ```bash
-# OpenAI-compatible endpoint (Ollama default)
-OPENAI_BASE_URL=http://127.0.0.1:11434/v1
+# OpenAI-compatible endpoint (LM Studio or Ollama)
+LLM_BASE_URL=http://127.0.0.1:1234/v1
 
 # Model to use for conversation
-OPENAI_MODEL=gemma3n:4b
+LLM_MODEL=minicpm-v-4_5  # Supports vision (MiniCPM-V) or text-only (llama3.2:1b, gemma3n:4b)
 
 # Optional API key (not needed for local servers)
-OPENAI_API_KEY=
+LLM_API_KEY=not-needed
 
-# Enable streaming for lower latency
-LLM_USE_STREAMING=true
+# Embedding model for semantic memory
+LLM_EMBEDDING_MODEL=nomic-embed-text:latest
 
-# Token limits
-LLM_MAX_TOKENS=512
+# Token limits and temperature
 LLM_TEMPERATURE=0.7
+
+# Turn management
+LLM_AGGREGATION_TIMEOUT=0.12
+LLM_TURN_EMULATED_VAD_TIMEOUT=0.3
+LLM_ENABLE_EMULATED_VAD_INTERRUPTION=true
+```
+
+### Token-Aware Context Management
+
+**NEW: Prevents LLM degradation in long conversations**
+
+```bash
+# Maximum tokens for LLM context (reserve room for response)
+LLM_CONTEXT_MAX_TOKENS=3000
+
+# Prune at this threshold (0.70 = prune at 70% capacity)
+LLM_CONTEXT_PRUNE_THRESHOLD=0.70
+
+# Always keep at least this many recent turns for coherence
+LLM_CONTEXT_MIN_TURNS=4
+
+# Memory system context window (turn pairs to keep)
+MEMORY_CONTEXT_SLIDING_WINDOW=true
+MEMORY_CONTEXT_MAX_TURN_PAIRS=4
 ```
 
 ### Voice Pipeline Settings
 
 ```bash
-# Speech-to-Text
-VOICE_AGENT_STT_ENGINE=mlx-whisper
-WHISPER_MODEL=base  # Options: tiny, base, small, medium, large
-WHISPER_LANGUAGE=en
+# Speech-to-Text (Parakeet is current default)
+STT_ENGINE=parakeet
+VOICE_AGENT_STT_ENGINE=parakeet_batch  # or parakeet_streaming
+STT_CHUNK_DURATION=1.0
+STT_ENABLE_VAD=false
 
-# Text-to-Speech
-VOICE_AGENT_TTS_ENGINE=kokoro
-TTS_MODEL_PATH=mlx-community/Kokoro-82M-bf16
-TTS_ULTRA_LOW_LATENCY=true
-KOKORO_BUFFER_MS=40  # Chunk size for streaming
+# Parakeet STT Settings (with hallucination filtering)
+PARAKEET_CONFIDENCE_THRESHOLD=0.2
+PARAKEET_TEMPERATURE=0.0
+PARAKEET_SENTENCE_PAUSE_THRESHOLD=1.2
+PARAKEET_MAX_CHUNK_DURATION=4.0
+PARAKEET_BATCH_CONFIDENCE_THRESHOLD=0.2
+# NOTE: Confidence filtering removed - using hallucination blacklist instead
+
+# Text-to-Speech (Kokoro MLX ultra-low latency)
+VOICE_AGENT_TTS_ENGINE=kokoro_mlx
+VOICE_AGENT_TTS_VOICE=af_heart
+VOICE_AGENT_TTS_SPEED=1.0
+VOICE_AGENT_TTS_SAMPLE_RATE=24000
+VOICE_AGENT_TTS_FADE_DURATION_MS=50.0
+
+# Ultra-low latency settings (40-80ms TTFB)
+TTS_PREWARM=true
+TTS_BUFFER_MS=40
+TTS_MIN_TOKENS=150
+TTS_MAX_TOKENS=200
+TTS_MODEL=mlx-community/Kokoro-82M-bf16
+
+# Audio quality
+TTS_FADE_DURATION_MS=40.0
+TTS_TARGET_PEAK_DB=-3.0
+TTS_ENABLE_QUALITY_LOGGING=false
 
 # Voice Activity Detection
-VAD_STOP_SECS=0.8  # Silence threshold
-VAD_MIN_SPEECH_SECS=0.1
-VAD_ACTIVATION_THRESHOLD=0.5
+VAD_CONFIDENCE=0.3
+VAD_START_SECS=0.001
+VAD_STOP_SECS=0.8
+VAD_MIN_VOLUME=0.6
+
+# Smart turn detection
+VAD_SMART_TURN_MODEL_PATH=pipecat-ai/smart-turn-v2
+VAD_SMART_TURN_STOP_SECS=1.5
+VAD_SMART_TURN_PRE_SPEECH_MS=300.0
+VAD_SMART_TURN_MAX_DURATION_SECS=16.0
 ```
 
 ## Memory System Configuration
 
-### Basic Memory Settings
+### HotMem Service Settings
+
+**NEW: Modular memory architecture with multi-source retrieval**
 
 ```bash
 # Enable/disable memory system
 MEMORY_ENABLED=true
+MEMORY_HOTPATH_ENABLED=true
 
-# Memory bullets per response
-MEMORY_BULLETS_MAX=3
-MEMORY_BULLETS_MIN=1
+# Retrieval budget settings (IMPROVED for better context)
+MEMORY_MAX_BULLETS=5                    # Increased from 2 → 5 bullets
+MEMORY_TOKEN_BUDGET=600                 # Increased from 300 → 600 tokens
 
 # Memory sources to use
-MEMORY_SOURCES=graph,summary  # Options: graph, summary, vector
+MEMORY_SOURCES=convo,summary,graph,semantic
+
+# Source weights for composite scoring
+MEMORY_WEIGHT_GRAPH=0.3                 # Graph fact importance
+MEMORY_WEIGHT_CONVO=0.5                 # Conversation history importance (BOOSTED)
+MEMORY_WEIGHT_SUMMARY=0.2               # Summary importance
+MEMORY_WEIGHT_PROSODY=0.15              # Prosody confidence
+
+# Injection mode: "bullets" (legacy) or "headers"
+MEMORY_INJECTION_MODE=bullets           # bullets provides more context
+
+# Score threshold for header auto-expand (0.0-1.0)
+MEMORY_HEADER_EXPAND_THRESHOLD=0.65
 
 # Session handling
-MEMORY_SESSION_HEADER=true
-MEMORY_EPHEMERAL_MODE=false  # Privacy mode - no persistence
+SESSION_USE_DATABASE=true
+SESSION_DB_PATH=data/sessions.db
+SESSION_PERSISTENCE=true
 ```
 
 ### Advanced Memory Features
@@ -121,32 +189,68 @@ MEMORY_PARALLEL_PROCESSING=true
 
 ## Audio Intelligence
 
-### Speaker Enrollment
+### Speaker Recognition and Enrollment
 
 ```bash
 # Enable audio intelligence features
 AUDIO_INTELLIGENCE_ENABLED=true
+AUDIO_INTEL_USE_MPS=true  # Use Apple Silicon GPU
 
-# Enrollment settings
-AUDIO_INTEL_ENROLL_ON_STARTUP=false
-AUDIO_INTEL_INTRO_PIPELINE=true  # Guided enrollment
-AUDIO_INTEL_MIN_ENROLLMENT_SAMPLES=3
+# Speaker profile settings
+SPEAKER_PROFILE_DIR=data/speaker_profiles
+SPEAKER_SIMILARITY_THRESHOLD=0.55  # Recognition threshold (lower = more forgiving)
+SPEAKER_MIN_UTTERANCE_SEC=1.0
+SPEAKER_AUTO_ENROLL_UTTERANCES=3
+SPEAKER_CONSISTENCY_THRESHOLD=0.50  # Consistency check
 
-# Speaker verification
-AUDIO_INTEL_VERIFICATION_THRESHOLD=0.85
-AUDIO_INTEL_VERIFICATION_ENABLED=true
+# Enrollment UX (Intro Pipeline)
+AUDIO_INTEL_INTRO_PIPELINE=true           # Enable guided enrollment
+AUDIO_INTEL_SKIP_FOR_RETURNING=false      # Re-enroll or skip for known speakers
+ENABLE_EPHEMERAL_CHOICE=true              # Allow anonymous mode choice
+ENROLLMENT_FIXED_PHRASE="A quick brown fox jumped over a lazy dog."
+ENROLLMENT_REQUIRE_FIXED_PHRASE=false
+BEEP_ON_ENROLL_COMPLETE=true
+
+# Sign-up/Sign-in/Anonymous detection
+SIGN_ME_UP_TERMS="sign me up|register me|enroll me|get started|create profile"
+SIGN_IN_TERMS="sign in|log in|i'm back|it's me|recognize me"
+ANONYMOUS_TERMS="anonymous|private|don't store|do not store|skip|no"
 ```
 
-### Voice Features
+### Prosody and Emotion
 
 ```bash
-# Prosody analysis
-AUDIO_INTEL_PROSODY_ENABLED=false
-AUDIO_INTEL_EMOTION_DETECTION=false
+# Prosody-aware confidence (integrated with memory)
+AUDIO_INTEL_ENABLE_PROSODY=true
+CONFIDENCE_STRATEGY=prosody_aware
 
-# Audio processing
-AUDIO_INTEL_NOISE_REDUCTION=true
-AUDIO_INTEL_ECHO_CANCELLATION=true
+# Emotion Detection (TEMPORARILY DISABLED - API bug)
+AUDIO_INTEL_ENABLE_EMOTION=false
+
+# Summarizer prosody bias
+SUMMARY_PROSODY_ENABLED=true
+```
+
+## Vision Processing
+
+**NEW: Context-aware video frame processing**
+
+```bash
+# Enable video input and vision processing
+VIDEO_INPUT_ENABLED=true
+VIDEO_TARGET_FPS=0.5  # Capture rate
+VIDEO_OUT_ENABLED=false
+VISION_MODEL_ENABLED=true
+
+# Vision optimization - only inject images for vision-related queries
+VISION_KEYWORD_FILTER=true  # Saves significant tokens!
+VISION_KEYWORDS=see,look,show,what,describe,image,picture,video,color,object,room,view,watch,observe
+
+# Image quality and size settings
+VISION_IMAGE_SIZE=384  # Resize to this dimension
+VISION_IMAGE_QUALITY=85  # JPEG quality (0-100)
+VISION_MAX_IMAGES_IN_CONTEXT=2  # Limit images to save tokens
+VISION_ENABLE_DEDUPLICATION=true  # Prevent duplicate frames
 ```
 
 ## Performance Optimization
@@ -154,17 +258,19 @@ AUDIO_INTEL_ECHO_CANCELLATION=true
 ### Latency Optimization
 
 ```bash
+# Target latency
+TARGET_LATENCY_MS=800  # End-to-end target
+
 # Ultra-low latency mode
 TTS_ULTRA_LOW_LATENCY=true
-STT_ULTRA_LOW_LATENCY=true
 
 # Model prewarming
-PREWARM_MODELS=true
-PREWARM_ON_STARTUP=true
+TTS_PREWARM=true
 
-# Pipeline optimization
-PIPELINE_PARALLEL_PROCESSING=true
-PIPELINE_BUFFER_SIZE=4096
+# Offline mode (after first run)
+HF_HUB_OFFLINE=1
+TRANSFORMERS_OFFLINE=1
+TORCH_HOME=/Users/yourusername/.cache/torch
 ```
 
 ### Resource Management
