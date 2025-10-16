@@ -40,24 +40,16 @@ class OptimizedKokoroWorker:
         self.voice = None
         self.sample_rate = 24000  # Kokoro default
         
-        # Adaptive buffer sizing for consistent latency
+        # Ultra-low latency buffer sizing (512-1024 bytes for immediate first-byte)
         self.buffer_bytes = (self.sample_rate * 2 * self.AUDIO_BUFFER_MS) // 1000
-        # Smaller chunks for more consistent streaming: 2KB-4KB range
-        self.buffer_bytes = max(self.buffer_bytes, 2048)
-        self.buffer_bytes = min(self.buffer_bytes, 4096)
+        # Very small chunks for ultra-low latency: 512-1024 byte range
+        self.buffer_bytes = max(self.buffer_bytes, 1024)
+        self.buffer_bytes = min(self.buffer_bytes, 2048)
         
         # Performance tracking
         self.prewarmed = False
         self.last_generation_time = 0
         self.warmup_count = 0
-        
-        # Common phoneme sequences for prewarming
-        self.warmup_phrases = [
-            "The quick brown fox jumps over the lazy dog",
-            "Hello, how are you today?",
-            "This is a test of the voice system",
-            "I am ready to assist you"
-        ]
 
         logging.info(f"Initialized with token chunks: {self.TARGET_MIN_TOKENS}-{self.TARGET_MAX_TOKENS} (max: {self.ABSOLUTE_MAX_TOKENS})")
         logging.info(f"Audio buffer: {self.AUDIO_BUFFER_MS}ms ({self.buffer_bytes} bytes)")
@@ -84,35 +76,30 @@ class OptimizedKokoroWorker:
             return {"error": str(e)}
 
     def _enhanced_prewarm(self):
-        """Enhanced prewarming with multiple generations for consistent latency."""
+        """Minimal prewarming for ultra-low latency - just 2 generations."""
         try:
             start_time = time.time()
-            
-            # Initial warm-up with simple test
-            list(self.model.generate(text="test", voice=self.voice, speed=1.0))
-            
-            # Warm up with common phrases to pre-cache phoneme patterns
-            for phrase in self.warmup_phrases:
-                try:
-                    list(self.model.generate(text=phrase, voice=self.voice, speed=1.0))
-                    self.warmup_count += 1
-                except Exception as e:
-                    logging.warning(f"Warm-up phrase failed: {e}")
-                    continue
-            
-            # Final warm-up with mixed complexity text
-            complex_text = "This system provides ultra-low latency text-to-speech synthesis with consistent performance characteristics."
-            list(self.model.generate(text=complex_text, voice=self.voice, speed=1.0))
+
+            # Warm-up 1: Short test
+            list(self.model.generate(text="Hello", voice=self.voice, speed=1.0))
             self.warmup_count += 1
-            
+
+            # Warm-up 2: Medium-length sentence (covers most phoneme patterns)
+            list(self.model.generate(
+                text="The quick brown fox jumps over the lazy dog",
+                voice=self.voice,
+                speed=1.0
+            ))
+            self.warmup_count += 1
+
             self.prewarmed = True
             warmup_time = (time.time() - start_time) * 1000
-            
-            logging.info(f"✅ Enhanced prewarming completed: {warmup_time:.1f}ms, {self.warmup_count} generations")
-            
+
+            logging.info(f"✅ Prewarming completed: {warmup_time:.1f}ms, {self.warmup_count} generations")
+
         except Exception as e:
-            logging.error(f"❌ Enhanced prewarming failed: {e}")
-            # Fallback to basic warm-up
+            logging.error(f"❌ Prewarming failed: {e}")
+            # Fallback to single warm-up
             try:
                 list(self.model.generate(text="test", voice=self.voice, speed=1.0))
                 self.prewarmed = True
@@ -151,17 +138,13 @@ class OptimizedKokoroWorker:
                 audio_accumulator.append(audio_int16)
                 accumulated_bytes += audio_int16.nbytes
 
-                # Adaptive streaming with consistent chunk sizing
+                # Ultra-low latency streaming - send immediately
+                # For 25-char chunks from tts_mlx_ultra_low_latency, this ensures
+                # first audio bytes are sent within 40-80ms
                 target_chunk_size = self.buffer_bytes
-                
-                # Adjust chunk size based on text complexity and performance
-                if len(text) > 100:  # Longer text = larger chunks for efficiency
-                    target_chunk_size = min(target_chunk_size * 1.5, 4096)
-                elif len(text) < 20:  # Short text = smaller chunks for responsiveness
-                    target_chunk_size = max(target_chunk_size * 0.8, 2048)
-                
-                # Stream when we hit our adaptive buffer threshold
-                if accumulated_bytes >= target_chunk_size:
+
+                # Stream when we hit buffer threshold OR on first chunk
+                if accumulated_bytes >= target_chunk_size or not first_chunk_sent:
                     # Send first chunk ASAP for low time-to-first-byte
                     if not first_chunk_sent:
                         ttfb = (time.time() - start_time) * 1000

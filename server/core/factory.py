@@ -223,12 +223,14 @@ class VoiceAgentFactory:
         elif self.config.tts_engine == "kokoro_mlx":
             logger.debug("Using Ultra-Low Latency MLX Kokoro TTS")
             from core.tts.tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
+            # Use buffer_ms from environment or default to 40ms
+            buffer_ms = int(os.getenv("TTS_BUFFER_MS", "40"))
             tts = TTSMLXUltraLowLatency(
                 model="mlx-community/Kokoro-82M-bf16",
                 voice=tts_config["voice"],
                 speed=tts_config["speed"],
                 sample_rate=tts_config["sample_rate"],
-                buffer_ms=50,  # 50ms buffer for optimal latency
+                buffer_ms=buffer_ms,  # Respects TTS_BUFFER_MS from .env
                 use_boundaries=use_boundaries,  # Control sentence boundary detection
                 aggregate_sentences=use_boundaries  # CRITICAL: Disable sentence aggregation for intro
             )
@@ -554,8 +556,9 @@ class VoiceAgentFactory:
                     tts = services.get('tts')
                     if tts and hasattr(tts, 'request_cancel'):
                         await tts.request_cancel()
-                    # Drop the interruption frame from downstream processors
-                    return False
+                    # Pass the interruption frame through to allow TTS to handle cleanup
+                    # (TTS needs to see InterruptionFrame to clear its text aggregator)
+                    return True
             except Exception:
                 # Proceed if anything goes wrong; don't block pipeline
                 return True
@@ -571,13 +574,22 @@ class VoiceAgentFactory:
             from core.video import VisionContextInjector
             context = services.get('context')
             if context:
+                # Get vision optimization settings from environment
+                keyword_filter = os.getenv("VISION_KEYWORD_FILTER", "true").lower() in ("true", "1", "yes")
+                keywords = None
+                if os.getenv("VISION_KEYWORDS"):
+                    keywords = [k.strip() for k in os.getenv("VISION_KEYWORDS").split(",")]
+
                 vision_injector = VisionContextInjector(
                     context=context,
                     target_fps=self.config.video_target_fps,
-                    inject_on_text=True
+                    inject_on_text=True,
+                    keyword_filter=keyword_filter,
+                    keywords=keywords
                 )
                 conversation_processors.append(vision_injector)
-                logger.info(f"📹 Vision context injector added to conversation pipeline ({self.config.video_target_fps} fps)")
+                logger.info(f"📹 Vision context injector added to conversation pipeline "
+                          f"({self.config.video_target_fps} fps, keyword_filter={keyword_filter})")
             else:
                 logger.warning("📹 Video enabled but context not available - skipping vision injection")
 
@@ -683,13 +695,22 @@ class VoiceAgentFactory:
             from core.video import VisionContextInjector
             context = services.get('context')
             if context:
+                # Get vision optimization settings from environment
+                keyword_filter = os.getenv("VISION_KEYWORD_FILTER", "true").lower() in ("true", "1", "yes")
+                keywords = None
+                if os.getenv("VISION_KEYWORDS"):
+                    keywords = [k.strip() for k in os.getenv("VISION_KEYWORDS").split(",")]
+
                 vision_injector = VisionContextInjector(
                     context=context,
                     target_fps=self.config.video_target_fps,
-                    inject_on_text=True
+                    inject_on_text=True,
+                    keyword_filter=keyword_filter,
+                    keywords=keywords
                 )
                 stages.append(vision_injector)
-                logger.info(f"📹 Vision context injector added after STT ({self.config.video_target_fps} fps)")
+                logger.info(f"📹 Vision context injector added after STT "
+                          f"({self.config.video_target_fps} fps, keyword_filter={keyword_filter})")
             else:
                 logger.warning("📹 Video enabled but context not available - skipping vision injection")
 

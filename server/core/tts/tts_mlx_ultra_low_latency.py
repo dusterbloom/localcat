@@ -15,14 +15,19 @@ from loguru import logger
 from pipecat.frames.frames import (
     ErrorFrame,
     Frame,
+    InterruptionFrame,
+    TextFrame,
     TTSAudioRawFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
+    UserStartedSpeakingFrame,
+    UserStoppedSpeakingFrame,
 )
+from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.tts_service import TTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
 
-from tools.text_formatter import sanitize_for_voice
+from tools.text_formatter import sanitize_for_voice, chunk_for_kokoro_ultra_low_latency
 
 
 class TTSMLXUltraLowLatency(TTSService):
@@ -60,12 +65,59 @@ class TTSMLXUltraLowLatency(TTSService):
         # Barge-in cancellation support
         self._cancel_event: asyncio.Event = asyncio.Event()
 
+        # Interruption state tracking
+        self._interrupted: bool = False
+
     async def request_cancel(self) -> None:
         """Signal the TTS stream to stop as soon as possible (barge-in)."""
         try:
             self._cancel_event.set()
         except Exception:
             pass
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        """Process frames with interruption handling.
+
+        Handles UserStartedSpeakingFrame to enter interrupted state and cancel TTS,
+        UserStoppedSpeakingFrame to exit interrupted state, and filters TextFrames
+        during interruption to prevent queued text from being spoken.
+        """
+        # Handle interruption lifecycle
+        if isinstance(frame, UserStartedSpeakingFrame):
+            logger.debug("TTS: User started speaking - entering interrupted state")
+            self._interrupted = True
+            await self.request_cancel()  # Cancel current generation immediately
+            await self._handle_interruption(frame, direction)  # Clear text aggregator
+            await self.push_frame(frame, direction)
+
+        elif isinstance(frame, UserStoppedSpeakingFrame):
+            logger.debug("TTS: User stopped speaking - exiting interrupted state")
+            self._interrupted = False
+            await self.push_frame(frame, direction)
+
+        elif isinstance(frame, InterruptionFrame):
+            logger.debug("TTS: Received InterruptionFrame - clearing text aggregator")
+            await self._handle_interruption(frame, direction)
+            await self.push_frame(frame, direction)
+
+        elif isinstance(frame, TextFrame):
+            # Drop TextFrames during interruption to prevent queued speech
+            if self._interrupted:
+                logger.debug(f"TTS: Dropping TextFrame during interruption: '{frame.text[:50]}...'")
+                return  # Silently drop the frame
+            # Normal processing
+            await super().process_frame(frame, direction)
+
+        else:
+            # Pass all other frames through normally
+            await super().process_frame(frame, direction)
+
+    async def _handle_interruption(self, frame: Frame, direction: FrameDirection):
+        """Handle interruption by clearing text aggregator and canceling generation."""
+        self._processing_text = False
+        if hasattr(self, '_text_aggregator'):
+            await self._text_aggregator.handle_interruption()
+        logger.debug("TTS: Interruption handled - text aggregator cleared")
 
     def can_generate_metrics(self) -> bool:
         """Check if this service can generate processing metrics.
@@ -87,13 +139,13 @@ class TTSMLXUltraLowLatency(TTSService):
 
     def _start_worker(self) -> bool:
         try:
-            # Optimized environment variables for consistent latency
+            # Pass through environment variables - respects .env configuration
             env = os.environ.copy()
-            env["KOKORO_MIN_TOKENS"] = "150"  # Reduced for faster first chunk
-            env["KOKORO_MAX_TOKENS"] = "200"  # Reduced for consistency
-            env["KOKORO_BUFFER_MS"] = str(self._buffer_ms)
-            env["TTS_PREWARM"] = "true"  # Enable enhanced prewarming
-            env["MLX_GPU_ALLOCATOR"] = "lazy"  # Optimized memory allocation
+            # Only override buffer_ms if explicitly set in __init__
+            env["TTS_BUFFER_MS"] = str(self._buffer_ms)
+            # Ensure prewarming and lazy allocation for optimal performance
+            env["TTS_PREWARM"] = os.getenv("TTS_PREWARM", "true")
+            env["MLX_GPU_ALLOCATOR"] = "lazy"
 
             self._process = subprocess.Popen(
                 [sys.executable, self._worker_script],
@@ -149,11 +201,16 @@ class TTSMLXUltraLowLatency(TTSService):
     async def run_tts(self, text: str) -> AsyncGenerator[Frame, None]:
         """Generate speech with ultra-low latency streaming."""
         cleaned = sanitize_for_voice(text)
-        logger.debug(f"TTS input: {cleaned[:100]}...")
 
-        if not cleaned:
-            logger.debug("Skipping TTS for empty text")
+        # CRITICAL: Pre-chunk text for ultra-low latency (25 char chunks)
+        # This prevents worker from buffering large audio chunks
+        chunks = chunk_for_kokoro_ultra_low_latency(cleaned, max_chars=250)
+
+        if not chunks:
+            logger.debug(f"Skipping TTS for empty text: '{text}'")
             return
+
+        logger.debug(f"TTS input: {len(chunks)} chunks from '{cleaned[:80]}...'")
 
         try:
             # Initialize variables that may be accessed in finally block
@@ -164,108 +221,94 @@ class TTSMLXUltraLowLatency(TTSService):
 
             # Clear previous cancel signal and start metrics
             self._cancel_event.clear()
-            start_time = time.time()
+            overall_start_time = time.time()
             await self.start_ttfb_metrics()
             await self.start_processing_metrics()
             yield TTSStartedFrame()
 
-            # Send generation command
             loop = asyncio.get_event_loop()
-            command = json.dumps({
-                "cmd": "generate",
-                "text": cleaned,
-                "speed": self._speed,
-                "use_boundaries": self._use_boundaries
-            }) + "\n"
 
-            # Non-blocking write for lowest latency
-            await loop.run_in_executor(None, self._process.stdin.write, command)
-            await loop.run_in_executor(None, self._process.stdin.flush)
-
-            # Stream audio chunks with minimal delay
-            first_chunk = True
-            chunk_count = 0
+            # Track metrics across all chunks
+            first_audio = True
             total_audio_bytes = 0
+            total_chunk_count = 0
 
-            while True:
-                # Read response line
-                line = await loop.run_in_executor(None, self._process.stdout.readline)
-                if not line:
-                    raise RuntimeError("Kokoro worker stopped unexpectedly")
+            # Process each text chunk separately for ultra-low latency
+            for chunk_idx, chunk_text in enumerate(chunks):
+                if not chunk_text.strip():
+                    continue
 
-                payload = json.loads(line.strip())
-
-                # Check for cancellation before handling payload
+                # Check for cancellation before sending next chunk
                 if self._cancel_event.is_set():
-                    logger.debug("TTS cancel requested; stopping stream mid-generation")
-                    # Drain until done without yielding audio
-                    if payload.get("done"):
-                        metrics = {
-                            "chunks": payload.get("chunks", 0),
-                            "ttfb_ms": payload.get("ttfb_ms", self._ttfb_ms),
-                            "total_ms": payload.get("total_ms"),
-                            "audio_bytes": 0
-                        }
-                        logger.info(f"TTS completed (canceled): {metrics}")
-                        break
-                    else:
-                        # Skip any audio chunks after cancellation
-                        continue
-
-                if "chunk" in payload:
-                    audio_bytes = base64.b64decode(payload["chunk"])
-                    chunk_count += 1
-                    total_audio_bytes += len(audio_bytes)
-
-                    # Log metrics for first chunk
-                    if first_chunk:
-                        ttfb = (time.time() - start_time) * 1000
-                        self._ttfb_ms = ttfb
-                        logger.info(f"Ultra-low latency TTFB: {ttfb:.1f}ms (chunk {payload.get('bytes')} bytes)")
-                        await self.stop_ttfb_metrics()
-                        ttfb_stopped = True
-                        first_chunk = False
-
-                    # Stream audio immediately without sub-chunking
-                    if audio_bytes:
-                        yield TTSAudioRawFrame(audio_bytes, self.sample_rate, 1)
-
-                    # Optimized delay for consistent streaming performance
-                    chunk_duration = len(audio_bytes) / (self.sample_rate * 2)  # seconds
-                    # Reduced delay for lower latency, but maintain stability
-                    delay = min(chunk_duration * 0.02, 0.005)  # 2% of duration or 5ms max
-                    
-                    # Adaptive delay based on performance metrics
-                    if hasattr(self, '_ttfb_ms') and self._ttfb_ms:
-                        if self._ttfb_ms > 800:  # High latency case
-                            delay = max(delay * 0.5, 0.001)  # Reduce delay further
-                        elif self._ttfb_ms < 400:  # Good performance case
-                            delay = min(delay * 1.2, 0.008)  # Slightly more delay for stability
-                    
-                    await asyncio.sleep(delay)
-
-                elif payload.get("boundary") == "sentence":
-                    # Handle sentence boundaries if needed
-                    logger.debug("Sentence boundary detected")
-
-                elif payload.get("done"):
-                    metrics = {
-                        "chunks": payload.get("chunks", chunk_count),
-                        "ttfb_ms": payload.get("ttfb_ms", self._ttfb_ms),
-                        "total_ms": payload.get("total_ms"),
-                        "audio_bytes": total_audio_bytes
-                    }
-                    if total_audio_bytes == 0:
-                        logger.warning(f"TTS completed with zero audio; skipping playback: {metrics}")
-                    else:
-                        logger.info(f"TTS completed: {metrics}")
+                    logger.debug("TTS canceled before processing all chunks")
                     break
 
-                elif "error" in payload:
-                    raise RuntimeError(payload["error"])
+                logger.debug(f"Processing chunk {chunk_idx + 1}/{len(chunks)}: '{chunk_text}'")
 
-                else:
-                    logger.debug(f"Unknown payload: {payload}")
+                # Send generation command for this chunk
+                command = json.dumps({
+                    "cmd": "generate",
+                    "text": chunk_text,
+                    "speed": self._speed,
+                    "use_boundaries": False  # Disable for small chunks
+                }) + "\n"
+
+                # Non-blocking write for lowest latency
+                await loop.run_in_executor(None, self._process.stdin.write, command)
+                await loop.run_in_executor(None, self._process.stdin.flush)
+
+                # Stream audio chunks from this text chunk
+                chunk_done = False
+                while not chunk_done:
+                    # Read response line
+                    line = await loop.run_in_executor(None, self._process.stdout.readline)
+                    if not line:
+                        raise RuntimeError("Kokoro worker stopped unexpectedly")
+
+                    payload = json.loads(line.strip())
+
+                    # Check for cancellation
+                    if self._cancel_event.is_set():
+                        logger.debug("TTS cancel requested; draining current chunk")
+                        if payload.get("done"):
+                            chunk_done = True
+                        continue
+
+                    if "chunk" in payload:
+                        audio_bytes = base64.b64decode(payload["chunk"])
+                        total_chunk_count += 1
+                        total_audio_bytes += len(audio_bytes)
+
+                        # Log TTFB for first audio across all chunks
+                        if first_audio:
+                            ttfb = (time.time() - overall_start_time) * 1000
+                            self._ttfb_ms = ttfb
+                            logger.info(f"⚡ Ultra-low latency TTFB: {ttfb:.1f}ms (chunk {chunk_idx + 1}, {len(audio_bytes)} bytes)")
+                            await self.stop_ttfb_metrics()
+                            ttfb_stopped = True
+                            first_audio = False
+
+                        # Stream audio immediately
+                        if audio_bytes:
+                            yield TTSAudioRawFrame(audio_bytes, self.sample_rate, 1)
+
+                        # Minimal delay for smooth streaming
+                        chunk_duration = len(audio_bytes) / (self.sample_rate * 2)
+                        delay = min(chunk_duration * 0.02, 0.005)
+                        await asyncio.sleep(delay)
+
+                    elif payload.get("done"):
+                        # This text chunk is complete
+                        chunk_done = True
+                        logger.debug(f"Chunk {chunk_idx + 1}/{len(chunks)} complete")
+
+                    elif "error" in payload:
+                        raise RuntimeError(f"Worker error on chunk {chunk_idx + 1}: {payload['error']}")
+
+            # Log final metrics
+            total_time = (time.time() - overall_start_time) * 1000
+            logger.info(f"TTS completed: {len(chunks)} text chunks, {total_chunk_count} audio chunks, "
+                       f"{total_audio_bytes} bytes, {total_time:.1f}ms total, TTFB: {self._ttfb_ms:.1f}ms")
 
         except Exception as exc:
             logger.error(f"Error in ultra-low latency TTS: {exc}")

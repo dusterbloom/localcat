@@ -4,31 +4,26 @@ Provides batch-mode transcription for fallback scenarios and long-form audio pro
 """
 
 import asyncio
-import json
 import numpy as np
 import os
 import tempfile
 import time
 import wave
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator
 
-import mlx.core as mx
 from loguru import logger
 
 from pipecat.frames.frames import (
     Frame,
     TranscriptionFrame,
     ErrorFrame,
-    AudioRawFrame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame
 )
 from pipecat.services.stt_service import STTService
-from pipecat.utils.tracing.service_decorators import traced_stt
 
 try:
     from parakeet_mlx import from_pretrained
-    from parakeet_mlx.audio import load_audio
     PARAKEET_AVAILABLE = True
 except ImportError:
     logger.warning("parakeet_mlx not available. Install with: pip install parakeet-mlx")
@@ -51,6 +46,14 @@ class ParakeetBatchSTT(STTService):
     Batch-mode Parakeet STT for fallback scenarios.
     Processes complete audio utterances for higher accuracy than streaming mode.
     """
+
+    # Known Parakeet hallucination patterns (common false positives on silence/noise)
+    # NOTE: These should be normalized (no punctuation) since we strip punctuation before matching
+    HALLUCINATION_PATTERNS = {
+        "yeah", "yep", "yes", "mmhmm", "mmhmmm", "mhm", "uhhuh",
+        "im just", "thank you", "thanks", "okay", "ok",
+        "uh", "um", "hmm", "ah", "oh",
+    }
 
     def __init__(
         self,
@@ -183,35 +186,30 @@ class ParakeetBatchSTT(STTService):
 
             return temp_file.name
 
-    def _estimate_confidence(self, text: str) -> float:
-        """Estimate confidence score based on text characteristics"""
+    def _is_hallucination(self, text: str) -> bool:
+        """Check if text matches known hallucination patterns"""
         if not text or not text.strip():
-            return 0.0
+            return True
 
-        text = text.strip()
-        words = text.split()
+        # Normalize text for matching
+        normalized = text.strip().lower()
 
-        # Very short texts are likely hallucinations
-        if len(words) < 2:
-            return 0.2
+        # Remove punctuation for matching
+        import re
+        normalized = re.sub(r'[^\w\s]', '', normalized)
 
-        # Penalize very long texts (might be repetition)
-        if len(words) > 50:
-            return 0.1
+        # Check if entire text matches a hallucination pattern
+        if normalized in self.HALLUCINATION_PATTERNS:
+            logger.debug(f"Blocked hallucination: '{text}'")
+            return True
 
-        # Base confidence on text length and word diversity
-        word_count = len(words)
-        unique_words = len(set(words))
-        diversity_ratio = unique_words / word_count if word_count > 0 else 0
+        # Check for very short single-word outputs (likely noise)
+        words = normalized.split()
+        if len(words) == 1 and len(words[0]) <= 3:
+            logger.debug(f"Blocked short noise: '{text}'")
+            return True
 
-        # Combine factors for confidence estimate
-        length_score = min(word_count / 10, 1.0)  # Favor reasonable length
-        diversity_score = diversity_ratio  # Favor diverse vocabulary
-
-        confidence = (length_score * 0.7 + diversity_score * 0.3)
-
-        # Cap at reasonable maximum
-        return min(confidence, 0.9)
+        return False
 
     def _process_audio_batch_sync(self, audio_bytes: bytes) -> tuple[str, str]:
         """Synchronous batch processing - returns (text, audio_path)"""
@@ -226,9 +224,8 @@ class ParakeetBatchSTT(STTService):
             # New parakeet_mlx API exposes transcribe(path) → AlignedResult
             result = self._model.transcribe(audio_path)
 
-        # Extract text and confidence from result
+        # Extract text from result
         text = ""
-        confidence = 0.0
 
         if hasattr(result, 'text'):
             text = result.text.strip()
@@ -238,20 +235,10 @@ class ParakeetBatchSTT(STTService):
             logger.warning(f"Unexpected result format from Parakeet: {type(result)}")
             return "", audio_path
 
-        # Try to extract confidence score
-        if hasattr(result, 'confidence'):
-            confidence = float(result.confidence)
-        elif hasattr(result, 'score'):
-            confidence = float(result.score)
-        else:
-            # Estimate confidence based on text characteristics
-            confidence = self._estimate_confidence(text)
+        logger.debug(f"Parakeet batch transcription: '{text}'")
 
-        logger.debug(f"Parakeet batch transcription: '{text}' (confidence: {confidence:.2f})")
-
-        # Filter out low-confidence transcriptions
-        if confidence < self._confidence_threshold:
-            logger.debug(f"Filtered low-confidence transcription: '{text}' (confidence: {confidence:.2f} < {self._confidence_threshold})")
+        # Filter known hallucinations instead of using confidence heuristics
+        if self._is_hallucination(text):
             return "", audio_path
 
         return text, audio_path

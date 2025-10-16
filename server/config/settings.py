@@ -86,9 +86,15 @@ class VoiceAgentConfig:
     # Video Processing Configuration
     # ============================================================================
     video_input_enabled: bool = True
-    video_target_fps: float = 2.0
+    video_target_fps: float = 0.5  # Reduced from 2.0 for better performance (1 frame every 2 seconds)
     video_out_enabled: bool = False
     vision_model_enabled: bool = False
+
+    # Vision Optimization Settings (for LLM vision processing)
+    vision_image_size: int = 384  # Target image size in pixels (width/height, maintains aspect ratio)
+    vision_image_quality: int = 85  # JPEG quality for compression (1-100, higher = better quality)
+    vision_max_images_in_context: int = 2  # Maximum images to keep in context (prevents bloat)
+    vision_enable_deduplication: bool = True  # Skip injecting duplicate frames
 
     # ============================================================================
     # Optimization Settings (based on research findings)
@@ -173,6 +179,12 @@ class VoiceAgentConfig:
         config.video_target_fps = float(os.getenv("VIDEO_TARGET_FPS", str(config.video_target_fps)))
         config.video_out_enabled = os.getenv("VIDEO_OUT_ENABLED", "false").lower() == "true"
         config.vision_model_enabled = os.getenv("VISION_MODEL_ENABLED", "false").lower() == "true"
+
+        # Vision Optimization Configuration
+        config.vision_image_size = int(os.getenv("VISION_IMAGE_SIZE", str(config.vision_image_size)))
+        config.vision_image_quality = int(os.getenv("VISION_IMAGE_QUALITY", str(config.vision_image_quality)))
+        config.vision_max_images_in_context = int(os.getenv("VISION_MAX_IMAGES_IN_CONTEXT", str(config.vision_max_images_in_context)))
+        config.vision_enable_deduplication = os.getenv("VISION_ENABLE_DEDUPLICATION", "true").lower() == "true"
 
         # Legacy environment variable support for backward compatibility
         config._load_legacy_env_vars()
@@ -299,6 +311,12 @@ Voice Agent Configuration Summary:
 │  Memory: {'Enabled' if self.memory_enabled else 'Disabled'}
 │  HotPath: {'Enabled' if self.hotpath_enabled else 'Disabled'}
 │  Session Persistence: {'Enabled' if self.session_persistence else 'Disabled'}
+├─ Vision Processing ──────────────────────────────────
+│  Video Input: {'Enabled' if self.video_input_enabled else 'Disabled'}
+│  Frame Rate: {self.video_target_fps}fps
+│  Image Size: {self.vision_image_size}×{self.vision_image_size}px
+│  Max Images in Context: {self.vision_max_images_in_context}
+│  Deduplication: {'Enabled' if self.vision_enable_deduplication else 'Disabled'}
 ╰─ Debug ──────────────────────────────────────────────
    Debug Mode: {'Enabled' if self.debug_mode else 'Disabled'}
    Log Level: {self.log_level}
