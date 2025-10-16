@@ -10,17 +10,35 @@ from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 class AnonymousAwareContextAggregator:
     """
     Wrapper that makes OpenAILLMContext aware of anonymous mode.
-    
+
     In anonymous mode:
     - Clears conversation history
     - Removes Context Guide system message
+    - Disables memory injection via ephemeral mode
+    - Rebuilds system prompt without memory section
     - Sets anonymous mode flag for downstream processors
     """
-    
-    def __init__(self, context_aggregator: Any, context: OpenAILLMContext):
-        """Initialize with a Pipecat context aggregator and its context."""
+
+    def __init__(
+        self,
+        context_aggregator: Any,
+        context: OpenAILLMContext,
+        memory_processor: Optional[Any] = None,
+        factory: Optional[Any] = None
+    ):
+        """
+        Initialize with context aggregator, memory processor, and factory.
+
+        Args:
+            context_aggregator: Pipecat context aggregator
+            context: OpenAI LLM context
+            memory_processor: Optional memory processor for controlling injection
+            factory: Optional factory for rebuilding system prompt
+        """
         self._aggregator = context_aggregator
         self._context = context
+        self._memory_processor = memory_processor
+        self._factory = factory
         self._original_messages = None
         self._anonymous_mode = False
         self._context_guide_added = False
@@ -48,19 +66,38 @@ class AnonymousAwareContextAggregator:
     def set_anonymous_mode(self, enabled: bool) -> None:
         """
         Enable or disable anonymous mode.
-        
+
         When enabled:
+        - Disables memory injection via ephemeral mode
+        - Rebuilds system prompt without memory section
         - Clears all conversation history
         - Removes Context Guide system message if present
-        - Sets flag for downstream processors
+        - Adds anonymous mode marker
         """
         if self._anonymous_mode == enabled:
             return  # No change needed
-        
+
         self._anonymous_mode = bool(enabled)
-        
+
         if enabled:
-            logger.info("[AnonymousContext] Entering anonymous mode - clearing context")
+            logger.info("[AnonymousContext] Entering anonymous mode - clearing context and disabling memory")
+
+            # 1. Disable memory injection by setting ephemeral mode
+            if self._memory_processor:
+                try:
+                    self._memory_processor.set_ephemeral_mode(True)
+                    logger.info("[AnonymousContext] Disabled memory injection for anonymous mode")
+                except Exception as e:
+                    logger.warning(f"[AnonymousContext] Failed to set ephemeral mode: {e}")
+
+            # 2. Rebuild system prompt WITHOUT memory section
+            if self._factory:
+                try:
+                    new_prompt = self._factory.build_system_prompt(skip_memory=True)
+                    self._update_system_prompt(new_prompt)
+                    logger.debug("[AnonymousContext] Updated system prompt for anonymous mode (memory section excluded)")
+                except Exception as e:
+                    logger.warning(f"[AnonymousContext] Failed to update system prompt: {e}")
             
             # Store current messages (except system messages)
             self._original_messages = self._context.get_messages().copy()
@@ -89,14 +126,22 @@ class AnonymousAwareContextAggregator:
             
             # Add anonymous marker as system message
             self._context.add_message({
-                "role": "system", 
-                "content": "Anonymous mode: No conversation history or memory context is available."
+                "role": "system",
+                "content": "Anonymous session: No conversation history is stored."
             })
-            
+
         else:
-            logger.info("[AnonymousContext] Exiting anonymous mode - restoring context")
-            
-            # Restore original messages if available
+            logger.info("[AnonymousContext] Exiting anonymous mode - restoring context and memory")
+
+            # 1. Re-enable memory injection
+            if self._memory_processor:
+                try:
+                    self._memory_processor.set_ephemeral_mode(False)
+                    logger.info("[AnonymousContext] Re-enabled memory injection")
+                except Exception as e:
+                    logger.warning(f"[AnonymousContext] Failed to restore ephemeral mode: {e}")
+
+            # 2. Restore original messages (conversation history) if available
             if self._original_messages:
                 self._context._messages = self._original_messages.copy()
                 self._original_messages = None
@@ -106,11 +151,11 @@ class AnonymousAwareContextAggregator:
                     # Check if Context Guide is missing
                     messages = self._context.get_messages()
                     has_context_guide = any(
-                        "Context Guide:" in msg.get("content", "") 
-                        for msg in messages 
+                        "Context Guide:" in msg.get("content", "")
+                        for msg in messages
                         if msg.get("role") == "system"
                     )
-                    
+
                     if not has_context_guide:
                         # Re-add Context Guide
                         guide_default = (
@@ -122,8 +167,51 @@ class AnonymousAwareContextAggregator:
                         guide_text = os.getenv("MEMORY_CONTEXT_GUIDE", guide_default)
                         self._context.add_message({"role": "system", "content": guide_text})
                         logger.debug("[AnonymousContext] Restored Context Guide system message")
+
+            # 3. Rebuild system prompt WITH memory section (AFTER restoring messages)
+            if self._factory:
+                try:
+                    new_prompt = self._factory.build_system_prompt(skip_memory=False)
+                    self._update_system_prompt(new_prompt)
+                    logger.debug("[AnonymousContext] Restored system prompt with memory section")
+                except Exception as e:
+                    logger.warning(f"[AnonymousContext] Failed to restore system prompt: {e}")
     
     @property
     def anonymous_mode(self) -> bool:
         """Check if currently in anonymous mode."""
         return self._anonymous_mode
+
+    def _update_system_prompt(self, new_prompt: str) -> None:
+        """
+        Replace the persona system prompt message with a new one.
+
+        Finds the first system message that looks like the main persona prompt
+        and replaces it. The persona prompt typically contains "Locat" and
+        instructions about the assistant's behavior.
+
+        Args:
+            new_prompt: New system prompt content
+        """
+        messages = list(self._context.get_messages())
+
+        # Find and replace the persona prompt
+        # The persona prompt is the one that contains "Locat" and is the main instruction set
+        for i, msg in enumerate(messages):
+            if msg.get('role') == 'system':
+                content = msg.get('content', '')
+                if isinstance(content, str):
+                    # Skip special injected messages (not the main persona)
+                    if ('Anonymous session:' in content or
+                        '[Session Context]' in content or
+                        content.startswith('Memory context to be used') or
+                        'Context Guide:' in content):
+                        continue
+                    # Check if this looks like the main persona prompt
+                    if 'Locat' in content and 'voice assistant' in content:
+                        # This is the persona prompt - replace it
+                        messages[i] = {'role': 'system', 'content': new_prompt}
+                        logger.debug("[AnonymousContext] Updated system prompt")
+                        break
+
+        self._context.set_messages(messages)

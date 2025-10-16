@@ -64,6 +64,10 @@ class VoiceAgentConfig:
     memory_max_entries: int = 1000
     memory_cleanup_interval_minutes: int = 60
 
+    # Memory injection formatting
+    memory_inject_header: str = "Memory context to be used only if needed:"
+    memory_sources: str = "convo,summary,graph,semantic"
+
     # ============================================================================
     # Context Management (prevent performance degradation in long chats)
     # ============================================================================
@@ -102,6 +106,10 @@ class VoiceAgentConfig:
     vision_image_quality: int = 85  # JPEG quality for compression (1-100, higher = better quality)
     vision_max_images_in_context: int = 2  # Maximum images to keep in context (prevents bloat)
     vision_enable_deduplication: bool = True  # Skip injecting duplicate frames
+
+    # Vision keyword filtering
+    vision_keyword_filter: bool = True
+    vision_keywords: str = "see,look,show,what,describe,image,picture,video,color,object,room,view,watch,observe"
 
     # ============================================================================
     # Optimization Settings (based on research findings)
@@ -166,6 +174,10 @@ class VoiceAgentConfig:
         config.hotpath_enabled = os.getenv("VOICE_AGENT_HOTPATH_ENABLED", "true").lower() == "true"
         config.session_persistence = os.getenv("VOICE_AGENT_SESSION_PERSISTENCE", "true").lower() == "true"
 
+        # Memory injection formatting
+        config.memory_inject_header = os.getenv("MEMORY_INJECT_HEADER", config.memory_inject_header)
+        config.memory_sources = os.getenv("MEMORY_SOURCES", config.memory_sources)
+
         # Context Management
         config.llm_context_max_tokens = int(os.getenv("LLM_CONTEXT_MAX_TOKENS", config.llm_context_max_tokens))
         config.llm_context_prune_threshold = float(os.getenv("LLM_CONTEXT_PRUNE_THRESHOLD", config.llm_context_prune_threshold))
@@ -197,6 +209,10 @@ class VoiceAgentConfig:
         config.vision_image_quality = int(os.getenv("VISION_IMAGE_QUALITY", str(config.vision_image_quality)))
         config.vision_max_images_in_context = int(os.getenv("VISION_MAX_IMAGES_IN_CONTEXT", str(config.vision_max_images_in_context)))
         config.vision_enable_deduplication = os.getenv("VISION_ENABLE_DEDUPLICATION", "true").lower() == "true"
+
+        # Vision keyword filtering
+        config.vision_keyword_filter = os.getenv("VISION_KEYWORD_FILTER", "true").lower() == "true"
+        config.vision_keywords = os.getenv("VISION_KEYWORDS", config.vision_keywords)
 
         # Legacy environment variable support for backward compatibility
         config._load_legacy_env_vars()

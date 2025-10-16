@@ -94,18 +94,6 @@ ice_servers = []
 # LocalSmartTurnAnalyzerV3 includes model weights bundled with Pipecat
 
 
-SYSTEM_INSTRUCTION =  """You are Locat, an advanced locally run AI agent with vision capabilities.
-                        You have a dynamic memory system. Any information from previous conversations and the resulting memory graph is shown after `Use the following factual context if helpful`.
-
-                        When video is available, you can see what the user's camera shows. Describe what you see when asked.
-
-                        # Some Guidelines:
-                        # - Make sure your responses are friendly yet short and concise.
-                        # - Greet the user by their name if you know about it.
-                        # - When describing video, be concise and focus on relevant details.
-                    """
-
-
 async def run_bot(webrtc_connection):
     # Load centralized configuration
     config = VoiceAgentConfig.from_env()
@@ -114,8 +102,12 @@ async def run_bot(webrtc_connection):
     # Create factory with configuration
     factory = VoiceAgentFactory(config)
 
+    # Build dynamic system prompt based on configuration
+    system_instruction = factory.build_system_prompt()
+    logger.debug(f"Generated system prompt:\n{system_instruction}")
+
     # Create all services using factory
-    services = factory.create_voice_agent(webrtc_connection, SYSTEM_INSTRUCTION)
+    services = factory.create_voice_agent(webrtc_connection, system_instruction)
 
     # Extract services for event handlers
     transport = services['transport']

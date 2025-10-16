@@ -131,7 +131,6 @@ class VoiceAgentFactory:
                     chunk_duration=float(os.getenv("PARAKEET_CHUNK_DURATION", "1.0")),
                     enable_vad=os.getenv("PARAKEET_ENABLE_VAD", "false").lower() in ("1", "true", "yes"),
                     temperature=float(os.getenv("PARAKEET_TEMPERATURE", "0.0")),
-                    confidence_threshold=float(os.getenv("PARAKEET_CONFIDENCE_THRESHOLD", "0.2")),
                     sentence_pause_threshold=float(os.getenv("PARAKEET_SENTENCE_PAUSE_THRESHOLD", "1.2")),
                     max_chunk_duration=float(os.getenv("PARAKEET_MAX_CHUNK_DURATION", "4.0")),
                     context_size=tuple(map(int, os.getenv("PARAKEET_CONTEXT_SIZE", "256,256").split(","))),
@@ -148,7 +147,6 @@ class VoiceAgentFactory:
                     stt = ParakeetBatchSTT(
                         model_path=stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3"),
                         language=stt_config.get("language", "en"),
-                        confidence_threshold=float(os.getenv("PARAKEET_BATCH_CONFIDENCE_THRESHOLD", "0.2")),
                         temperature=float(os.getenv("PARAKEET_TEMPERATURE", "0.0"))
                     )
                     logger.info("✅ Parakeet batch STT ready (fallback)")
@@ -165,7 +163,6 @@ class VoiceAgentFactory:
                 stt = ParakeetBatchSTT(
                     model_path=stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3"),
                     language=stt_config.get("language", "en"),
-                    confidence_threshold=float(os.getenv("PARAKEET_BATCH_CONFIDENCE_THRESHOLD", "0.2")),
                     temperature=float(os.getenv("PARAKEET_TEMPERATURE", "0.0"))
                 )
                 logger.info("✅ Parakeet batch STT ready")
@@ -432,7 +429,13 @@ class VoiceAgentFactory:
 
         # Store both context and aggregator for access in event handlers
         # Wrap with anonymous-aware functionality
-        anonymous_aggregator = AnonymousAwareContextAggregator(context_aggregator, context)
+        # Pass factory reference so anonymous mode can rebuild system prompt
+        anonymous_aggregator = AnonymousAwareContextAggregator(
+            context_aggregator,
+            context,
+            memory_processor=None,  # Will be linked after memory creation
+            factory=self  # Pass factory for dynamic prompt rebuilding
+        )
 
         self._services_cache['context'] = context
         self._services_cache['anonymous_aggregator'] = anonymous_aggregator
@@ -797,6 +800,11 @@ class VoiceAgentFactory:
             memory = self.create_memory_processor(context_aggregator, session_tracker)
             logger.info("Using HotPathMemoryProcessor (current memory processor)")
 
+        # Link memory processor to anonymous aggregator for ephemeral mode control
+        if hasattr(context_aggregator, '_memory_processor'):
+            context_aggregator._memory_processor = memory
+            logger.debug("[Factory] Linked memory processor to anonymous aggregator")
+
         # Create RTVI processor
         rtvi = self.create_rtvi_processor()
 
@@ -837,3 +845,89 @@ class VoiceAgentFactory:
             'pipeline': pipeline,
             'task': task
         }
+
+    def build_system_prompt(self, skip_memory: bool = False) -> str:
+        """
+        Build dynamic system prompt based on configuration.
+
+        Generates a clear, structured prompt that declares capabilities
+        and provides guidance suitable for any SLM. Adapts based on
+        enabled features.
+
+        Args:
+            skip_memory: If True, exclude memory section (for anonymous/ephemeral mode)
+
+        Returns:
+            Formatted system prompt string
+        """
+        sections = []
+
+        # Identity
+        sections.append("You are Locat, a locally-run AI voice assistant.")
+
+        # Memory capabilities (if enabled AND not skipped for anonymous mode)
+        if self.config.memory_enabled and not skip_memory:
+            sections.append(self._build_memory_section())
+
+        # Vision capabilities (if enabled)
+        if self.config.video_input_enabled and self.config.vision_model_enabled:
+            sections.append(self._build_vision_section())
+
+        # Context management guidance
+        sections.append(self._build_context_section())
+
+        # Response guidelines
+        sections.append(self._build_guidelines_section())
+
+        return "\n\n".join(sections)
+
+    def _build_memory_section(self) -> str:
+        """Build memory capabilities section."""
+        lines = ["MEMORY SYSTEM:"]
+        lines.append("- You have access to conversation history and learned facts")
+        lines.append(f"- Memory context appears with header: \"{self.config.memory_inject_header}\"")
+        lines.append("- Use memory context when relevant to provide personalized responses")
+
+        # List active sources
+        sources = self.config.memory_sources.split(',')
+        source_map = {
+            'convo': 'recent conversation',
+            'summary': 'conversation summaries',
+            'graph': 'learned facts',
+            'semantic': 'semantic search'
+        }
+        active = [source_map.get(s.strip(), s.strip()) for s in sources if s.strip() in source_map]
+        if active:
+            lines.append(f"- Sources: {', '.join(active)}")
+
+        return "\n".join(lines)
+
+    def _build_vision_section(self) -> str:
+        """Build vision capabilities section."""
+        lines = ["VISION:"]
+        lines.append("- You can see what the user's camera shows")
+
+        if self.config.vision_keyword_filter:
+            keywords = [k.strip() for k in self.config.vision_keywords.split(',')][:8]
+            if keywords:
+                lines.append(f"- Vision activates for queries about: {', '.join(keywords)}, etc.")
+
+        lines.append("- Describe what you see concisely when asked")
+        return "\n".join(lines)
+
+    def _build_context_section(self) -> str:
+        """Build context management section."""
+        lines = ["CONTEXT MANAGEMENT:"]
+        lines.append(f"- Context window: {self.config.llm_context_max_tokens} tokens maximum")
+        lines.append(f"- System maintains recent {self.config.llm_context_min_turns}+ conversation turns")
+        lines.append("- Keep responses concise to preserve context capacity")
+        return "\n".join(lines)
+
+    def _build_guidelines_section(self) -> str:
+        """Build response guidelines section."""
+        lines = ["RESPONSE GUIDELINES:"]
+        lines.append("- Be friendly, helpful, and conversational")
+        lines.append("- Use short, natural responses suitable for voice interaction")
+        lines.append("- Address users by name if mentioned in memory context")
+        lines.append("- Focus on relevant details, avoid verbose explanations")
+        return "\n".join(lines)
