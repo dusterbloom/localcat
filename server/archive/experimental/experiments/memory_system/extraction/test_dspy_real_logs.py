@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 # Enable DSPy extraction with LM Studio
 os.environ["ENABLE_DSPY_EXTRACTION"] = "true"
 os.environ["DSPY_MODEL"] = "openai/llama-3.2-3b-instruct"
-os.environ["DSPY_BASE_URL"] = "http://localhost:1234/v1"
+os.environ["DSPY_BASE_URL"] = "http://127.0.0.1:1234/v1"
 os.environ["OPENAI_API_KEY"] = "dummy"
 
 from core.memory.memory_store import MemoryStore, Paths

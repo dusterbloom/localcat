@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 os.environ["DSPY_MODEL"] = "openai/llama-3.2-3b-instruct"
-os.environ["DSPY_BASE_URL"] = "http://localhost:1234/v1"
+os.environ["DSPY_BASE_URL"] = "http://127.0.0.1:1234/v1"
 os.environ["OPENAI_API_KEY"] = "dummy"
 
 from core.memory.dspy_extractor import DSPyEdgeExtractor
@@ -18,7 +18,7 @@ from core.memory.dspy_extractor import DSPyEdgeExtractor
 # Test with llama-3.2-3b-instruct via LM Studio (3x larger model)
 extractor = DSPyEdgeExtractor(
     model="openai/llama-3.2-3b-instruct",
-    base_url="http://localhost:1234/v1",
+    base_url="http://127.0.0.1:1234/v1",
     api_key="dummy"
 )
 

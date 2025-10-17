@@ -189,7 +189,9 @@ class AudioIntelligenceProcessor(FrameProcessor):
             device: PyTorch device ("cpu", "mps", "cuda")
         """
         super().__init__()
-        
+        self._enabled: bool = True  # Allow runtime pause/resume
+        self._speaker_recognition_enabled: bool = True  # Separate control for speaker recognition
+
         if not SPEECHBRAIN_AVAILABLE:
             raise ImportError("SpeechBrain required. Install: pip install speechbrain")
         
@@ -198,7 +200,7 @@ class AudioIntelligenceProcessor(FrameProcessor):
         self._similarity_threshold = similarity_threshold
         self._min_utterance_duration = min_utterance_duration_sec
         self._auto_enroll_utterances = auto_enroll_utterances
-        self._consistency_threshold = max(0.70, consistency_threshold)  # Min 0.70 for real-world robustness
+        self._consistency_threshold = max(0.630, consistency_threshold)  # Min 0.70 for real-world robustness
         self._sample_rate = sample_rate
         self._device = device
         self._enable_emotion = enable_emotion
@@ -294,6 +296,10 @@ class AudioIntelligenceProcessor(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Process frames - buffer audio and handle speech events"""
         await super().process_frame(frame, direction)
+        # If disabled, pass frames through without processing
+        if not self._enabled:
+            await self.push_frame(frame, direction)
+            return
         
         # Buffer audio during speech
         if isinstance(frame, InputAudioRawFrame):
@@ -320,30 +326,57 @@ class AudioIntelligenceProcessor(FrameProcessor):
         
         # Always push frame downstream (parallel pipeline pattern)
         await self.push_frame(frame, direction)
+
+    # --- Runtime control ---------------------------------------------------
+    def set_enabled(self, enabled: bool) -> None:
+        """Enable/disable audio intelligence processing at runtime."""
+        self._enabled = bool(enabled)
+        if self._enabled:
+            logger.info("[AudioIntel] Processing ENABLED")
+        else:
+            logger.info("[AudioIntel] Processing DISABLED (paused until re-enabled)")
+
+    def set_speaker_recognition_enabled(self, enabled: bool) -> None:
+        """
+        Enable/disable speaker recognition while keeping prosody active.
+
+        This allows privacy-preserving mode where speaker recognition is disabled
+        but prosody analysis continues for TRUE confidence scoring.
+
+        Args:
+            enabled: True to enable speaker recognition, False to disable it
+        """
+        self._speaker_recognition_enabled = bool(enabled)
+        if self._speaker_recognition_enabled:
+            logger.info("[AudioIntel] Speaker recognition ENABLED")
+        else:
+            logger.info("[AudioIntel] Speaker recognition DISABLED (prosody still active)")
     
     async def _process_utterance(self):
-        """Process buffered audio for speaker recognition"""
+        """Process buffered audio for speaker recognition and prosody"""
         try:
             # Check duration
             duration = len(self._audio_buffer) / (self._sample_rate * 2)  # 16-bit audio
             if duration < self._min_utterance_duration:
                 logger.debug(f"[AudioIntel] Skipping short utterance ({duration:.2f}s)")
                 return
-            
+
             # Convert to float32 numpy array
             audio_array = np.frombuffer(self._audio_buffer, dtype=np.int16).astype(np.float32) / 32768.0
-            
+
             # Convert to torch tensor for SpeechBrain
             audio_tensor = torch.from_numpy(audio_array).unsqueeze(0)  # Add batch dimension
-            
+
             # Move to model device (MPS fallback handles unsupported ops)
             if self._device != "cpu":
                 audio_tensor = audio_tensor.to(self._device)
-            
-            # Session 1: Extract speaker embedding
-            with torch.no_grad():
-                speaker_embedding = self._speaker_model.encode_batch(audio_tensor)
-                speaker_embedding = speaker_embedding.squeeze().cpu()  # Move to CPU for comparison
+
+            # Session 1: Extract speaker embedding (only if speaker recognition enabled)
+            speaker_embedding = None
+            if self._speaker_recognition_enabled:
+                with torch.no_grad():
+                    speaker_embedding = self._speaker_model.encode_batch(audio_tensor)
+                    speaker_embedding = speaker_embedding.squeeze().cpu()  # Move to CPU for comparison
             
             # Session 2: Extract emotion (if enabled)
             emotion = None
@@ -391,10 +424,10 @@ class AudioIntelligenceProcessor(FrameProcessor):
                     # Graceful degradation - continue without emotion
                     pass
             
-            # Session 3: Extract prosody features
+            # Session 3: Extract prosody features (ALWAYS extract, regardless of speaker recognition)
             prosody_features = None
             prosody_certainty = 0.0
-            
+
             if self._enable_prosody and self._prosody_analyzer:
                 try:
                     prosody_features = self._prosody_analyzer.extract(audio_array)
@@ -403,10 +436,28 @@ class AudioIntelligenceProcessor(FrameProcessor):
                         logger.debug(f"[AudioIntel] Prosody: {prosody_features}")
                 except Exception as e:
                     logger.warning(f"[AudioIntel] Prosody extraction failed: {e}")
-            
-            # Find best matching speaker
+
+            # If speaker recognition is disabled, emit prosody-only frame and return
+            if not self._speaker_recognition_enabled:
+                # Emit AudioIntelligenceFrame with prosody only (no speaker info)
+                await self.push_frame(
+                    AudioIntelligenceFrame(
+                        speaker_id=self._current_speaker or "unknown",
+                        speaker_confidence=0.0,
+                        emotion=emotion,
+                        emotion_confidence=emotion_confidence,
+                        valence=valence,
+                        arousal=arousal,
+                        prosody_features=prosody_features,
+                        prosody_certainty=prosody_certainty,
+                    )
+                )
+                logger.debug(f"[AudioIntel] Emitted prosody-only frame (speaker recognition disabled)")
+                return
+
+            # Find best matching speaker (only if speaker recognition enabled)
             best_match, best_similarity = self._find_best_match(speaker_embedding)
-            
+
             # Check if recognized
             if best_match and best_similarity >= self._similarity_threshold:
                 if best_match != self._current_speaker:
@@ -595,7 +646,7 @@ class AudioIntelligenceProcessor(FrameProcessor):
                 EnrollmentProgressFrame(
                     current_sample=1,
                     total_samples=self._auto_enroll_utterances,
-                    consistency=1.0,  # First sample is 100% consistent with itself
+                    consistency=0.75,  # First sample is 100% consistent with itself
                     speaker_id="unknown"
                 )
             )

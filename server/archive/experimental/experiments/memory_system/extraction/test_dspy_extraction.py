@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 os.environ["ENABLE_DSPY_EXTRACTION"] = "true"
 # Use llama-3.2-3b-instruct (better than 1b for this task)
 os.environ["DSPY_MODEL"] = "openai/llama-3.2-3b-instruct"
-os.environ["DSPY_BASE_URL"] = "http://localhost:1234/v1"  # LM Studio default
+os.environ["DSPY_BASE_URL"] = "http://127.0.0.1:1234/v1"  # LM Studio default
 os.environ["OPENAI_API_KEY"] = "dummy"  # LM Studio doesn't need real key
 
 from core.memory.memory_store import MemoryStore, Paths

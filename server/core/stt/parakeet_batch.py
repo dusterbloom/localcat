@@ -4,31 +4,26 @@ Provides batch-mode transcription for fallback scenarios and long-form audio pro
 """
 
 import asyncio
-import json
 import numpy as np
 import os
 import tempfile
 import time
 import wave
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator
 
-import mlx.core as mx
 from loguru import logger
 
 from pipecat.frames.frames import (
     Frame,
     TranscriptionFrame,
     ErrorFrame,
-    AudioRawFrame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame
 )
 from pipecat.services.stt_service import STTService
-from pipecat.utils.tracing.service_decorators import traced_stt
 
 try:
     from parakeet_mlx import from_pretrained
-    from parakeet_mlx.audio import load_audio
     PARAKEET_AVAILABLE = True
 except ImportError:
     logger.warning("parakeet_mlx not available. Install with: pip install parakeet-mlx")
@@ -52,12 +47,19 @@ class ParakeetBatchSTT(STTService):
     Processes complete audio utterances for higher accuracy than streaming mode.
     """
 
+    # Known Parakeet hallucination patterns (common false positives on silence/noise)
+    # NOTE: These should be normalized (no punctuation) since we strip punctuation before matching
+    HALLUCINATION_PATTERNS = {
+        "yeah", "yep", "yes", "mmhmm", "mmhmmm", "mhm", "uhhuh",
+        "im just", "thank you", "thanks", "okay", "ok",
+        "uh", "um", "hmm", "ah", "oh", "Почему?","Scary."
+    }
+
     def __init__(
         self,
         *,
         model_path: str = "mlx-community/parakeet-tdt-0.6b-v3",
         language: str = "en",
-        confidence_threshold: float = 0.3,
         temperature: float = 0.0,
         **kwargs
     ):
@@ -69,19 +71,26 @@ class ParakeetBatchSTT(STTService):
         self._model_path = model_path
         self._language = language
         self._sample_rate = 16000  # Parakeet expects 16kHz
-        self._confidence_threshold = confidence_threshold
         self._temperature = temperature
 
         # Model initialization
         self._model = None
         self._init_parakeet_model()
 
-        logger.info(f"✅ Parakeet Batch STT initialized: {model_path} (confidence_threshold: {confidence_threshold})")
+        logger.info(f"✅ Parakeet Batch STT initialized: {model_path}")
 
         # Streaming/VAD integration state for batch mode
         self._vad_active: bool = False
         self._buffered_audio: list[np.ndarray] = []  # float32 [-1,1] segments @ 16kHz
         self._buffer_duration: float = 0.0
+
+    def can_generate_metrics(self) -> bool:
+        """Check if this service can generate processing metrics.
+
+        Returns:
+            True, as this service supports metrics generation.
+        """
+        return True
 
     def _init_parakeet_model(self):
         """Initialize the Parakeet model for batch processing"""
@@ -175,89 +184,62 @@ class ParakeetBatchSTT(STTService):
 
             return temp_file.name
 
-    def _estimate_confidence(self, text: str) -> float:
-        """Estimate confidence score based on text characteristics"""
+    def _is_hallucination(self, text: str) -> bool:
+        """Check if text matches known hallucination patterns"""
         if not text or not text.strip():
-            return 0.0
+            return True
 
-        text = text.strip()
-        words = text.split()
+        # Normalize text for matching
+        normalized = text.strip().lower()
 
-        # Very short texts are likely hallucinations
-        if len(words) < 2:
-            return 0.2
+        # Remove punctuation for matching
+        import re
+        normalized = re.sub(r'[^\w\s]', '', normalized)
 
-        # Penalize very long texts (might be repetition)
-        if len(words) > 50:
-            return 0.1
+        # Check if entire text matches a hallucination pattern
+        if normalized in self.HALLUCINATION_PATTERNS:
+            logger.debug(f"Blocked hallucination: '{text}'")
+            return True
 
-        # Base confidence on text length and word diversity
-        word_count = len(words)
-        unique_words = len(set(words))
-        diversity_ratio = unique_words / word_count if word_count > 0 else 0
+        # Check for very short single-word outputs (likely noise)
+        words = normalized.split()
+        if len(words) == 1 and len(words[0]) <= 3:
+            logger.debug(f"Blocked short noise: '{text}'")
+            return True
 
-        # Combine factors for confidence estimate
-        length_score = min(word_count / 10, 1.0)  # Favor reasonable length
-        diversity_score = diversity_ratio  # Favor diverse vocabulary
+        return False
 
-        confidence = (length_score * 0.7 + diversity_score * 0.3)
+    def _process_audio_batch_sync(self, audio_bytes: bytes) -> tuple[str, str]:
+        """Synchronous batch processing - returns (text, audio_path)"""
+        # Convert to temporary WAV file
+        audio_path = self._audio_bytes_to_wav(audio_bytes)
 
-        # Cap at reasonable maximum
-        return min(confidence, 0.9)
+        # Generate transcription (use model's transcribe API to avoid shape issues)
+        if PARAKEET_OLD_FORMAT:
+            # Legacy mlx_audio API may expect raw path for generate
+            result = self._model.generate(audio_path)
+        else:
+            # New parakeet_mlx API exposes transcribe(path) → AlignedResult
+            result = self._model.transcribe(audio_path)
 
-    def _process_audio_batch(self, audio_bytes: bytes) -> str:
-        """Process complete audio utterance in batch mode"""
-        try:
-            # Convert to temporary WAV file
-            audio_path = self._audio_bytes_to_wav(audio_bytes)
+        # Extract text from result
+        text = ""
 
-            # Generate transcription (use model's transcribe API to avoid shape issues)
-            if PARAKEET_OLD_FORMAT:
-                # Legacy mlx_audio API may expect raw path for generate
-                result = self._model.generate(audio_path)
-            else:
-                # New parakeet_mlx API exposes transcribe(path) → AlignedResult
-                result = self._model.transcribe(audio_path)
+        if hasattr(result, 'text'):
+            text = result.text.strip()
+        elif hasattr(result, 'transcription'):
+            text = result.transcription.strip()
+        else:
+            logger.warning(f"Unexpected result format from Parakeet: {type(result)}")
+            return "", audio_path
 
-            # Extract text and confidence from result
-            text = ""
-            confidence = 0.0
+        logger.debug(f"Parakeet batch transcription: '{text}'")
 
-            if hasattr(result, 'text'):
-                text = result.text.strip()
-            elif hasattr(result, 'transcription'):
-                text = result.transcription.strip()
-            else:
-                logger.warning(f"Unexpected result format from Parakeet: {type(result)}")
-                return ""
+        # Filter known hallucinations instead of using confidence heuristics
+        if self._is_hallucination(text):
+            return "", audio_path
 
-            # Try to extract confidence score
-            if hasattr(result, 'confidence'):
-                confidence = float(result.confidence)
-            elif hasattr(result, 'score'):
-                confidence = float(result.score)
-            else:
-                # Estimate confidence based on text characteristics
-                confidence = self._estimate_confidence(text)
-
-            logger.debug(f"Parakeet batch transcription: '{text}' (confidence: {confidence:.2f})")
-
-            # Filter out low-confidence transcriptions
-            if confidence < self._confidence_threshold:
-                logger.debug(f"Filtered low-confidence transcription: '{text}' (confidence: {confidence:.2f} < {self._confidence_threshold})")
-                return ""
-
-            return text
-
-        except Exception as e:
-            logger.error(f"Parakeet batch inference failed: {e}")
-            return ""
-        finally:
-            # Clean up temporary file
-            try:
-                os.unlink(audio_path)
-            except:
-                pass
+        return text, audio_path
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame, None]:
         """Buffer audio during speech; produce final on end-of-turn (see process_frame)."""
@@ -284,9 +266,26 @@ class ParakeetBatchSTT(STTService):
                 self._reset_buffer()
                 if not audio_bytes:
                     return
-                text = await asyncio.get_event_loop().run_in_executor(
-                    None, self._process_audio_batch, audio_bytes
+
+                # Start metrics
+                await self.start_processing_metrics()
+                await self.start_ttfb_metrics()
+
+                # Run transcription in executor
+                text, audio_path = await asyncio.get_event_loop().run_in_executor(
+                    None, self._process_audio_batch_sync, audio_bytes
                 )
+
+                # Stop metrics
+                await self.stop_ttfb_metrics()
+                await self.stop_processing_metrics()
+
+                # Clean up temporary file
+                try:
+                    os.unlink(audio_path)
+                except:
+                    pass
+
                 if text:
                     await self.push_frame(
                         TranscriptionFrame(
@@ -297,3 +296,5 @@ class ParakeetBatchSTT(STTService):
                     )
             except Exception as e:
                 logger.error(f"Parakeet batch finalize error: {e}")
+                await self.stop_ttfb_metrics()
+                await self.stop_processing_metrics()

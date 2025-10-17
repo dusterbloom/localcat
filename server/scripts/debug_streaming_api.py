@@ -17,7 +17,6 @@ def debug_streaming_context():
 
         stt = ParakeetStreamingSTT(
             enable_vad=False,
-            confidence_threshold=0.1,
             context_size=(256, 256),
             depth=3
         )

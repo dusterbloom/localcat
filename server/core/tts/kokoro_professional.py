@@ -90,6 +90,14 @@ class ProfessionalKokoroTTSService(TTSService):
 
         logger.info(f"✨ Professional Kokoro TTS initialized: voice={voice}, fade={fade_duration_ms}ms")
 
+    def can_generate_metrics(self) -> bool:
+        """Check if this service can generate processing metrics.
+
+        Returns:
+            True, as this service supports metrics generation.
+        """
+        return True
+
     def _ensure_models_downloaded(self):
         """Ensure the correct model and voices files are available"""
         cache_dir = Path.home() / ".cache" / "kokoro"

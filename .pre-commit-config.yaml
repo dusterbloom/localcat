@@ -1,0 +1,63 @@
+# See https://pre-commit.com for more information
+# Run: pre-commit install  &&  pre-commit run --all-files
+
+repos:
+  # General hygiene hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: ["--maxkb=5000"]
+
+  # Python formatting (Black)
+  - repo: https://github.com/psf/black
+    rev: 24.8.0
+    hooks:
+      - id: black
+        name: black (server + scripts)
+        language_version: python3
+        files: ^(server|scripts)/.*\.py$
+
+  # Python linting (Flake8)
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        name: flake8 (server + scripts)
+        files: ^(server|scripts)/.*\.py$
+        args: ["--max-line-length=100", "--extend-ignore=E203,E266"]
+        additional_dependencies: []
+
+  # Prettier for JS/TS/JSON/CSS/MD/YAML
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.3.3
+    hooks:
+      - id: prettier
+        name: prettier (client + docs)
+        additional_dependencies: []
+        exclude: |
+          ^docs/locomo10\.json$|
+          ^docs/mem0_github_repo\.txt$|
+          ^server/uv\.lock$
+
+  # ESLint via local hook (uses client tooling)
+  - repo: local
+    hooks:
+      - id: client-eslint
+        name: eslint (client)
+        entry: bash -lc 'cd client && npm run lint'
+        language: system
+        pass_filenames: false
+        types_or: [javascript, jsx, ts, tsx]
+        files: ^client/
+
+ci:
+  autofix_prs: false
+  autoupdate_schedule: quarterly

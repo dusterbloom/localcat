@@ -8,6 +8,7 @@ import os
 import time
 from typing import List, Tuple, Set, Dict, Optional, Any
 from collections import defaultdict, deque
+from functools import lru_cache
 import heapq
 from dataclasses import dataclass
 import statistics
@@ -27,6 +28,7 @@ from .confidence_strategy import (
 )
 from .processors.coreference import CoreferenceProcessor
 from .config import MemoryConfig
+from .entity_resolver import EntityResolver
 
 # Try to import language detection
 try:
@@ -58,7 +60,8 @@ _DET_WORDS = {
     "my", "your", "his", "her", "their", "our", "its"
 }
 
-_PRON_YOU = {"i", "me", "my", "mine", "myself"}
+# First-person pronouns (speaker referring to self)
+_PRON_FIRST = {"i", "me", "my", "mine", "myself"}
 
 def _strip_leading_dets(text: str) -> str:
     t = _norm(text)
@@ -74,8 +77,7 @@ def _strip_leading_dets(text: str) -> str:
 
 def _canon_entity_text(text: str) -> str:
     t = _norm(text)
-    if t in _PRON_YOU:
-        return "you"
+    # Do not collapse pronouns here; role-aware mapping occurs upstream.
     t = _strip_leading_dets(t)
     return t
 
@@ -101,7 +103,9 @@ class HotMemory:
                  confidence_strategy: Optional[ConfidenceStrategy] = None,
                  enable_dspy_extraction: bool = None):
         self.store = store
-        self.user_eid = "you"
+        self.user_eid = "you"  # Overridden by HotPathMemoryProcessor.set_user_identity
+        # Agent entity id for second-person references from the user (role-aware mapping)
+        self.agent_eid = f"agent:{os.getenv('AGENT_ID', 'agent')}"
 
         # Confidence scoring strategy (dependency injection)
         self.confidence = confidence_strategy or RelationTypeConfidence()
@@ -126,6 +130,10 @@ class HotMemory:
         self.extractor = UDExtractor(self)
         self.retriever = Retrieval(self)
 
+        # Extraction cache: LRU over (text, lang)
+        # Stores: (entities, triples, neg_count, doc, entity_aliases)
+        self._cached_extract = self._make_cached_extract()
+
         # Coreference resolution (SOLID refactored component)
         config = MemoryConfig.from_env()
         self.coref_processor = CoreferenceProcessor(
@@ -134,12 +142,50 @@ class HotMemory:
             lang=config.coreference.lang
         ) if config.coreference.enabled else None
 
+        # EntityResolver: Unified entity resolution (SOLID refactored - DRY principle)
+        # Lazy initialization on first use to avoid loading NLP model in __init__
+        self._entity_resolver = None
+
+        # P0.3: Entity enrichment cache to avoid repeated spaCy tree traversals
+        # Maps (doc_id, token_idx, max_length) -> (root, enriched) tuple
+        # Using doc_id (memory address) as cache key since tokens aren't hashable
+        try:
+            from .memory_constants import CacheConfig
+            self._enrichment_cache_size = CacheConfig.ENTITY_ENRICHMENT_CACHE_SIZE
+        except (ImportError, AttributeError):
+            self._enrichment_cache_size = 256
+
+        self._enrichment_cache: Dict[Tuple[int, int, int], Tuple[str, str]] = {}
+        self._enrichment_cache_hits = 0
+        self._enrichment_cache_misses = 0
+
     def prewarm(self, lang: str = "en") -> None:
         """Load NLP resources up-front to avoid first-turn latency."""
         try:
             _load_nlp(lang)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"HotMemory prewarm failed: {e}")
+
+    def _get_entity_resolver(self, lang: str = "en") -> EntityResolver:
+        """Lazy-load EntityResolver with NLP model."""
+        if self._entity_resolver is None:
+            nlp = _load_nlp(lang)
+            self._entity_resolver = EntityResolver(
+                user_eid=self.user_eid,
+                agent_eid=self.agent_eid,
+                nlp=nlp
+            )
+        return self._entity_resolver
+
+    def _make_cached_extract(self):
+        """Bind an LRU-cached extraction function to avoid duplicate work."""
+        extractor = self.extractor
+
+        @lru_cache(maxsize=128)
+        def _cached(text: str, lang: str):
+            return extractor.extract(text, lang)
+
+        return _cached
 
     def process_turn(self, text: str, session_id: str, turn_id: int, focus: str = 'standard', intent: Optional[Dict] = None) -> Tuple[List[str], List[Tuple[str, str, str]]]:
         """
@@ -160,12 +206,15 @@ class HotMemory:
         
         # Language detection
         lang = self._detect_language(text) if PYCLD3_AVAILABLE else "en"
-        
+
         # Stage 1: Extract entities and relations (via extractor seam)
         # NOTE: Coreference resolution exists but needs proper spacy-coref integration
         # TODO: Implement proper coref that resolves pronouns in doc before extraction
         extract_start = time.perf_counter()
-        entities, triples, neg_count, doc, entity_aliases = self.extractor.extract(text, lang)
+
+        # LRU-cached extraction to avoid duplicate work
+        entities, triples, neg_count, doc, entity_aliases = self._cached_extract(text, lang)
+
         self.metrics['extraction_ms'].append((time.perf_counter() - extract_start) * 1000)
         # Store aliases for dual registration in hot index
         self._entity_aliases = entity_aliases
@@ -215,6 +264,10 @@ class HotMemory:
 
         # Store the conversation turn FIRST (before edge extraction) for provenance
         turn_id_hash = self.store.enqueue_turn(text, session_id, turn_id, now_ts)
+
+        # Ensure immediate FTS indexing for real-time conversation retrieval
+        # CRITICAL: Use flush() not flush_if_needed() to guarantee edges are on disk before retrieval
+        self.store.flush()
 
         is_question = self._is_question(text)
         logger.debug(f"[HotMem] Text classified as question: {is_question}")
@@ -266,15 +319,10 @@ class HotMemory:
                 # Score confidence
                 conf = self.confidence.score(edge_obj, context_obj)
 
-                # Apply negation to verb-based relations when negation detected
-                if neg_count > 0:
-                    try:
-                        self.store.negate_edge(s, r, d, conf=0.6, now_ts=now_ts)
-                        logger.debug(f"[HotMem] Negated: ({s}, {r}, {d})")
-                    except Exception as e:
-                        logger.warning(f"HotMem negation failed for ({s}, {r}, {d}): {e}")
-                else:
-                    self.store.observe_edge(s, r, d, conf, now_ts)
+                # CRITICAL FIX: Removed global negation logic
+                # Negation now handled per-triple during extraction
+                # This prevents accidentally negating ALL facts when only some are negated
+                self.store.observe_edge(s, r, d, conf, now_ts)
 
                 # Link edge to conversation turn (provenance)
                 edge_id = self.store.edge_id(s, r, d)
@@ -314,6 +362,9 @@ class HotMemory:
         """
         Extract entities and relations using USGS 27-pattern approach
         Returns: (entities, triples, negation_count, doc, entity_aliases)
+
+        CRITICAL FIX: Track negation per-token, not globally.
+        This prevents negating ALL triples when only some are negated.
         """
         nlp = _load_nlp(lang)
 
@@ -323,19 +374,42 @@ class HotMemory:
         doc = nlp(text)
         entities = set()
         triples = []
-        neg_count = 0
 
         # Initialize per-extraction tracking
         self._entity_aliases = {}  # enriched -> base mapping
         self._enriched_entities = set()  # base entities that were enriched
-        
+
+        # Stage 0: Build negation map (which tokens are negated)
+        # This allows us to check if a verb/head is negated before extracting.
+        # Important: spaCy often attaches 'neg' to an AUX (e.g., "do" in "don't like").
+        # We propagate negation from the AUX up to its governing lexical predicate
+        # so that handlers checking the main verb see the negation.
+        negated_tokens = set()
+        for token in doc:
+            if token.dep_ == "neg":
+                head = token.head
+                # Always mark the immediate head (covers copula cases like "isn't happy")
+                negated_tokens.add(head.i)
+                # If the head is an auxiliary, walk up to the governing predicate
+                # (e.g., do/does/did/have/has/had → main verb)
+                walk = head
+                while walk.pos_ == "AUX" and walk.head != walk:
+                    walk = walk.head
+                # Mark the governing predicate if different
+                if walk.i != head.i:
+                    negated_tokens.add(walk.i)
+
+        # Store negation map for extraction handlers to check
+        self._negated_tokens = negated_tokens
+        neg_count = len(negated_tokens)  # Keep for backward compatibility
+
         # Stage 1: Build entity map
         entity_map = self._build_entity_map(doc, entities)
-        
+
         # Stage 2: Process all 27 dependency types
         for token in doc:
             dep = token.dep_
-            
+
             # Core grammatical relations
             if dep in {"nsubj", "nsubjpass"}:
                 self._extract_subject(token, entity_map, triples, entities)
@@ -347,7 +421,7 @@ class HotMemory:
                 self._extract_attribute(token, entity_map, triples, entities)
             elif dep == "acomp":
                 self._extract_acomp(token, entity_map, triples, entities)
-            
+
             # Modifiers
             elif dep == "amod":
                 self._extract_amod(token, entity_map, triples, entities)
@@ -357,7 +431,7 @@ class HotMemory:
                 self._extract_nummod(token, entity_map, triples, entities)
             elif dep == "nmod":
                 self._extract_nmod(token, entity_map, triples, entities)
-            
+
             # Structural
             elif dep == "compound":
                 self._extract_compound(token, entity_map, triples, entities)
@@ -371,7 +445,7 @@ class HotMemory:
                 self._extract_prep(token, entity_map, triples, entities)
             elif dep == "pobj":
                 pass  # Handled by prep
-            
+
             # Clausal
             elif dep == "acl":
                 self._extract_acl(token, entity_map, triples, entities)
@@ -383,73 +457,35 @@ class HotMemory:
                 self._extract_csubj(token, entity_map, triples, entities)
             elif dep == "xcomp":
                 self._extract_xcomp(token, entity_map, triples, entities)
-            
+
             # Special
             elif dep == "agent":
                 self._extract_agent(token, entity_map, triples, entities)
             elif dep == "oprd":
                 self._extract_oprd(token, entity_map, triples, entities)
-            
-            # Count negations
-            elif dep == "neg":
-                neg_count += 1
+
+            # Note: negation tokens handled in Stage 0
 
         return list(entities), triples, neg_count, doc, self._entity_aliases
     
     def _build_entity_map(self, doc, entities: Set[str]) -> Dict[int, str]:
-        """Build entity map from document"""
-        entity_map = {}
-        
-        # Named entities
-        for ent in doc.ents:
-            norm_text = _canon_entity_text(ent.text)
-            entities.add(norm_text)
-            for token in ent:
-                entity_map[token.i] = norm_text
-        
-        # Noun chunks
-        for chunk in doc.noun_chunks:
-            # Skip noun chunks that are Person=2 pronouns (user talking to AI)
-            if chunk.root.pos_ == "PRON":
-                person = chunk.root.morph.get("Person")
-                person_val = person[0] if person else None
-                if person_val == "2":
-                    continue  # Skip second-person pronouns
+        """
+        Build entity map from document (delegates to EntityResolver).
 
-            chunk_text = _canon_entity_text(chunk.text)
-            entities.add(chunk_text)
-            entity_map[chunk.root.i] = chunk_text
-        
-        # Individual tokens
-        for token in doc:
-            if token.i not in entity_map:
-                if token.pos_ in {"NOUN", "PROPN", "PRON"}:
-                    # Person-aware pronoun handling using UD morphology
-                    if token.pos_ == "PRON":
-                        person = token.morph.get("Person")
-                        person_val = person[0] if person else None
+        REFACTORED: Uses EntityResolver to eliminate duplicate entity resolution logic.
+        This was previously duplicated in _build_entity_map and retrieval.py.
+        """
+        # Get the EntityResolver (lazy-loaded)
+        resolver = self._get_entity_resolver()
 
-                        if person_val == "1":
-                            # First person: user talking about themselves
-                            entity_text = self.user_eid
-                        elif person_val == "2":
-                            # Second person: user talking to/about AI - SKIP
-                            continue
-                        elif person_val == "3":
-                            # Third person: keep as-is (he, she, they)
-                            entity_text = _canon_entity_text(token.lemma_)
-                        else:
-                            # Fallback: use old logic for pronouns without Person feature
-                            entity_text = _canon_entity_text(token.text)
-                            if entity_text in _PRON_YOU:
-                                entity_text = self.user_eid
-                    else:
-                        # NOUN/PROPN: use current logic
-                        entity_text = _canon_entity_text(token.text)
+        # Use EntityResolver's build_entity_map method
+        entity_map = resolver.build_entity_map(doc)
 
-                    entities.add(entity_text)
-                    entity_map[token.i] = entity_text
-        
+        # Extract entities from the entity_map and add to the entities set
+        # (maintain backward compatibility with existing code that expects entities set to be populated)
+        for entity_text in entity_map.values():
+            entities.add(entity_text)
+
         return entity_map
     
     # === 27 Dependency Handlers ===
@@ -505,6 +541,15 @@ class HotMemory:
         """
         import time
         start = time.perf_counter()
+
+        # P0.3: Check enrichment cache first (doc_id, token_idx, max_length)
+        # Use id(token.doc) as cache key since spaCy tokens aren't hashable
+        cache_key = (id(token.doc), token.i, max_length)
+        if cache_key in self._enrichment_cache:
+            self._enrichment_cache_hits += 1
+            return self._enrichment_cache[cache_key]
+
+        self._enrichment_cache_misses += 1
 
         # Get root entity (canonical form) - NEVER MODIFIED
         # IMPORTANT: entity_map may already contain full noun chunks ("red car"),
@@ -590,6 +635,18 @@ class HotMemory:
         if enriched != root:
             self._entity_aliases[enriched] = root
 
+        # P0.3: Store in cache (with LRU eviction)
+        if len(self._enrichment_cache) >= self._enrichment_cache_size:
+            # Simple FIFO eviction (could be optimized to true LRU if needed)
+            # Remove oldest 25% of entries to avoid frequent evictions
+            excess = len(self._enrichment_cache) - int(self._enrichment_cache_size * 0.75)
+            if excess > 0:
+                keys_to_remove = list(self._enrichment_cache.keys())[:excess]
+                for key in keys_to_remove:
+                    del self._enrichment_cache[key]
+
+        self._enrichment_cache[cache_key] = (root, enriched)
+
         return root, enriched
 
     def _is_person2_pronoun(self, token) -> bool:
@@ -608,6 +665,19 @@ class HotMemory:
         person = token.morph.get("Person")
         return person and person[0] == "2"
 
+    def _is_negated(self, token) -> bool:
+        """
+        Check if a token (typically a verb/predicate) is negated.
+
+        Returns:
+            True if the token is in the negated set, False otherwise
+
+        Example:
+            "I'm NOT interested" → verb "interested" returns True
+            "I like cats" → verb "like" returns False
+        """
+        return hasattr(self, '_negated_tokens') and token.i in self._negated_tokens
+
     def _extract_subject(self, token, entity_map, triples, entities):
         """nsubj, nsubjpass - nominal subject"""
         # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
@@ -616,7 +686,13 @@ class HotMemory:
 
         subj = self._get_entity(token, entity_map)
         head = token.head
-        
+
+        # CRITICAL FIX: Skip extraction if the verb/predicate is negated
+        # This prevents extracting "interested" from "NOT interested"
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated verb: {head.text} in '{head.doc.text[:50]}...'")
+            return
+
         # Passive: "My son is named Jake"
         if token.dep_ == "nsubjpass" and head.pos_ == "VERB":
             verb = head.lemma_.lower()
@@ -740,6 +816,11 @@ class HotMemory:
         root_obj, enriched_obj = self._get_entity_with_context(token, entity_map)
         head = token.head
 
+        # CRITICAL FIX: Skip extraction if the verb is negated
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated verb: {head.text} in '{head.doc.text[:50]}...'")
+            return
+
         if head.pos_ == "VERB":
             for child in head.children:
                 if child.dep_ in {"nsubj", "nsubjpass"}:
@@ -760,6 +841,11 @@ class HotMemory:
         root_iobj, enriched_iobj = self._get_entity_with_context(token, entity_map)
         head = token.head
 
+        # CRITICAL FIX: Skip extraction if the verb is negated
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated verb: {head.text} in '{head.doc.text[:50]}...'")
+            return
+
         # Find subject
         for child in head.children:
             if child.dep_ in {"nsubj", "nsubjpass"}:
@@ -776,8 +862,14 @@ class HotMemory:
     def _extract_attribute(self, token, entity_map, triples, entities):
         """attr - attribute (copula complement)"""
         root_attr, enriched_attr = self._get_entity_with_context(token, entity_map)
+        head = token.head
 
-        for child in token.head.children:
+        # CRITICAL FIX: Skip extraction if the copula is negated
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated copula: {head.text} in '{head.doc.text[:50]}...'")
+            return
+
+        for child in head.children:
             if child.dep_ in {"nsubj", "nsubjpass"}:
                 # Skip Person=2 pronouns (user talking TO/ABOUT the AI)
                 if self._is_person2_pronoun(child):
@@ -794,6 +886,11 @@ class HotMemory:
         # Handle patterns like "Caroline is single"
         root_adj, enriched_adj = self._get_entity_with_context(token, entity_map)
         head = token.head
+
+        # CRITICAL FIX: Skip extraction if the copula is negated
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated copula: {head.text} in '{head.doc.text[:50]}...'")
+            return
 
         # Find subject of copula
         for child in head.children:
@@ -887,6 +984,12 @@ class HotMemory:
         """ccomp - clausal complement"""
         # Handle patterns like "Melanie has read [Nothing is Impossible]"
         head = token.head
+
+        # CRITICAL FIX: Skip extraction if the verb is negated
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated verb: {head.text} in '{head.doc.text[:50]}...'")
+            return
+
         if head.pos_ == "VERB":
             verb = head.lemma_.lower()
             if verb in {"read", "write", "say", "think", "know"}:
@@ -918,6 +1021,12 @@ class HotMemory:
         """xcomp - open clausal complement"""
         # Handle patterns like "likes reading", "wants to go"
         head = token.head
+
+        # CRITICAL FIX: Skip extraction if the main verb is negated
+        if self._is_negated(head):
+            logger.debug(f"[HotMem] Skipping negated verb: {head.text} in '{head.doc.text[:50]}...'")
+            return
+
         if head.pos_ == "VERB":
             # Find subject of main verb (Caroline is nsubj of "likes")
             subj = None
@@ -1120,7 +1229,7 @@ class HotMemory:
         Useful for validating retrieval independently of writes.
         """
         try:
-            entities, _, _, _, _ = self.extractor.extract(text, lang)
+            entities, _, _, _, _ = self._cached_extract(text, lang)
             entities = self.extractor.refine_entities(text, entities)
         except Exception:
             entities = []
@@ -1138,15 +1247,14 @@ class HotMemory:
         """
         if read_only:
             try:
-                entities, _, _, _, _ = self.extractor.extract(text, lang)
+                entities, _, _, _, _ = self._cached_extract(text, lang)
                 entities = self.extractor.refine_entities(text, entities)
             except Exception:
                 entities = []
             return self.retriever.retrieve(text, entities, turn_id=-1, intent=intent)
         else:
-            # Non read-only: reuse preview path for now; callers may have called process_turn before this.
             try:
-                entities, _, _, _, _ = self.extractor.extract(text, lang)
+                entities, _, _, _, _ = self._cached_extract(text, lang)
                 entities = self.extractor.refine_entities(text, entities)
             except Exception:
                 entities = []
@@ -1179,8 +1287,14 @@ class HotMemory:
         if not s_norm or not d_norm or len(d_norm) < 2:
             return False
 
-        # Ignore filler subjects/objects
-        stop_entities = {"it", "this", "that", "there", "here", "been"}
+        # Ignore filler subjects/objects (EXPANDED)
+        stop_entities = {
+            "it", "this", "that", "there", "here", "been",
+            # wh-words (typically questions, not facts)
+            "which", "what", "who", "where", "when", "how", "why",
+            # vague references
+            "thing", "stuff", "something", "anything", "everything", "nothing"
+        }
         if s_norm in stop_entities or d_norm in stop_entities:
             return False
 
@@ -1204,6 +1318,14 @@ class HotMemory:
             "known_as",
         }
         if r_norm in stop_relations:
+            return False
+
+        # Ignore low-information "is" or "quality" relations with subjective adjectives
+        quality_adjectives = {
+            "amazing", "good", "bad", "nice", "fine", "ok", "okay", "great",
+            "awesome", "terrible", "horrible", "wonderful", "fantastic", "excellent"
+        }
+        if r_norm in {"is", "quality"} and d_norm in quality_adjectives:
             return False
 
         # Guard generic "is" facts unless subject is meaningful
@@ -1256,7 +1378,7 @@ class HotMemory:
         if md:
             dname = _canon_entity_text(md.group(1))
             refined.append(("dog", "name", dname))
-            refined.append(("you", "has", "dog"))
+            refined.append((self.user_eid, "has", "dog"))
 
         # 3) My son is named X
         ms = None
@@ -1267,7 +1389,7 @@ class HotMemory:
         if ms:
             sname = _canon_entity_text(ms.group(1))
             refined.append(("son", "name", sname))
-            refined.append(("you", "has", "son"))
+            refined.append((self.user_eid, "has", "son"))
 
         # 4) Favorite color is X → favorite_color
         fc = None
@@ -1277,17 +1399,17 @@ class HotMemory:
             fc = None
         if fc:
             fav = _canon_entity_text(fc.group(1))
-            refined.append(("you", "favorite_color", fav))
+            refined.append((self.user_eid, "favorite_color", fav))
 
         for s, r, d in triples:
             cs = _canon_entity_text(s)
             cd = _canon_entity_text(d)
 
-            # Pronouns → you
-            if cs in _PRON_YOU:
-                cs = "you"
-            if cd in _PRON_YOU:
-                cd = "you"
+            # First-person pronouns → user entity id
+            if cs in _PRON_FIRST:
+                cs = self.user_eid
+            if cd in _PRON_FIRST:
+                cd = self.user_eid
 
             rr = r
             # Fix generic preposition rels if the verb is inferable from surface text

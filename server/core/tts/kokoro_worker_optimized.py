@@ -27,24 +27,29 @@ except ImportError:
 class OptimizedKokoroWorker:
     """Ultra-low latency Kokoro TTS worker with token-based chunking."""
 
-    # Token chunk size configuration (from Kokoro FastAPI best practices)
-    TARGET_MIN_TOKENS = int(os.getenv("TTS_MIN_TOKENS", "175"))
-    TARGET_MAX_TOKENS = int(os.getenv("TTS_MAX_TOKENS", "250"))
-    ABSOLUTE_MAX_TOKENS = int(os.getenv("TTS_ABSOLUTE_MAX_TOKENS", "450"))
+    # Token chunk size configuration (optimized for consistent latency)
+    TARGET_MIN_TOKENS = int(os.getenv("TTS_MIN_TOKENS", "150"))
+    TARGET_MAX_TOKENS = int(os.getenv("TTS_MAX_TOKENS", "200"))
+    ABSOLUTE_MAX_TOKENS = int(os.getenv("TTS_ABSOLUTE_MAX_TOKENS", "350"))
 
-    # Audio buffer size for streaming (40-80ms target latency)
-    AUDIO_BUFFER_MS = int(os.getenv("TTS_BUFFER_MS", "50"))  # 50ms buffer
+    # Audio buffer size for streaming (30-80ms adaptive target latency)
+    AUDIO_BUFFER_MS = int(os.getenv("TTS_BUFFER_MS", "40"))  # 40ms buffer default
 
     def __init__(self):
         self.model = None
         self.voice = None
         self.sample_rate = 24000  # Kokoro default
-
-
-        # For 50ms at 24kHz: 24000 * 2 * 0.05 = 2400 bytes
+        
+        # Ultra-low latency buffer sizing (512-1024 bytes for immediate first-byte)
         self.buffer_bytes = (self.sample_rate * 2 * self.AUDIO_BUFFER_MS) // 1000
-        # But use at least 4KB for stability
-        self.buffer_bytes = max(self.buffer_bytes, 4096)
+        # Very small chunks for ultra-low latency: 512-1024 byte range
+        self.buffer_bytes = max(self.buffer_bytes, 1024)
+        self.buffer_bytes = min(self.buffer_bytes, 2048)
+        
+        # Performance tracking
+        self.prewarmed = False
+        self.last_generation_time = 0
+        self.warmup_count = 0
 
         logging.info(f"Initialized with token chunks: {self.TARGET_MIN_TOKENS}-{self.TARGET_MAX_TOKENS} (max: {self.ABSOLUTE_MAX_TOKENS})")
         logging.info(f"Audio buffer: {self.AUDIO_BUFFER_MS}ms ({self.buffer_bytes} bytes)")
@@ -56,17 +61,52 @@ class OptimizedKokoroWorker:
             self.model = load_model(model_name)
             self.voice = voice
 
-            # Warm up model for lower first-chunk latency
-            list(self.model.generate(text="test", voice=voice, speed=1.0))
+            # Enhanced prewarming for consistent first-chunk latency
+            self._enhanced_prewarm()
 
             return {"success": True, "config": {
                 "min_tokens": self.TARGET_MIN_TOKENS,
                 "max_tokens": self.TARGET_MAX_TOKENS,
                 "buffer_ms": self.AUDIO_BUFFER_MS,
-                "sample_rate": self.sample_rate
+                "sample_rate": self.sample_rate,
+                "prewarmed": self.prewarmed,
+                "warmup_count": self.warmup_count
             }}
         except Exception as e:
             return {"error": str(e)}
+
+    def _enhanced_prewarm(self):
+        """Minimal prewarming for ultra-low latency - just 2 generations."""
+        try:
+            start_time = time.time()
+
+            # Warm-up 1: Short test
+            list(self.model.generate(text="Hello", voice=self.voice, speed=1.0))
+            self.warmup_count += 1
+
+            # Warm-up 2: Medium-length sentence (covers most phoneme patterns)
+            list(self.model.generate(
+                text="The quick brown fox jumps over the lazy dog",
+                voice=self.voice,
+                speed=1.0
+            ))
+            self.warmup_count += 1
+
+            self.prewarmed = True
+            warmup_time = (time.time() - start_time) * 1000
+
+            logging.info(f"✅ Prewarming completed: {warmup_time:.1f}ms, {self.warmup_count} generations")
+
+        except Exception as e:
+            logging.error(f"❌ Prewarming failed: {e}")
+            # Fallback to single warm-up
+            try:
+                list(self.model.generate(text="test", voice=self.voice, speed=1.0))
+                self.prewarmed = True
+                self.warmup_count = 1
+                logging.info("✅ Fallback prewarming completed")
+            except Exception as fallback_e:
+                logging.error(f"❌ Fallback prewarming failed: {fallback_e}")
 
     def generate(self, text, speed=1.0):
         """Generate audio with ultra-low latency streaming."""
@@ -98,29 +138,38 @@ class OptimizedKokoroWorker:
                 audio_accumulator.append(audio_int16)
                 accumulated_bytes += audio_int16.nbytes
 
-                # Stream when we hit our buffer threshold
-                # Use smaller chunks (4-8KB) for progressive streaming
-                if accumulated_bytes >= min(self.buffer_bytes, 8192):
+                # Ultra-low latency streaming - send immediately
+                # For 25-char chunks from tts_mlx_ultra_low_latency, this ensures
+                # first audio bytes are sent within 40-80ms
+                target_chunk_size = self.buffer_bytes
+
+                # Stream when we hit buffer threshold OR on first chunk
+                if accumulated_bytes >= target_chunk_size or not first_chunk_sent:
                     # Send first chunk ASAP for low time-to-first-byte
                     if not first_chunk_sent:
                         ttfb = (time.time() - start_time) * 1000
-                        logging.info(f"Time to first byte: {ttfb:.1f}ms")
+                        self.last_generation_time = ttfb
+                        logging.info(f"⚡ TTFB: {ttfb:.1f}ms (target: {target_chunk_size}B)")
                         first_chunk_sent = True
 
-                    # Concatenate accumulated audio
+                    # Concatenate accumulated audio efficiently
                     if len(audio_accumulator) == 1:
                         combined = audio_accumulator[0]
                     else:
                         combined = np.concatenate(audio_accumulator)
 
-                    # Send chunk with metadata
+                    # Optimize array copy for streaming
                     chunk_b64 = base64.b64encode(combined.tobytes()).decode()
                     chunk_count += 1
+                    
+                    # Enhanced metadata for performance monitoring
                     print(json.dumps({
                         "chunk": chunk_b64,
                         "chunk_num": chunk_count,
                         "bytes": combined.nbytes,
-                        "duration_ms": int((combined.size / self.sample_rate) * 1000)
+                        "duration_ms": int((combined.size / self.sample_rate) * 1000),
+                        "ttfb_ms": int(self.last_generation_time) if chunk_count == 1 else None,
+                        "target_chunk": int(target_chunk_size)
                     }), flush=True)
 
                     # Reset accumulator

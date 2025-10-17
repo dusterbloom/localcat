@@ -53,6 +53,7 @@ class EnrollmentCoordinator(FrameProcessor):
         audio_intel: Optional[object] = None,
         memory: Optional[object] = None,
         enable_ephemeral_choice: bool = True,
+        context_aggregator: Optional[object] = None,
     ):
         """
         Initialize enrollment coordinator.
@@ -72,6 +73,7 @@ class EnrollmentCoordinator(FrameProcessor):
         self._messages = messages or EnrollmentMessages.from_env()
         self._audio_intel = audio_intel
         self._memory = memory
+        self._context_aggregator = context_aggregator
         self._enable_ephemeral_choice = enable_ephemeral_choice
         
         # State tracking
@@ -109,7 +111,10 @@ class EnrollmentCoordinator(FrameProcessor):
             )
         )
         self._sign_in_requested: bool = False
-        self._sign_in_timeout_task: Optional[asyncio.Task] = None
+        self._sign_in_timeout_task: Optional[asyncio.Task] = 5.0
+        # Suppress one immediate transcription after returning-user recognition
+        self._suppress_next_transcription: bool = False
+        self._suppress_deadline_ts: float = 0.0
         
         logger.debug(
             f"[EnrollmentCoordinator] Initialized "
@@ -167,6 +172,30 @@ class EnrollmentCoordinator(FrameProcessor):
                 # Do NOT forward this transcription downstream during onboarding
                 return
             else:
+                # Drop the very next transcription immediately after returning-user recognition
+                if self._suppress_next_transcription:
+                    try:
+                        now = asyncio.get_event_loop().time()
+                        if now <= self._suppress_deadline_ts:
+                            self._suppress_next_transcription = False
+                            logger.debug("[EnrollmentCoordinator] Dropped post-recognition transcription to avoid LLM overlap")
+                            return
+                    except Exception:
+                        pass
+                    self._suppress_next_transcription = False
+                # Conversation mode: handle logout to re-enable recognition
+                try:
+                    text = getattr(frame, 'text', '') or ''
+                    norm = text.strip().lower()
+                    if any(t in norm for t in ("logout", "log out", "sign out")):
+                        if self._audio_intel and hasattr(self._audio_intel, 'set_enabled'):
+                            self._audio_intel.set_enabled(True)
+                        self._awaiting_choice = True
+                        await self._router.update_state(EnrollmentState.CHOICE)
+                        await self._send_choice_message(direction)
+                        return
+                except Exception:
+                    pass
                 # Normal conversation: allow downstream
                 await self.push_frame(frame, direction)
                 return
@@ -319,6 +348,12 @@ class EnrollmentCoordinator(FrameProcessor):
         # Recognized returning user with a known name → fast path
         if frame.speaker_name:
             await self._handle_returning_user(frame, direction)
+            # Pause audio intelligence during recognized sessions (privacy/perf)
+            try:
+                if self._audio_intel and hasattr(self._audio_intel, 'set_enabled'):
+                    self._audio_intel.set_enabled(False)
+            except Exception:
+                pass
             return
 
         # Recognized existing unnamed profile → capture a friendly name
@@ -359,6 +394,12 @@ class EnrollmentCoordinator(FrameProcessor):
 
         # Ask for preferred ID/name
         await self._router.update_state(EnrollmentState.NAME_CAPTURE, speaker_id=frame.speaker_id)
+        # Pause audio intelligence after successful enrollment
+        try:
+            if self._audio_intel and hasattr(self._audio_intel, 'set_enabled'):
+                self._audio_intel.set_enabled(False)
+        except Exception:
+            pass
         self._name_capture_pending = True
         self._pending_speaker_id = frame.speaker_id
         await self.push_frame(TextFrame("What name or ID should I use for you? You can also type it in the UI."), direction)
@@ -402,6 +443,20 @@ class EnrollmentCoordinator(FrameProcessor):
         self._intro_sent = True  # Mark as handled
         
         logger.info("[EnrollmentCoordinator] Skipped intro for returning user")
+        # Suppress the just-finished utterance: drop the next transcription frame
+        try:
+            loop = asyncio.get_event_loop()
+            self._suppress_next_transcription = True
+            self._suppress_deadline_ts = loop.time() + 1.0  # short window
+            logger.debug("[EnrollmentCoordinator] Suppressing next transcription (post-recognition)")
+        except Exception:
+            pass
+
+    # NOTE: A duplicate _handle_speaker_changed was previously defined later in this
+    # file, which unconditionally transitioned to CONVERSATION and bypassed the
+    # onboarding gating. That method has been removed to preserve the intended
+    # flow defined above (auto-enroll -> NAME_CAPTURE; returning user -> CONVERSATION
+    # with audio intelligence paused and next transcription suppressed).
 
     async def _handle_transcription(self, frame: TranscriptionFrame, direction: FrameDirection):
         """Handle user transcriptions during choice and name capture flows."""
@@ -428,6 +483,23 @@ class EnrollmentCoordinator(FrameProcessor):
                         self._memory.set_ephemeral_mode(True)
                 except Exception as e:
                     logger.warning(f"[EnrollmentCoordinator] Failed to set ephemeral mode: {e}")
+
+                # Clear context history and remove Context Guide in anonymous mode
+                try:
+                    if self._context_aggregator and hasattr(self._context_aggregator, 'set_anonymous_mode'):
+                        self._context_aggregator.set_anonymous_mode(True)
+                        logger.info("[EnrollmentCoordinator] Enabled anonymous mode in context aggregator")
+                except Exception as e:
+                    logger.warning(f"[EnrollmentCoordinator] Failed to set anonymous mode in context: {e}")
+
+                # Disable audio intelligence in anonymous mode (privacy)
+                try:
+                    if self._audio_intel and hasattr(self._audio_intel, 'set_enabled'):
+                        self._audio_intel.set_enabled(False)
+                        logger.info("[EnrollmentCoordinator] Disabled audio intelligence for anonymous mode")
+                except Exception as e:
+                    logger.warning(f"[EnrollmentCoordinator] Failed to disable audio intelligence: {e}")
+                
                 await self.push_frame(TextFrame("Okay, let's chat anonymously. Nothing will be stored."), direction)
                 await self._router.update_state(EnrollmentState.CONVERSATION)
                 # Send neutral greeting to start the convo without personal data

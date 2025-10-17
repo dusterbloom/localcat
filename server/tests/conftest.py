@@ -134,7 +134,7 @@ def pytest_collection_modifyitems(config, items):
             import httpx
             try:
                 # Quick check if LLM server is running
-                response = httpx.get("http://localhost:11434/api/tags", timeout=1)
+                response = httpx.get("http://127.0.0.1:11434/api/tags", timeout=1)
                 if response.status_code != 200:
                     item.add_marker(skip_llm)
             except:

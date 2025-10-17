@@ -1,0 +1,10 @@
+# Optional machine learning dependencies for HotMem composite reranker
+# Install with: pip install -r requirements-ml.txt
+
+# Semantic similarity reranker (MiniLM model)
+sentence-transformers>=2.2.2
+
+# ML framework dependencies (will be installed as dependencies)
+torch>=1.9.0
+transformers>=4.20.0
+numpy>=1.21.0

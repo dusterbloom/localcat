@@ -16,7 +16,7 @@ async def test_parakeet_direct():
     try:
         from core.stt.parakeet_streaming import ParakeetStreamingSTT
 
-        stt = ParakeetStreamingSTT(enable_vad=False, confidence_threshold=0.1)
+        stt = ParakeetStreamingSTT(enable_vad=False)
 
         # Load test audio
         harvard_path = "/Users/peppi/Dev/localcat-streaming/server/experiments/harvard_16k_mono.wav"

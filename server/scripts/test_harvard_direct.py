@@ -24,7 +24,6 @@ async def test_harvard_direct():
         print("🔄 Initializing Parakeet STT (VAD disabled to avoid Smart Turn conflicts)...")
         stt_service = ParakeetStreamingSTT(
             enable_vad=False,  # Disable internal VAD - let Smart Turn handle it
-            confidence_threshold=0.1,  # Low threshold
             volume_threshold=0.0001,  # Very low volume threshold
             chunk_duration=1.0,  # 1s chunks as recommended
             sentence_pause_threshold=1.2,  # Longer pause

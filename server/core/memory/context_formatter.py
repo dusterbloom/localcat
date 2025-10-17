@@ -27,24 +27,35 @@ class ContextFormatter:
     def format_bullets(self, bullets: List[str], max_bullets: Optional[int] = None) -> List[str]:
         """
         Format raw memory bullets for context injection.
+        Deduplicates while preserving order and source tags.
 
         Args:
-            bullets: Raw bullet strings
+            bullets: Raw bullet strings (may include [convo]/[graph]/[summary] tags)
             max_bullets: Override default max bullets
 
         Returns:
-            Formatted bullet strings
+            Formatted bullet strings with source tags preserved
         """
         if not bullets:
             return []
 
         max_count = max_bullets if max_bullets is not None else self.max_bullets
-        capped_bullets = bullets[:max_count]
 
-        # Clean and format bullets
+        # Deduplicate while preserving order
+        seen = set()
+        unique_bullets = []
+        for bullet in bullets:
+            if bullet not in seen:
+                seen.add(bullet)
+                unique_bullets.append(bullet)
+
+        # Cap to max count
+        capped_bullets = unique_bullets[:max_count]
+
+        # Clean and format bullets (preserving source tags)
         formatted = []
         for bullet in capped_bullets:
-            cleaned = self._clean_bullet(bullet)
+            cleaned = self._clean_bullet_preserve_tags(bullet)
             if cleaned:
                 formatted.append(cleaned)
 
@@ -57,7 +68,7 @@ class ContextFormatter:
         Args:
             role: Message role (system/user)
             header: Context header text
-            bullets: Formatted bullet strings
+            bullets: Formatted bullet strings (already include "• " prefix from retrieval)
 
         Returns:
             Complete message dictionary
@@ -65,13 +76,8 @@ class ContextFormatter:
         if not bullets:
             return None
 
-        content_parts = [header]
-
-        # Add bullets with proper formatting
-        for bullet in bullets:
-            content_parts.append(f"• {bullet}")
-
-        content = "\n".join(content_parts)
+        # Bullets already have "• " prefix from retrieval, just join with header
+        content = header.rstrip() + "\n" + "\n".join(bullets)
 
         return {
             "role": role,
@@ -99,6 +105,39 @@ class ContextFormatter:
 
         # Basic length check
         if len(cleaned) < 3:
+            return ""
+
+        return cleaned
+
+    def _clean_bullet_preserve_tags(self, bullet: str) -> str:
+        """
+        Clean bullet while preserving [source] tags and timestamps.
+        Bullets from retrieval already have format: "• [convo] text... (timestamp)"
+
+        Args:
+            bullet: Raw bullet text with source tags
+
+        Returns:
+            Cleaned bullet text with tags preserved
+        """
+        if not bullet or not bullet.strip():
+            return ""
+
+        # Bullets already have "• " prefix from retrieval - keep as-is
+        cleaned = bullet.strip()
+
+        # Normalize internal whitespace (but preserve structure)
+        import re
+        # Replace multiple spaces with single space, but keep newlines
+        cleaned = re.sub(r' +', ' ', cleaned)
+
+        # Basic quality check - ensure there's actual content beyond the prefix and tag
+        # Pattern: "• [source] actual_content (timestamp)"
+        content_only = re.sub(r'^•\s*\[.*?\]\s*', '', cleaned)
+        content_only = re.sub(r'\s*\(.*?\)\s*$', '', content_only)
+
+        if len(content_only.strip()) < 5:
+            # Reject bullets with insufficient content
             return ""
 
         return cleaned

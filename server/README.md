@@ -140,6 +140,15 @@ MEMORY_SOURCES=graph,summary               # Memory retrieval sources
 MEMORY_SUMMARIZER_ENABLED=true             # Turn-based summarization
 MEMORY_SUMMARIZER_TURN_PAIRS=5             # Summary every N turns
 
+# === Memory Retrieval Enhancement ===
+MEMORY_WEIGHT_PROSODY=0.0                  # Prosody weight for convo reranking (0.0-1.0)
+MEMORY_INJECTION_MODE=bullets              # Injection mode: bullets, headers
+MEMORY_HEADER_EXPAND_THRESHOLD=0.65        # Score threshold for header auto-expand
+MEMORY_LOG_COMPONENTS=false                # Enable component logging for debugging
+
+# === Memory Summarization ===
+SUMMARY_PROSODY_ENABLED=false              # Bias summarization toward high-certainty turns
+
 # === Audio Processing ===
 KOKORO_BUFFER_MS=40                        # TTS chunk size
 WHISPER_MODEL=base                         # STT model size

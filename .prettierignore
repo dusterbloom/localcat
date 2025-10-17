@@ -1,0 +1,15 @@
+# Large or generated files to skip
+docs/locomo10.json
+docs/mem0_github_repo.txt
+server/uv.lock
+
+# Common ignores
+node_modules
+.next
+dist
+build
+.venv
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.DS_Store

@@ -279,6 +279,21 @@ class HotMemService(FrameProcessor):
 
         self.last_query = query
 
+        # Skip enhancement if a memory header is already present (avoids double-injection)
+        try:
+            existing = False
+            for m in context.get_messages():
+                if isinstance(m, dict) and m.get('role') == 'system':
+                    content = m.get('content', '')
+                    if isinstance(content, str) and content.startswith(self._inject_header):
+                        existing = True
+                        break
+            if existing:
+                logger.debug("Memory header already present; skipping HotMemService enhancement")
+                return
+        except Exception:
+            pass
+
         # First, get relevant memories using HotPath
         memories = self._retrieve_memories(query)
         if memories.get("results"):

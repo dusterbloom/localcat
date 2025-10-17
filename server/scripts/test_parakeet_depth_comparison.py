@@ -53,7 +53,6 @@ async def test_parakeet_depth(depth: int, context_size: tuple = (256, 256)):
         # Initialize with specific depth
         stt = ParakeetStreamingSTT(
             enable_vad=False,  # Disable to focus on streaming quality
-            confidence_threshold=0.1,
             volume_threshold=0.0001,
             chunk_duration=1.0,
             context_size=context_size,

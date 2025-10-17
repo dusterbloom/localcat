@@ -14,6 +14,11 @@ data
 server/.logs/
 server/server/.logs/
 server/base.pt
+
+.claude/
+
+.factory
+
 # Python caches and pytest cache
 .pytest_cache/
 .mypy_cache/
@@ -36,3 +41,16 @@ server/data/speaker_profiles/models/**
 # Keep server root tight: forbid stray markdowns
 server/*.md
 !server/README.md
+
+# Generated test and experiment artifacts
+server/results/*.json
+server/results/**/*.json
+server/tts_performance_report_*.json
+server/core/tts/*.backup
+
+# Database files (local development only)
+memory.db
+*.db
+
+# Backup files
+*.backup

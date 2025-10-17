@@ -87,22 +87,11 @@ async def monitor_connections():
         except Exception as e:
             logger.error(f"Error in connection monitor: {e}")
 
-ice_servers = [
-    IceServer(
-        urls="stun:stun.l.google.com:19302",
-    )
-]
+# Offline/local default: host-only ICE (no public STUN)
+ice_servers = []
 
 
 # LocalSmartTurnAnalyzerV3 includes model weights bundled with Pipecat
-
-
-SYSTEM_INSTRUCTION =  """You are Locat, an AI persona. 
-                         You have contextual awareness through your context so reference it when you feel it useful for the interaction with the user.  
-                        Some Guidelines:
-                        - Make sure your responses are friendly yet short and concise.
-                        - Greet the user by their name if you know about it. 
-                    """
 
 
 async def run_bot(webrtc_connection):
@@ -113,8 +102,12 @@ async def run_bot(webrtc_connection):
     # Create factory with configuration
     factory = VoiceAgentFactory(config)
 
+    # Build dynamic system prompt based on configuration
+    system_instruction = factory.build_system_prompt()
+    logger.debug(f"Generated system prompt:\n{system_instruction}")
+
     # Create all services using factory
-    services = factory.create_voice_agent(webrtc_connection, SYSTEM_INSTRUCTION)
+    services = factory.create_voice_agent(webrtc_connection, system_instruction)
 
     # Extract services for event handlers
     transport = services['transport']
@@ -164,41 +157,17 @@ async def offer(request: dict, background_tasks: BackgroundTasks):
         pipecat_connection = pcs_map[pc_id]
         logger.debug(f"Reusing existing connection for pc_id: {pc_id}")
 
-        # Only renegotiate if explicitly requested AND connection is actually broken
-        # The voice-ui-kit sends restart_pc=true by default, so we ignore it for healthy connections
-        restart_requested = request.get("restart_pc", False)
-
-        # Check if connection appears healthy before deciding to renegotiate
-        connection_healthy = (
-            hasattr(pipecat_connection, 'connection_state') and
-            pipecat_connection.connection_state == "connected" and
-            hasattr(pipecat_connection, '_last_activity') and
-            time.time() - pipecat_connection._last_activity < 60  # Active in last minute
+        # Always renegotiate for simplicity and stability with plain RTCPeerConnection clients
+        # (SmallWebRTCConnection doesn't expose set_remote_description)
+        restart_requested = bool(request.get("restart_pc", False))
+        logger.debug(
+            f"Renegotiating existing connection pc_id: {pc_id} (restart_pc={restart_requested})"
         )
-
-        if restart_requested and not connection_healthy:
-            logger.debug(f"Connection appears broken, renegotiating pc_id: {pc_id}")
-            await pipecat_connection.renegotiate(
-                sdp=request["sdp"],
-                type=request["type"],
-                restart_pc=True,
-            )
-        else:
-            # For normal conversation flow, just update the connection without renegotiation
-            logger.debug(f"Updating SDP for existing connection pc_id: {pc_id} (restart_pc={restart_requested}, healthy={connection_healthy})")
-            try:
-                # Try to update the connection without full renegotiation
-                await pipecat_connection.set_remote_description(request["sdp"], request["type"])
-                # Update activity timestamp
-                pipecat_connection._last_activity = time.time()
-                logger.debug(f"SDP updated successfully for pc_id: {pc_id}")
-            except Exception as e:
-                logger.warning(f"SDP update failed, falling back to renegotiation: {e}")
-                await pipecat_connection.renegotiate(
-                    sdp=request["sdp"],
-                    type=request["type"],
-                    restart_pc=False,
-                )
+        await pipecat_connection.renegotiate(
+            sdp=request["sdp"],
+            type=request["type"],
+            restart_pc=restart_requested,
+        )
     else:
         pipecat_connection = SmallWebRTCConnection(ice_servers)
         await pipecat_connection.initialize(sdp=request["sdp"], type=request["type"])
@@ -259,7 +228,7 @@ async def lifespan(app: FastAPI):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pipecat Bot Runner")
     parser.add_argument(
-        "--host", default="localhost", help="Host for HTTP server (default: localhost)"
+        "--host", default="127.0.0.1", help="Host for HTTP server (default: 127.0.0.1)"
     )
     parser.add_argument(
         "--port", type=int, default=7860, help="Port for HTTP server (default: 7860)"

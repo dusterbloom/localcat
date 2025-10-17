@@ -41,6 +41,8 @@ class FastTextAggregator(FrameProcessor):
             # Clean and format text for better TTS
             clean_text = self._clean_text_for_tts(self._aggregation)
             if clean_text:
+                from loguru import logger
+                logger.debug(f"[FastTextAggregator] Releasing text: '{clean_text[:100]}...' (len={len(clean_text)}, aggregated={len(self._aggregation)})")
                 await self.push_frame(TextFrame(clean_text))
 
         self._aggregation = ""
@@ -107,17 +109,21 @@ class FastTextAggregator(FrameProcessor):
             clean_text = frame.text.replace('*', '')
             self._aggregation += clean_text
 
+            from loguru import logger
+            logger.debug(f"[FastTextAggregator] Accumulated: '{self._aggregation[:80]}...' (total_len={len(self._aggregation)})")
+
             # Estimate token count (rough approximation: 1 token ≈ 4 chars for English)
             estimated_tokens = len(self._aggregation) // 4
 
             # Check for natural boundaries
             should_release = False
 
-            # Check if we hit a sentence ending
+            # Check if we hit a sentence ending - ALWAYS release complete sentences immediately
+            # This is critical for natural voice conversation flow
             if self._aggregation.rstrip() and self._aggregation.rstrip()[-1] in self._sentence_endings:
-                # Always release at sentence boundaries if we have minimum content
-                if estimated_tokens >= self._min_tokens // 2:  # Half minimum for sentence ends
-                    should_release = True
+                should_release = True
+                logger.debug(f"[FastTextAggregator] Sentence boundary detected, releasing: '{self._aggregation[:60]}...'")
+
             # Check if we hit max token limit - but try to find a good break point
             elif estimated_tokens >= self._max_tokens:
                 # Look for the last good break point (sentence or clause ending)

@@ -199,7 +199,6 @@ async def test_parakeet_stt():
 
         stt = ParakeetStreamingSTT(
             enable_vad=False,  # Disable to avoid Smart Turn conflicts
-            confidence_threshold=0.1,
             volume_threshold=0.0001,
             chunk_duration=1.0,
             sentence_pause_threshold=1.2,

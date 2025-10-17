@@ -12,10 +12,12 @@ import hashlib
 import time
 import shutil
 import contextlib
+import json
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict, Any
 from collections import defaultdict
 from loguru import logger
+from .memory_constants import WEIGHT_MIN_ACTIVE, WEIGHT_MIN_WEAK, MAX_CONF_CAP
 
 
 @dataclass
@@ -157,6 +159,23 @@ class MemoryStore:
             );
             CREATE INDEX IF NOT EXISTS idx_source_edge ON edge_source(edge_id);
             CREATE INDEX IF NOT EXISTS idx_source_turn ON edge_source(turn_id);
+
+            CREATE TABLE IF NOT EXISTS edge_usage(
+              edge_id TEXT PRIMARY KEY,
+              access_count INT DEFAULT 0,
+              last_accessed INT DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_edge_usage_last_accessed ON edge_usage(last_accessed DESC);
+
+            -- Turn prosody meta table
+            CREATE TABLE IF NOT EXISTS turn_meta(
+              session_id TEXT NOT NULL,
+              turn_id INT NOT NULL,
+              key TEXT NOT NULL,
+              value TEXT NOT NULL,
+              PRIMARY KEY(session_id, turn_id, key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_turn_meta_session_turn ON turn_meta(session_id, turn_id);
         """)
         
         # LMDB with proper settings (skip if lmdb_dir is None)
@@ -179,6 +198,14 @@ class MemoryStore:
         else:
             self.db_alias = None
             self.db_adj = None
+
+        # Initialize Enhanced FTS schema early (safe if already exists)
+        try:
+            from .enhanced_fts import EnhancedFTS
+            EnhancedFTS(self)  # Creates schema/tables if missing
+        except Exception:
+            # Enhanced FTS is optional; failures here should not block
+            pass
     
     def _recover_from_corruption(self):
         """Recover from database corruption"""
@@ -367,6 +394,20 @@ class MemoryStore:
                         "INSERT INTO chunks_fts(text, eid, rel, dst, ts) VALUES(?, ?, ?, ?, ?)",
                         (text, "conversation", "", "", ts)
                     )
+                    # Also index in Enhanced FTS content table (if present)
+                    try:
+                        terms = (text or "").lower().split()
+                        term_freq = (len([t for t in terms if t]) / max(len(terms), 1)) if terms else 0.0
+                        doc_length = len(text or "")
+                        cur.execute(
+                            "INSERT OR REPLACE INTO chunks_content "
+                            "(text, eid, ts, session_id, turn_id, term_frequency, document_length, entity_boost) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            (text, 'conversation', int(ts), sid, int(turn_num), float(term_freq), int(doc_length), 1.0)
+                        )
+                    except Exception:
+                        # Table may not exist yet (first run); it's safe to ignore
+                        pass
 
                 # Batch process edge sources
                 for edge_id, turn_id, ts in self._edge_sources:
@@ -418,7 +459,7 @@ class MemoryStore:
     # ---------- Edge lifecycle ops (hot-path safe) ----------
     @staticmethod
     def _status_from_weight(w: float) -> int:
-        return 1 if w >= 0.25 else (0 if w >= 0.10 else -1)
+        return 1 if w >= WEIGHT_MIN_ACTIVE else (0 if w >= WEIGHT_MIN_WEAK else -1)
     
     @staticmethod
     def _alpha(conf: float, base: float = 0.15, lo: float = 0.05, hi: float = 0.35) -> float:
@@ -454,7 +495,7 @@ class MemoryStore:
 
                 if not found:
                     # New edge
-                    w = min(0.75, conf)
+                    w = min(MAX_CONF_CAP, conf)
                     arr.extend([d, w, now_ts, 1, 0, 1])
 
                 txn.put(key, msgpack.dumps(arr), db=self.db_adj, overwrite=True)
@@ -464,7 +505,7 @@ class MemoryStore:
             self.flush_if_needed()
         else:
             # LMDB disabled: enqueue a conservative SQLite update only
-            w = min(0.75, conf)
+            w = min(MAX_CONF_CAP, conf)
             pos = 1
             neg = 0
             self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts)
@@ -498,7 +539,7 @@ class MemoryStore:
                         break
 
                 if not found:
-                    arr.extend([d, 0.10, now_ts, 0, 1, 0])  # Weak & stale
+                    arr.extend([d, WEIGHT_MIN_WEAK, now_ts, 0, 1, 0])  # Weak & stale
 
                 txn.put(key, msgpack.dumps(arr), db=self.db_adj, overwrite=True)
 
@@ -506,7 +547,7 @@ class MemoryStore:
             self.flush_if_needed()
         else:
             # LMDB disabled: conservative SQLite update only
-            w = 0.10
+            w = WEIGHT_MIN_WEAK
             pos = 0
             neg = 1
             self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts)
@@ -547,33 +588,8 @@ class MemoryStore:
                 cur.execute("UPDATE edge SET weight=0, status=-9 WHERE src=? AND rel=? AND dst=?", (s, r, d))
                 self.sql.commit()
     
-    # ---------- Search operations ----------
-    def search_fts(self, query: str, limit: int = 10) -> List[Tuple[str, str, int]]:
-        """Full-text search using SQLite FTS5, including timestamp for recency."""
-        cur = self.sql.cursor()
-        results: List[Tuple[str, str, int]] = []
-        for (text, eid, ts) in cur.execute(
-            "SELECT text, eid, ts FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?",
-            (query, limit)
-        ):
-            results.append((str(text), str(eid), int(ts)))
-        return results
-
-    def search_fts_scoped(self, query: str, eids: List[str], limit: int = 10) -> List[Tuple[str, str, int]]:
-        """FTS search restricted to specific eids (user/session scoped)."""
-        if not eids:
-            return self.search_fts(query, limit)
-        cur = self.sql.cursor()
-        results: List[Tuple[str, str, int]] = []
-        try:
-            placeholders = ",".join(["?"] * len(eids))
-            sql = f"SELECT text, eid, ts FROM chunks_fts WHERE chunks_fts MATCH ? AND eid IN ({placeholders}) ORDER BY rank LIMIT ?"
-            params = [query, *eids, int(limit)]
-            for (text, eid, ts) in cur.execute(sql, params):
-                results.append((str(text), str(eid), int(ts)))
-        except Exception as e:
-            logger.warning(f"search_fts_scoped failed: {e}")
-        return results
+    # ---------- Search operations (deprecated definitions removed; use robust versions below) ----------
+    # Kept intentionally empty here to avoid duplicate method definitions.
 
     def is_session_owned_by_user(self, session_id: str, user_id: str) -> bool:
         """Return True if there is at least one mention for (eid=user_id, session_id=session_id)."""
@@ -693,6 +709,62 @@ class MemoryStore:
             ORDER BY es.extracted_at DESC
         """, (edge_id,)).fetchall()
 
+    def get_edges_provenance_batch(self, edge_ids: List[str]) -> Dict[str, List[Tuple[str, str, int, int]]]:
+        """
+        Get provenance for multiple edges in a single query (Fix #3)
+
+        Args:
+            edge_ids: List of edge IDs
+
+        Returns:
+            Dict mapping edge_id -> List of (text, session_id, turn_id, extracted_at) tuples
+        """
+        if not edge_ids:
+            return {}
+
+        cur = self.sql.cursor()
+        placeholders = ','.join('?' * len(edge_ids))
+        rows = cur.execute(f"""
+            SELECT es.edge_id, t.text, t.session_id, t.turn_id, es.extracted_at
+            FROM edge_source es
+            JOIN conversation_turn t ON es.turn_id = t.id
+            WHERE es.edge_id IN ({placeholders})
+            ORDER BY es.extracted_at DESC
+        """, edge_ids).fetchall()
+
+        # Group by edge_id
+        result: Dict[str, List[Tuple[str, str, int, int]]] = {}
+        for edge_id, text, session_id, turn_id, extracted_at in rows:
+            if edge_id not in result:
+                result[edge_id] = []
+            result[edge_id].append((text, session_id, turn_id, extracted_at))
+
+        return result
+
+    def are_sessions_owned_by_user_batch(self, session_ids: List[str], user_id: str) -> set[str]:
+        """
+        Check which sessions belong to a user in a single query (Fix #3)
+
+        Args:
+            session_ids: List of session IDs to check
+            user_id: User ID to check ownership
+
+        Returns:
+            Set of session IDs that belong to the user
+        """
+        if not session_ids or not user_id:
+            return set()
+
+        cur = self.sql.cursor()
+        placeholders = ','.join('?' * len(session_ids))
+        rows = cur.execute(f"""
+            SELECT DISTINCT session_id
+            FROM mention
+            WHERE session_id IN ({placeholders}) AND eid = ?
+        """, session_ids + [user_id]).fetchall()
+
+        return {str(row[0]) for row in rows}
+
     def get_turn_extractions(self, session_id: str, turn_id: int) -> List[Tuple[str, str, str, float]]:
         """
         Get all edges extracted from a conversation turn
@@ -750,3 +822,193 @@ class MemoryStore:
             SELECT COUNT(*) FROM edge_source WHERE edge_id = ?
         """, (edge_id,)).fetchone()
         return result[0] if result else 0
+
+    def increment_edge_usage(self, edge_id: str, ts_ms: int) -> None:
+        """
+        Increment usage count and update last accessed time for an edge.
+
+        Args:
+            edge_id: Edge ID to update
+            ts_ms: Current timestamp in milliseconds
+        """
+        cur = self.sql.cursor()
+        cur.execute("""
+            INSERT INTO edge_usage (edge_id, access_count, last_accessed)
+            VALUES (?, 1, ?)
+            ON CONFLICT(edge_id) DO UPDATE SET
+                access_count = access_count + 1,
+                last_accessed = ?
+        """, (edge_id, ts_ms, ts_ms))
+        self.sql.commit()
+
+    def get_edge_usage(self, edge_id: str) -> Tuple[int, int]:
+        """
+        Get usage statistics for an edge.
+
+        Args:
+            edge_id: Edge ID to query
+
+        Returns:
+            Tuple of (access_count, last_accessed) with defaults (0, 0) if not found
+        """
+        cur = self.sql.cursor()
+        result = cur.execute("""
+            SELECT access_count, last_accessed FROM edge_usage WHERE edge_id = ?
+        """, (edge_id,)).fetchone()
+        
+        if result:
+            return result[0], result[1]
+        return 0, 0
+
+    def set_turn_prosody(self, session_id: str, turn_id: int, certainty: float, meta: Optional[dict] = None) -> None:
+        """
+        Store prosody certainty and metadata for a conversation turn.
+
+        Args:
+            session_id: Session identifier
+            turn_id: Turn number within session
+            certainty: Prosody certainty score (0.0 to 1.0)
+            meta: Optional metadata dictionary (will be JSON encoded)
+        """
+        cur = self.sql.cursor()
+        try:
+            # Store certainty
+            cur.execute("""
+                INSERT OR REPLACE INTO turn_meta(session_id, turn_id, key, value)
+                VALUES(?, ?, 'prosody_certainty', ?)
+            """, (session_id, turn_id, f"{certainty:.3f}"))
+            
+            # Store metadata if provided
+            if meta is not None:
+                meta_json = json.dumps(meta)
+                cur.execute("""
+                    INSERT OR REPLACE INTO turn_meta(session_id, turn_id, key, value)
+                    VALUES(?, ?, 'prosody_meta', ?)
+                """, (session_id, turn_id, meta_json))
+            
+            self.sql.commit()
+        except Exception as e:
+            logger.error(f"Failed to store turn prosody for session={session_id}, turn={turn_id}: {e}")
+            self.sql.rollback()
+
+    def get_turn_prosody(self, session_id: str, turn_id: int) -> Tuple[float, dict]:
+        """
+        Retrieve prosody certainty and metadata for a conversation turn.
+
+        Args:
+            session_id: Session identifier
+            turn_id: Turn number within session
+
+        Returns:
+            Tuple of (certainty, meta_dict) with defaults (0.5, {}) if missing or parse failure
+        """
+        cur = self.sql.cursor()
+        certainty = 0.5  # Default baseline
+        meta_dict = {}   # Default empty meta
+        
+        try:
+            # Get certainty
+            result = cur.execute("""
+                SELECT value FROM turn_meta WHERE session_id = ? AND turn_id = ? AND key = 'prosody_certainty'
+            """, (session_id, turn_id)).fetchone()
+            
+            if result:
+                try:
+                    certainty = float(result[0])
+                    certainty = max(0.0, min(1.0, certainty))  # Clamp to [0,1]
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid prosody certainty value for session={session_id}, turn={turn_id}: {result[0]}")
+            
+            # Get metadata
+            result = cur.execute("""
+                SELECT value FROM turn_meta WHERE session_id = ? AND turn_id = ? AND key = 'prosody_meta'
+            """, (session_id, turn_id)).fetchone()
+            
+            if result:
+                try:
+                    meta_dict = json.loads(result[0])
+                    if not isinstance(meta_dict, dict):
+                        logger.warning(f"Invalid prosody meta for session={session_id}, turn={turn_id}: not a dict")
+                        meta_dict = {}
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(f"Invalid prosody meta JSON for session={session_id}, turn={turn_id}: {result[0]}")
+                    meta_dict = {}
+                    
+        except Exception as e:
+            logger.error(f"Failed to retrieve turn prosody for session={session_id}, turn={turn_id}: {e}")
+        
+        return certainty, meta_dict
+
+    # ---------- FTS Search Methods ----------
+    def _sanitize_fts_query(self, query: str) -> str:
+        """Convert free-form text into a safe FTS5 MATCH query.
+
+        - Strips non-word characters
+        - Quotes each token to avoid boolean operators/reserved words
+        - Joins terms with OR to improve recall
+        """
+        import re
+        tokens = re.findall(r"\w+", (query or "").lower())
+        if not tokens:
+            return ""
+        return " OR ".join(f'"{t}"' for t in tokens)
+
+    def search_fts(self, query: str, limit: int = 10) -> List[Tuple[str, str, int]]:
+        """
+        Search the FTS index for matching documents.
+        
+        Args:
+            query: Search query (FTS5 syntax)
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of (text, eid, timestamp) tuples ordered by rank
+        """
+        if not query.strip():
+            return []
+            
+        cur = self.sql.cursor()
+        try:
+            safe = self._sanitize_fts_query(query)
+            if not safe:
+                return []
+            results = cur.execute(
+                "SELECT text, eid, ts FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?",
+                (safe, int(limit))
+            ).fetchall()
+            return [(str(text), str(eid), int(ts)) for text, eid, ts in results]
+        except Exception as e:
+            logger.warning(f"FTS search failed for query '{query[:50]}': {e}")
+            return []
+
+    def search_fts_scoped(self, query: str, eids: List[str], limit: int = 10) -> List[Tuple[str, str, int]]:
+        """
+        Search FTS index scoped to specific entity IDs (for user/session isolation).
+        
+        Args:
+            query: Search query (FTS5 syntax)
+            eids: List of entity IDs to restrict search to
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of (text, eid, timestamp) tuples ordered by rank
+        """
+        if not query.strip() or not eids:
+            return self.search_fts(query, limit)
+            
+        cur = self.sql.cursor()
+        try:
+            # Build parameterized query for specific eids
+            placeholders = ','.join('?' * len(eids))
+            sql = f"SELECT text, eid, ts FROM chunks_fts WHERE chunks_fts MATCH ? AND eid IN ({placeholders}) ORDER BY rank LIMIT ?"
+            
+            safe = self._sanitize_fts_query(query)
+            if not safe:
+                return []
+            params = [safe] + eids + [int(limit)]
+            results = cur.execute(sql, params).fetchall()
+            return [(str(text), str(eid), int(ts)) for text, eid, ts in results]
+        except Exception as e:
+            logger.warning(f"Scoped FTS search failed for query '{query[:50]}': {e}")
+            # Fallback to global search
+            return self.search_fts(query, limit)

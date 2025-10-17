@@ -71,7 +71,6 @@ async def test_streaming_proof():
         print("🔄 Initializing Parakeet STT with streaming parameters...")
         stt = ParakeetStreamingSTT(
             enable_vad=False,  # Disable VAD for pure streaming test
-            confidence_threshold=0.1,
             volume_threshold=0.0001,
             chunk_duration=1.0,
             context_size=(256, 256),

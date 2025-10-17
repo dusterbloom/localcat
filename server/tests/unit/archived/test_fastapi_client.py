@@ -44,7 +44,7 @@ async def test_http_client():
             # Test regular endpoint
             start_time = time.time()
             response = await client.post(
-                "http://localhost/synthesize",  # URL doesn't matter with Unix socket
+                "http://127.0.0.1/synthesize",  # URL doesn't matter with Unix socket
                 json={
                     "text": text,
                     "voice": "af_bella",
@@ -68,7 +68,7 @@ async def test_http_client():
             start_time = time.time()
             async with client.stream(
                 "POST",
-                "http://localhost/synthesize/stream",
+                "http://127.0.0.1/synthesize/stream",
                 json={
                     "text": text,
                     "voice": "af_bella",
@@ -97,7 +97,7 @@ async def test_http_client():
         async def concurrent_request(text_id: int):
             start_time = time.time()
             response = await client.post(
-                "http://localhost/synthesize",
+                "http://127.0.0.1/synthesize",
                 json={
                     "text": f"Concurrent request {text_id}: Testing connection pooling performance.",
                     "voice": "af_bella"
@@ -126,7 +126,7 @@ async def test_http_client():
         for i in range(10):
             start_time = time.time()
             response = await client.post(
-                "http://localhost/synthesize",
+                "http://127.0.0.1/synthesize",
                 json={"text": f"Reuse test {i}", "voice": "af_bella"}
             )
             end_time = time.time()

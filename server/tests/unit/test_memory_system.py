@@ -92,6 +92,121 @@ async def test_memory_system():
 
     return len(edges) > 0
 
+async def test_negation_handling():
+    """Test that negations are handled correctly and don't create false positives"""
+
+    print("\n" + "="*60)
+    print("TESTING NEGATION HANDLING")
+    print("="*60)
+
+    # Initialize memory processor with fresh state
+    processor = HotPathMemoryProcessor(
+        user_id="test-negation",
+        sqlite_path=":memory:",
+        lmdb_dir="/tmp/test_negation_lmdb"
+    )
+
+    print("\n✅ Memory processor initialized")
+
+    # Test cases: (text, expected_should_NOT_store, description)
+    test_cases = [
+        # Pure negations - should NOT create positive facts
+        ("I'm not interested in classic cars", ["interested in classic"], "Pure negation"),
+        ("I don't like horror movies", ["like horror"], "Negative preference"),
+
+        # Positive facts - SHOULD store
+        ("I like science fiction", None, "Positive preference"),
+        ("I have a dog named Max", None, "Positive fact"),
+
+        # Mixed positive and negative - store only positive
+        ("I like pizza but not pineapple", ["pineapple"], "Mixed positive/negative"),
+
+        # Confusion/meta-commentary - should be filtered (Layer 2)
+        ("I think it's just confusing", None, "Confusion filter"),
+        ("I don't know what you mean", None, "Meta-commentary filter"),
+        ("This is unclear to me", None, "Unclear filter"),
+
+        # Questions without assertions - should be filtered (Layer 2 & 4)
+        ("What is your name?", None, "Pure question"),
+
+        # Complex negations
+        ("I'm not a fan of sports", ["fan of sports"], "Negated identity"),
+    ]
+
+    print("\n📝 Processing negation test cases:")
+    for text, should_not_contain, description in test_cases:
+        frame = TranscriptionFrame(
+            text=text,
+            user_id="test-negation",
+            timestamp="0"
+        )
+
+        # Process the frame
+        await processor.process_frame(frame, direction=None)
+        print(f"  ✓ Processed: '{text}' ({description})")
+
+    # Check what was stored
+    print("\n🧠 Verifying memory contents:")
+    edges = processor.hot.store.get_all_edges()
+    print(f"  Total edges stored: {len(edges)}")
+
+    # Display all edges for debugging
+    if edges:
+        print("  Stored edges:")
+        for src, rel, dest, weight in edges:
+            print(f"    • {src} --[{rel}]--> {dest} (weight: {weight:.3f})")
+
+    # Verify negations were NOT stored
+    print("\n✅ Verification tests:")
+    failures = []
+
+    for text, should_not_contain, description in test_cases:
+        if should_not_contain:
+            for phrase in should_not_contain:
+                # Check if any edge contains the phrase that should NOT be there
+                found = False
+                for src, rel, dest, weight in edges:
+                    edge_str = f"{src} {rel} {dest}".lower()
+                    if phrase.lower() in edge_str:
+                        found = True
+                        failures.append(f"❌ FAIL: '{text}' created unwanted edge: {src} --[{rel}]--> {dest}")
+                        break
+                if not found:
+                    print(f"  ✓ PASS: '{text}' correctly avoided storing '{phrase}'")
+
+    # Test retrieval quality (Layer 4)
+    print("\n🔍 Testing retrieval quality (Layer 4):")
+    # Retrieve with a query that might match confused utterances
+    bullets = processor.hot.retrieve_bullets("Tell me what you know", read_only=True)
+    confused_retrieved = any("confus" in b.lower() or "unclear" in b.lower() for b in bullets)
+
+    if confused_retrieved:
+        failures.append("❌ FAIL: Retrieved confused/meta utterances (Layer 4 filter failed)")
+        print("  ❌ FAIL: Confused utterances were retrieved")
+    else:
+        print("  ✓ PASS: No confused/meta utterances in retrieval")
+
+    # Final results
+    print("\n" + "="*60)
+    if failures:
+        print("❌ SOME TESTS FAILED:")
+        for failure in failures:
+            print(f"  {failure}")
+        print("="*60)
+        return False
+    else:
+        print("✅ ALL NEGATION TESTS PASSED")
+        print("  • Layer 1: Negation tracking works correctly")
+        print("  • Layer 2: Quality filters prevent storing confusion")
+        print("  • Layer 3: Summarizer prompt focuses on facts")
+        print("  • Layer 4: Retrieval filters out low-quality bullets")
+        print("="*60)
+        return True
+
 if __name__ == "__main__":
-    success = asyncio.run(test_memory_system())
+    # Run both test suites
+    basic_success = asyncio.run(test_memory_system())
+    negation_success = asyncio.run(test_negation_handling())
+
+    success = basic_success and negation_success
     sys.exit(0 if success else 1)

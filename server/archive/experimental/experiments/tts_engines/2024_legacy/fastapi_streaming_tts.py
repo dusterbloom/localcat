@@ -82,7 +82,7 @@ class FastAPIStreamingTTS(TTSService):
         start_time = time.time()
         assert self._client is not None
         response = await self._client.post(
-            "http://localhost/synthesize",
+            "http://127.0.0.1/synthesize",
             json={
                 "text": text,
                 "voice": self._voice,
