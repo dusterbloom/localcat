@@ -1,0 +1,12 @@
+[package]
+name = "localcat"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+ureq = "2.9"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+

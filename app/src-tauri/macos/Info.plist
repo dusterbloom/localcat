@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>LocalCat</string>
+  <key>CFBundleDisplayName</key>
+  <string>LocalCat</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.localcat</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleExecutable</key>
+  <string>localcat</string>
+  <key>CFBundleVersion</key>
+  <string>1.0.0</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0.0</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>10.13</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>CFBundleIconFile</key>
+  <string>icon.icns</string>
+  <key>CSResourcesFileMapped</key>
+  <true/>
+
+  <!-- Network exceptions for local server access -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSExceptionDomains</key>
+    <dict>
+      <key>localhost</key>
+      <dict>
+        <key>NSExceptionAllowsInsecureHTTPLoads</key>
+        <true/>
+        <key>NSIncludesSubdomains</key>
+        <true/>
+      </dict>
+      <key>127.0.0.1</key>
+      <dict>
+        <key>NSExceptionAllowsInsecureHTTPLoads</key>
+        <true/>
+        <key>NSIncludesSubdomains</key>
+        <true/>
+      </dict>
+    </dict>
+  </dict>
+
+  <!-- Required for getUserMedia in WKWebView -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>LocalCat needs microphone access for voice features.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>LocalCat can use the camera for optional video features.</string>
+</dict>
+</plist>

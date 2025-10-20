@@ -18,7 +18,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "pipecat", "src"))
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+import httpx
 
 
 
@@ -42,6 +44,30 @@ async def get_initial_greeting() -> str:
     return "Hello! How can I help you today?"
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/api/status")
+async def api_status():
+    try:
+        cfg = VoiceAgentConfig.from_env()
+        tts_engine = getattr(cfg, "tts_engine", None)
+    except Exception:
+        tts_engine = None
+    # Probe ONNX daemon briefly
+    onnx_engine = None
+    try:
+        async with httpx.AsyncClient(timeout=0.2) as client:
+            r = await client.get("http://127.0.0.1:8770/version")
+            if r.status_code == 200:
+                onnx_engine = r.json().get("engine")
+    except Exception:
+        pass
+    return {"status": "ok", "tts_engine": tts_engine, "onnx_daemon": onnx_engine}
 
 pcs_map: Dict[str, SmallWebRTCConnection] = {}
 

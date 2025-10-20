@@ -1,6 +1,15 @@
 /* Voice UI Kit base styles */
 @import "@pipecat-ai/voice-ui-kit/styles.css";
 
+/* Full height layout - CRITICAL for absolute positioning to work */
+html, body, #__next {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 /* Material-like light/dark tokens (minimal) */
 :root {
   --vkui-color-background: oklch(98% 0 0);

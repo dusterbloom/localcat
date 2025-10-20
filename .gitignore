@@ -1,30 +1,61 @@
-.DS_Store
+### macOS / OS junk
+**/.DS_Store
+.AppleDouble
+.LSOverride
+
+### Env files
 .env
-.venv
-.vscode
-.next
-node_modules
-venv
-__pycache__
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-data
+
+### Editors/IDE
+.vscode/
+.idea/
+.fleet/
+.history/
+
+### Node / Next.js
+node_modules/
+.next/
+.turbo/
+.eslintcache
+
+### Python
+.venv
+venv/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+.python-version
+
+### Rust / Tauri
+target/
+**/src-tauri/target/
+**/src-tauri/**/target/
+**/src-tauri/**/bundle/
+**/*.app
+**/*.dmg
+
+### App build artifacts and logs
+app/*.pid
+app/*.log
+app/logs*.log
+app/localcat.pid
+app/src-tauri/sidecar/siri-tts/siri-tts
+
+### Data and caches
+data/
 server/.logs/
 server/server/.logs/
 server/base.pt
-
-.claude/
-
-.factory
-
-# Python caches and pytest cache
-.pytest_cache/
-.mypy_cache/
-
-# Model artifacts and checkpoints (never commit)
 server/wav2vec2_checkpoints/**
+server/models/hf_cache/**
 **/.locks/**
 **/*.pt
 **/*.bin
@@ -32,25 +63,29 @@ server/wav2vec2_checkpoints/**
 **/*.onnx
 **/*.tflite
 
-# Logs anywhere
+### Logs anywhere
 **/*.log
 
-# Local speaker profile model directory (if used)
+### Local speaker profile model directory (if used)
 server/data/speaker_profiles/models/**
 
-# Keep server root tight: forbid stray markdowns
+### Keep server root tight: forbid stray markdowns
 server/*.md
 !server/README.md
 
-# Generated test and experiment artifacts
+### Generated test and experiment artifacts
 server/results/*.json
 server/results/**/*.json
 server/tts_performance_report_*.json
 server/core/tts/*.backup
 
-# Database files (local development only)
+### Database files (local development only)
 memory.db
 *.db
+*.sqlite
 
-# Backup files
+### Backup files
 *.backup
+*.bak
+*.swp
+*.tmp

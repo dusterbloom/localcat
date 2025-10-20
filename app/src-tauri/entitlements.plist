@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Allow JIT compilation for MLX/Metal GPU kernels -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!-- Disable library validation to allow dynamically loaded ML frameworks -->
+    <!-- This is required for MLX to load Metal shaders and ONNX to load providers -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Allow unsigned executable memory (may be needed for some ML frameworks) -->
+    <!-- This is more permissive than allow-jit but may be necessary for MLX in bundles -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- Standard macOS app entitlements -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+
+    <!-- Network access for HTTP server communication -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+
+    <!-- File access for reading models and writing logs -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- Microphone access for voice input (WebRTC) -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!-- Camera access for optional video features -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
+</dict>
+</plist>

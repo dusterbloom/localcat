@@ -47,6 +47,7 @@ except ImportError:
 
 from core.tts.kokoro_professional import ProfessionalKokoroTTSService
 from core.tts.kokoro_mlx import MLXKokoroTTSService
+from core.tts.siri_streaming import SiriStreamingTTSService
 
 # Import optional components
 try:
@@ -229,6 +230,41 @@ class ServiceFactory:
                 aggregate_sentences=use_boundaries  # CRITICAL: Disable sentence aggregation for intro
             )
             logger.info("✅ Ultra-Low Latency MLX Kokoro TTS ready")
+        elif self.config.tts_engine == "siri_streaming":
+            logger.debug("Using Siri Streaming TTS (native macOS)")
+            # Determine binary path (dev vs production)
+            from pathlib import Path
+
+            # Try multiple possible locations for the siri-tts binary
+            binary_candidates = [
+                # Production (Tauri bundle): Resources/siri-tts/siri-tts
+                Path(__file__).parent.parent.parent / "siri-tts" / "siri-tts",
+                # Development: app/src-tauri/sidecar/siri-tts/siri-tts
+                Path(__file__).parent.parent.parent.parent / "app" / "src-tauri" / "sidecar" / "siri-tts" / "siri-tts",
+                # Alternative production path: _up_/siri-tts/siri-tts
+                Path(__file__).parent.parent.parent / "_up_" / "siri-tts" / "siri-tts",
+            ]
+
+            binary_path = None
+            for candidate in binary_candidates:
+                if candidate.exists():
+                    binary_path = candidate
+                    logger.debug(f"Found Siri TTS binary at: {binary_path}")
+                    break
+
+            if not binary_path:
+                logger.error(f"Siri TTS binary not found in any of: {[str(p) for p in binary_candidates]}")
+                raise FileNotFoundError(f"siri-tts binary not found. Searched: {binary_candidates}")
+
+            tts = SiriStreamingTTSService(
+                binary_path=str(binary_path),
+                language=os.getenv("SIRI_TTS_LANGUAGE", "en-US"),
+                voice_id=os.getenv("SIRI_TTS_VOICE_ID"),  # Optional override
+                rate=float(os.getenv("SIRI_TTS_RATE", "0.52")),
+                pitch=float(os.getenv("SIRI_TTS_PITCH", "1.0")),
+                sample_rate=tts_config["sample_rate"]
+            )
+            logger.info("✅ Siri Streaming TTS ready")
         else:
             logger.warning(f"Unknown TTS engine: {self.config.tts_engine}, falling back to MLX Kokoro")
             tts = MLXKokoroTTSService(
