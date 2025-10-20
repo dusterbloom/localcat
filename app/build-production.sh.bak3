@@ -127,12 +127,12 @@ if [ "$LIGHTWEIGHT" = "1" ]; then
   echo "     First-run will require internet to set up dependencies."
 else
   echo "  Checking Python venv..."
-  if [ -d "../server/.venv" ]; then
+  if [ -d "../../server/.venv" ]; then
     if [ -d "$TAURI_SERVER_DIR/.venv" ]; then
       echo "  ✅ venv already present in bundle server dir. Skipping copy."
     else
       echo "  Copying .venv into bundle server dir (this may take a minute)..."
-      cp -R "../server/.venv" "$TAURI_SERVER_DIR/" || {
+      cp -R "../../server/.venv" "$TAURI_SERVER_DIR/" || {
         echo "  ❌ Failed to copy server/.venv"; exit 1; }
       echo "  ✅ venv copied to: $TAURI_SERVER_DIR/.venv"
       # Prune caches and bytecode to shrink bundle size
@@ -228,9 +228,9 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
   mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub"
 
   # Copy Parakeet STT model (~2.3GB - required for all platforms)
-  if [ -d "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3" ]; then
+  if [ -d "../../../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3" ]; then
     # Use rsync for reliable copy with extended attributes and proper error checking
-    if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/" \
+    if rsync -a --exclude='.cache' "../../../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/" \
       "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/"; then
       echo "      ✅ Parakeet STT (~2.3GB)"
     else
@@ -240,8 +240,8 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
   fi
 
   # Copy Smart-turn model (~362MB - required for all platforms)
-  if [ -d "../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2" ]; then
-    if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2/" \
+  if [ -d "../../../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2" ]; then
+    if rsync -a --exclude='.cache' "../../../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2/" \
       "$TAURI_SERVER_DIR/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2/"; then
       echo "      ✅ Smart-turn (~362MB)"
     else
@@ -251,8 +251,8 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
   fi
 
   # Copy SpeechBrain speaker recognition model (~85MB - CRITICAL for voice enrollment)
-  if [ -d "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb" ]; then
-    if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/" \
+  if [ -d "../../../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb" ]; then
+    if rsync -a --exclude='.cache' "../../../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/" \
       "$TAURI_SERVER_DIR/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/"; then
       echo "      ✅ SpeechBrain ECAPA-TDNN speaker recognition (~85MB)"
     else
@@ -262,8 +262,8 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
   fi
 
   # Copy emotion recognition model if present (optional feature)
-  if [ -d "../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP" ]; then
-    if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP/" \
+  if [ -d "../../../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP" ]; then
+    if rsync -a --exclude='.cache' "../../../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP/" \
       "$TAURI_SERVER_DIR/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP/"; then
       echo "      ✅ SpeechBrain emotion recognition (optional)"
     else
@@ -280,17 +280,17 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
 
     # Copy Kokoro ONNX model for cross-platform TTS
     mkdir -p "$TAURI_SERVER_DIR/models/kokoro"
-    if [ -f "../server/models/kokoro/kokoro-v1.0.onnx" ]; then
-      cp "../server/models/kokoro/kokoro-v1.0.onnx" "$TAURI_SERVER_DIR/models/kokoro/" || true
+    if [ -f "../../../server/models/kokoro/kokoro-v1.0.onnx" ]; then
+      cp "../../../server/models/kokoro/kokoro-v1.0.onnx" "$TAURI_SERVER_DIR/models/kokoro/" || true
       echo "      ✅ Kokoro ONNX (~337MB)"
     fi
-    if [ -f "../server/models/kokoro/voices-v1.0.bin" ]; then
-      cp "../server/models/kokoro/voices-v1.0.bin" "$TAURI_SERVER_DIR/models/kokoro/" || true
+    if [ -f "../../../server/models/kokoro/voices-v1.0.bin" ]; then
+      cp "../../../server/models/kokoro/voices-v1.0.bin" "$TAURI_SERVER_DIR/models/kokoro/" || true
     fi
 
     # Also copy Kokoro from HF cache if present
-    if [ -d "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M" ]; then
-      if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/" \
+    if [ -d "../../../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M" ]; then
+      if rsync -a --exclude='.cache' "../../../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/" \
         "$TAURI_SERVER_DIR/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/"; then
         echo "      ✅ Kokoro HF model (~312MB)"
       else

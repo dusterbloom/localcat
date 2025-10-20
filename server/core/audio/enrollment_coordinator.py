@@ -207,12 +207,12 @@ class EnrollmentCoordinator(FrameProcessor):
         """Ask the user to choose anonymous chat vs quick enrollment."""
         # NOTE: Mic is automatically muted during CHOICE state by mic_gate_filter in factory.py
         text = (
-            "Would you like to sign me up (quick voice enrollment ~10s), sign in (if you've been here before), "
-            "or chat anonymously without storing anything? Say 'sign me up', 'sign in', or 'anonymous'."
+            "Would you like to sign up, sign in, "
+            "or chat anonymously without storing anything? Say 'sign up', 'recognize me', or 'anonymous'."
         )
         await self.push_frame(TextFrame(text), direction)
         # Optional: hint UI input is available
-        await self.push_frame(TextFrame("You can also choose by clicking in the UI."), direction)
+        await self.push_frame(TextFrame("So..."), direction)
 
     async def _send_intro_message(self, direction: FrameDirection):
         """

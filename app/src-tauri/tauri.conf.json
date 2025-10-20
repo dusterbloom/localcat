@@ -36,8 +36,8 @@
       "../../server/core/**/*",
       "../../server/components/**/*",
       "../../server/sidecars/**/*",
-      "../../server/utils/**/*",
-      "../../server/models/hf_cache/**/*"
+      "../../server/tools/**/*",
+      "../../server/utils/**/*"
     ]
   }
 }

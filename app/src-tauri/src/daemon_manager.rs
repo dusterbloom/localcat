@@ -240,6 +240,13 @@ pub fn start_server(app: &AppHandle) -> Result<(), String> {
         .env("HF_HOME", &hf_home)
         .env("HUGGINGFACE_HUB_CACHE", &hf_hub_cache);
 
+    // Add Homebrew binaries to PATH for ffmpeg (needed by Parakeet STT)
+    if let Ok(current_path) = std::env::var("PATH") {
+        let new_path = format!("/opt/homebrew/bin:/usr/local/bin:{}", current_path);
+        cmd.env("PATH", new_path);
+        println!("   PATH updated to include Homebrew binaries");
+    }
+
     // In production mode, override data paths to use user-writable locations
     // This keeps .env unchanged for local development while ensuring bundle app works correctly
     if resource_dir.is_some() {

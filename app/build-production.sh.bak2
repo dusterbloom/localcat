@@ -193,16 +193,24 @@ PY
     if [ -d "$TAURI_SERVER_DIR/.venv" ]; then
       echo "  ✅ Bundle already contains a venv in server dir"
     else
-      echo "  ⚠️  No venv found at ../../server/.venv and none in bundle server dir."
+      echo "  ⚠️  No venv found at ../server/.venv and none in bundle server dir."
       echo "     Create it with:"
       echo "       cd server && python3.12 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && pip install espeakng-loader && bash fix_shebangs.sh"
     fi
   fi
 fi
 
-echo "  ✅ Python files already bundled via tauri.conf.json"
+echo "  Copying Python files to server dir..."
+cp ../server/*.py "$TAURI_SERVER_DIR/"
 
-echo "  ✅ All server directories already bundled via tauri.conf.json (config/, core/, tools/, sidecars/, utils/)"
+echo "  Copying directories to server dir..."
+# Use rsync for reliable directory copying with proper error handling
+rsync -a ../server/config/ "$TAURI_SERVER_DIR/config/" || { echo "  ❌ Failed to copy config/"; exit 1; }
+rsync -a ../server/pipecat/ "$TAURI_SERVER_DIR/pipecat/" || { echo "  ❌ Failed to copy pipecat/"; exit 1; }
+rsync -a ../server/core/ "$TAURI_SERVER_DIR/core/" || { echo "  ❌ Failed to copy core/"; exit 1; }
+rsync -a ../server/tools/ "$TAURI_SERVER_DIR/tools/" || { echo "  ❌ Failed to copy tools/"; exit 1; }
+rsync -a ../server/sidecars/ "$TAURI_SERVER_DIR/sidecars/" || { echo "  ❌ Failed to copy sidecars/"; exit 1; }
+echo "  ✅ All server directories copied successfully"
 
 echo "  Cleaning up development artifacts from bundle..."
 # Remove .logs directories (development artifacts)
@@ -228,9 +236,9 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
   mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub"
 
   # Copy Parakeet STT model (~2.3GB - required for all platforms)
-  if [ -d "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3" ]; then
+  if [ -d "../../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3" ]; then
     # Use rsync for reliable copy with extended attributes and proper error checking
-    if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/" \
+    if rsync -a --exclude='.cache' "../../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/" \
       "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/"; then
       echo "      ✅ Parakeet STT (~2.3GB)"
     else
@@ -240,8 +248,8 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
   fi
 
   # Copy Smart-turn model (~362MB - required for all platforms)
-  if [ -d "../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2" ]; then
-    if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2/" \
+  if [ -d "../../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2" ]; then
+    if rsync -a --exclude='.cache' "../../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2/" \
       "$TAURI_SERVER_DIR/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2/"; then
       echo "      ✅ Smart-turn (~362MB)"
     else
@@ -251,8 +259,8 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
   fi
 
   # Copy SpeechBrain speaker recognition model (~85MB - CRITICAL for voice enrollment)
-  if [ -d "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb" ]; then
-    if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/" \
+  if [ -d "../../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb" ]; then
+    if rsync -a --exclude='.cache' "../../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/" \
       "$TAURI_SERVER_DIR/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/"; then
       echo "      ✅ SpeechBrain ECAPA-TDNN speaker recognition (~85MB)"
     else
@@ -262,8 +270,8 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
   fi
 
   # Copy emotion recognition model if present (optional feature)
-  if [ -d "../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP" ]; then
-    if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP/" \
+  if [ -d "../../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP" ]; then
+    if rsync -a --exclude='.cache' "../../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP/" \
       "$TAURI_SERVER_DIR/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP/"; then
       echo "      ✅ SpeechBrain emotion recognition (optional)"
     else
@@ -280,17 +288,17 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
 
     # Copy Kokoro ONNX model for cross-platform TTS
     mkdir -p "$TAURI_SERVER_DIR/models/kokoro"
-    if [ -f "../server/models/kokoro/kokoro-v1.0.onnx" ]; then
-      cp "../server/models/kokoro/kokoro-v1.0.onnx" "$TAURI_SERVER_DIR/models/kokoro/" || true
+    if [ -f "../../server/models/kokoro/kokoro-v1.0.onnx" ]; then
+      cp "../../server/models/kokoro/kokoro-v1.0.onnx" "$TAURI_SERVER_DIR/models/kokoro/" || true
       echo "      ✅ Kokoro ONNX (~337MB)"
     fi
-    if [ -f "../server/models/kokoro/voices-v1.0.bin" ]; then
-      cp "../server/models/kokoro/voices-v1.0.bin" "$TAURI_SERVER_DIR/models/kokoro/" || true
+    if [ -f "../../server/models/kokoro/voices-v1.0.bin" ]; then
+      cp "../../server/models/kokoro/voices-v1.0.bin" "$TAURI_SERVER_DIR/models/kokoro/" || true
     fi
 
     # Also copy Kokoro from HF cache if present
-    if [ -d "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M" ]; then
-      if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/" \
+    if [ -d "../../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M" ]; then
+      if rsync -a --exclude='.cache' "../../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/" \
         "$TAURI_SERVER_DIR/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/"; then
         echo "      ✅ Kokoro HF model (~312MB)"
       else
@@ -300,9 +308,27 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
   fi
 fi
 
-# Step 3.5: .env is already bundled via tauri.conf.json resources
-# No need to copy it post-build (signed .app is read-only anyway)
-echo "  ✅ .env bundled via tauri.conf.json (preserving STT=parakeet_batch, TTS=siri_streaming, LLM config)"
+# Step 3.5: Copy complete .env configuration to bundle (preserves all settings)
+echo "  Copying .env configuration to server dir..."
+if [ -f "../../server/.env" ]; then
+  # Remove any existing .env first (might have write protection)
+  rm -f "$TAURI_SERVER_DIR/.env" 2>/dev/null || true
+  if cp ../../server/.env "$TAURI_SERVER_DIR/"; then
+    echo "  ✅ .env copied successfully (preserving STT=parakeet_batch, TTS=siri_streaming, LLM config)"
+  else
+    echo "  ❌ Failed to copy .env"
+    exit 1
+  fi
+  # Also copy .env to the compiled-binary resource dir so running `target/release/localcat` picks it up
+  RELEASE_RES_DIR="src-tauri/target/release/_up_/_up_/server"
+  if [ -d "$RELEASE_RES_DIR" ]; then
+    cp ../../server/.env "$RELEASE_RES_DIR/" 2>/dev/null || true
+    echo "  ✅ .env also placed in $RELEASE_RES_DIR for direct binary runs"
+  fi
+else
+  echo "  ❌ No .env found at ../server/.env - cannot build without configuration"
+  exit 1
+fi
 
 # Quick verification summary
 if [ -x "$TAURI_SERVER_DIR/.venv/bin/python3" ]; then
