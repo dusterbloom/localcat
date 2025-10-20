@@ -57,7 +57,7 @@ class EnrollmentCoordinator(FrameProcessor):
     ):
         """
         Initialize enrollment coordinator.
-        
+
         Args:
             router: Pipeline router to control state transitions
             profile_dir: Directory containing speaker profiles
@@ -205,6 +205,7 @@ class EnrollmentCoordinator(FrameProcessor):
     
     async def _send_choice_message(self, direction: FrameDirection):
         """Ask the user to choose anonymous chat vs quick enrollment."""
+        # NOTE: Mic is automatically muted during CHOICE state by mic_gate_filter in factory.py
         text = (
             "Would you like to sign me up (quick voice enrollment ~10s), sign in (if you've been here before), "
             "or chat anonymously without storing anything? Say 'sign me up', 'sign in', or 'anonymous'."

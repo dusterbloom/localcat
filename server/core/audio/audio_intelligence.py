@@ -196,7 +196,7 @@ class AudioIntelligenceProcessor(FrameProcessor):
             raise ImportError("SpeechBrain required. Install: pip install speechbrain")
         
         # Configuration
-        self._profile_dir = Path(profile_dir)
+        self._profile_dir = Path(profile_dir).expanduser()
         self._similarity_threshold = similarity_threshold
         self._min_utterance_duration = min_utterance_duration_sec
         self._auto_enroll_utterances = auto_enroll_utterances
@@ -245,9 +245,49 @@ class AudioIntelligenceProcessor(FrameProcessor):
         
         logger.info(f"[AudioIntel] Loading SpeechBrain ECAPA-TDNN model ({device})...")
         try:
+            savedir = self._profile_dir / "models" / "speaker"
+
+            # Pre-populate savedir from bundled model if available and savedir is empty
+            hf_home = Path(os.environ.get("HF_HOME", ""))
+            bundled_model = hf_home / "hub" / "models--speechbrain--spkrec-ecapa-voxceleb"
+
+            logger.info(f"[AudioIntel] HF_HOME={hf_home}, bundled_model={bundled_model}")
+            logger.info(f"[AudioIntel] bundled_model.exists()={bundled_model.exists()}")
+            logger.info(f"[AudioIntel] savedir={savedir}, has hyperparams={(savedir / 'hyperparams.yaml').exists()}")
+
+            if bundled_model.exists() and not (savedir / "hyperparams.yaml").exists():
+                logger.info(f"[AudioIntel] Pre-copying bundled model from {bundled_model} to {savedir}")
+                savedir.mkdir(parents=True, exist_ok=True)
+                import shutil
+                shutil.copytree(bundled_model, savedir, dirs_exist_ok=True)
+
+                # Update hyperparams.yaml to use local paths instead of Hub
+                hyperparams_file = savedir / "hyperparams.yaml"
+                if hyperparams_file.exists():
+                    content = hyperparams_file.read_text()
+                    # Replace Hub identifier with local path (current directory)
+                    content = content.replace(
+                        "pretrained_path: speechbrain/spkrec-ecapa-voxceleb",
+                        "pretrained_path: ."
+                    )
+                    hyperparams_file.write_text(content)
+                    logger.info("[AudioIntel] Updated hyperparams.yaml to use local paths")
+
+                logger.info("[AudioIntel] Bundled model copied successfully")
+            else:
+                logger.debug(f"[AudioIntel] Skipping pre-copy (bundled exists={bundled_model.exists()}, savedir empty={not (savedir / 'hyperparams.yaml').exists()})")
+
+            # Use local path if model exists in savedir, otherwise download from Hub
+            if (savedir / "hyperparams.yaml").exists():
+                logger.info(f"[AudioIntel] Loading from local savedir: {savedir}")
+                source = str(savedir)
+            else:
+                logger.info("[AudioIntel] Loading from Hub: speechbrain/spkrec-ecapa-voxceleb")
+                source = "speechbrain/spkrec-ecapa-voxceleb"
+
             self._speaker_model = SpeakerRecognition.from_hparams(
-                source="speechbrain/spkrec-ecapa-voxceleb",
-                savedir=str(self._profile_dir / "models" / "speaker"),
+                source=source,
+                savedir=str(savedir),
                 run_opts={"device": device}
             )
             logger.info(f"[AudioIntel] SpeechBrain speaker model loaded on {device}")

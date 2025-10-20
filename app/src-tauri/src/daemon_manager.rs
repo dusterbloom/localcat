@@ -210,6 +210,7 @@ pub fn start_server(app: &AppHandle) -> Result<(), String> {
         .arg("--port").arg("7860")
         .current_dir(&server_dir)
         .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONDONTWRITEBYTECODE", "1")  // Force Python to not use bytecode cache
         .stdin(Stdio::null());
 
     // Pipe server stdout/stderr to persistent log for debugging
@@ -238,6 +239,30 @@ pub fn start_server(app: &AppHandle) -> Result<(), String> {
         .env("TRANSFORMERS_OFFLINE", "1")
         .env("HF_HOME", &hf_home)
         .env("HUGGINGFACE_HUB_CACHE", &hf_hub_cache);
+
+    // In production mode, override data paths to use user-writable locations
+    // This keeps .env unchanged for local development while ensuring bundle app works correctly
+    if resource_dir.is_some() {
+        if let Ok(home) = std::env::var("HOME") {
+            let data_dir = Path::new(&home).join("Library/Application Support/LocalCat/data");
+
+            // Ensure data directory exists
+            let _ = std::fs::create_dir_all(&data_dir);
+            println!("📁 Using data directory: {:?}", data_dir);
+
+            // Override all .env data paths with production locations
+            cmd.env("SESSION_DB_PATH", data_dir.join("sessions.db"))
+                .env("MEMORY_SEMANTIC_DIR", data_dir.join("semantic_index"))
+                .env("MEMORY_SQLITE_PATH", data_dir.join("memory.db"))
+                .env("MEMORY_LMDB_PATH", data_dir.join("graph.lmdb"))
+                .env("YAML_GRAPH_JUDGE_MODEL", data_dir.join("graph_judge.json"))
+                .env("YAML_GRAPH_JUDGE_GRAYZONE_LOG", data_dir.join("judge_grayzone.jsonl"))
+                .env("YAML_GRAPH_JUDGE_SCHEMA", data_dir.join("graph_judge_schema.json"))
+                .env("SPEAKER_PROFILE_DIR", data_dir.join("speaker_profiles"));
+
+            println!("   All data paths configured to: {:?}", data_dir);
+        }
+    }
 
     // Spawn server
     match cmd.spawn() {

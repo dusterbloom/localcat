@@ -1,6 +1,22 @@
 #!/bin/bash
 # Production build script for LocalCat Tauri app
 # Builds .app, adds server files, then creates DMG manually to avoid stack overflow
+#
+# Platform-Intelligent Bundling:
+#   - macOS: Uses Siri TTS (skips Kokoro models) → ~3.6GB bundle
+#   - Windows/Linux: Uses Kokoro TTS (includes models) → ~4.6GB bundle
+#
+# Optional Environment Variables:
+#   LIGHTWEIGHT=1     Skip venv (requires internet on first run)
+#   SLIM_VENV=1       Remove unused ML packages (saves ~200-500MB)
+#
+# Expected Bundle Sizes (macOS):
+#   - Parakeet STT: 2.3GB
+#   - Smart-turn: 362MB
+#   - Speaker recognition (ECAPA-TDNN): 85MB ← CRITICAL for voice enrollment
+#   - Python venv: ~1.8GB (or ~1.3GB with SLIM_VENV=1)
+#   - Server code: ~10MB
+#   Total: ~3.6GB (or ~4.6GB with Kokoro on Windows/Linux)
 
 set -e  # Exit on error
 
@@ -126,9 +142,18 @@ else
       find "$TAURI_SERVER_DIR/.venv" -type d -name "tests" -prune -exec rm -rf {} + || true
       echo "  ✅ venv pruning complete"
 
-      # Optional: aggressively slim venv for Siri-only builds
+      # Optional: aggressively slim venv for platform-specific builds
       if [ "${SLIM_VENV:-0}" = "1" ]; then
-        echo "  ⚠️  SLIM_VENV=1 → Removing heavy ML packages from venv (Siri-only)."
+        echo "  ⚠️  SLIM_VENV=1 → Removing unnecessary ML packages from venv."
+
+        # Detect build target (use same logic as model bundling)
+        BUILD_TARGET="macos"
+        if [[ "$TAURI_SERVER_DIR" == *"x86_64-pc-windows"* ]]; then
+          BUILD_TARGET="windows"
+        elif [[ "$TAURI_SERVER_DIR" == *"x86_64-unknown-linux"* ]]; then
+          BUILD_TARGET="linux"
+        fi
+
         VENV_SITE=$(python3 - <<'PY'
 import sysconfig, sys
 print(sysconfig.get_paths().get('purelib') or sysconfig.get_paths().get('platlib') or '')
@@ -138,13 +163,30 @@ PY
           VENV_SITE="$TAURI_SERVER_DIR/.venv/lib/python3.12/site-packages"
         fi
         echo "     Site-packages: $VENV_SITE"
-        for pkg in torch torchvision torchaudio onnxruntime onnxruntime_gpu transformers spacy sentence_transformers mlx_lm mlx_audio tensorflow jax flax opt_einsum flax_core opencv_python cv2 speechbrain parselmouth; do
-          if [ -d "$VENV_SITE/$pkg" ] || ls "$VENV_SITE" | grep -q "^$pkg[-_]"; then
-            echo "     - Removing $pkg"
+        echo "     Target: $BUILD_TARGET"
+
+        # Platform-specific package removal
+        if [ "$BUILD_TARGET" = "macos" ]; then
+          # macOS with Siri TTS - can remove TTS-specific heavy packages
+          echo "     Removing TTS packages (using Siri native TTS)..."
+          for pkg in onnxruntime onnxruntime_gpu espeakng_loader; do
+            if [ -d "$VENV_SITE/$pkg" ] || ls "$VENV_SITE" 2>/dev/null | grep -q "^$pkg[-_]"; then
+              echo "       - Removing $pkg"
+              rm -rf "$VENV_SITE/$pkg" "$VENV_SITE/${pkg}-"* 2>/dev/null || true
+            fi
+          done
+        fi
+
+        # All platforms: remove unused heavy ML frameworks
+        echo "     Removing unused ML frameworks..."
+        for pkg in torch torchvision torchaudio tensorflow jax flax opt_einsum opencv_python cv2 speechbrain; do
+          if [ -d "$VENV_SITE/$pkg" ] || ls "$VENV_SITE" 2>/dev/null | grep -q "^$pkg[-_]"; then
+            echo "       - Removing $pkg"
             rm -rf "$VENV_SITE/$pkg" "$VENV_SITE/${pkg}-"* 2>/dev/null || true
           fi
         done
-        echo "  ✅ venv slimming complete (be sure TTS=\"siri_streaming\" in .env)"
+
+        echo "  ✅ venv slimming complete for $BUILD_TARGET"
       fi
     fi
   else
@@ -168,20 +210,77 @@ cp -r ../server/core "$TAURI_SERVER_DIR/" 2>/dev/null || true
 cp -r ../server/tools "$TAURI_SERVER_DIR/" 2>/dev/null || true
 cp -r ../server/sidecars "$TAURI_SERVER_DIR/" 2>/dev/null || true
 
-# Copy only Kokoro ONNX model assets (omit HF cache, Kokoro-MLX, etc.)
+# Platform-intelligent model bundling
 if [ "$LIGHTWEIGHT" != "1" ]; then
-  echo "  Copying Kokoro ONNX model (saves hundreds of MB vs full models dir)..."
-  mkdir -p "$TAURI_SERVER_DIR/models/kokoro"
-  if [ -f "../server/models/kokoro/kokoro-v1.0.onnx" ]; then
-    cp "../server/models/kokoro/kokoro-v1.0.onnx" "$TAURI_SERVER_DIR/models/kokoro/" || true
+  echo "  Copying required models (platform-intelligent bundling)..."
+
+  # Detect build target platform
+  BUILD_TARGET="macos"  # Default for this script
+  if [[ "$TARGET_DIR" == *"x86_64-pc-windows"* ]]; then
+    BUILD_TARGET="windows"
+  elif [[ "$TARGET_DIR" == *"x86_64-unknown-linux"* ]]; then
+    BUILD_TARGET="linux"
   fi
-  if [ -f "../server/models/kokoro/voices-v1.0.bin" ]; then
-    cp "../server/models/kokoro/voices-v1.0.bin" "$TAURI_SERVER_DIR/models/kokoro/" || true
+
+  echo "    Target platform: $BUILD_TARGET"
+
+  # Always copy HuggingFace cache for STT models (Parakeet, Smart-turn)
+  echo "    Copying HuggingFace cache (STT models)..."
+  mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub"
+
+  # Copy Parakeet STT model (~2.3GB - required for all platforms)
+  if [ -d "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3" ]; then
+    cp -r "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3" \
+      "$TAURI_SERVER_DIR/models/hf_cache/hub/" 2>/dev/null || true
+    echo "      ✅ Parakeet STT (~2.3GB)"
+  fi
+
+  # Copy Smart-turn model (~362MB - required for all platforms)
+  if [ -d "../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2" ]; then
+    cp -r "../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2" \
+      "$TAURI_SERVER_DIR/models/hf_cache/hub/" 2>/dev/null || true
+    echo "      ✅ Smart-turn (~362MB)"
+  fi
+
+  # Copy SpeechBrain speaker recognition model (~85MB - CRITICAL for voice enrollment)
+  if [ -d "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb" ]; then
+    cp -r "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb" \
+      "$TAURI_SERVER_DIR/models/hf_cache/hub/" 2>/dev/null || true
+    echo "      ✅ SpeechBrain ECAPA-TDNN speaker recognition (~85MB)"
+  fi
+
+  # Copy emotion recognition model if present (optional feature)
+  if [ -d "../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP" ]; then
+    cp -r "../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP" \
+      "$TAURI_SERVER_DIR/models/hf_cache/hub/" 2>/dev/null || true
+    echo "      ✅ SpeechBrain emotion recognition (optional)"
+  fi
+
+  # Platform-specific TTS models
+  if [ "$BUILD_TARGET" = "macos" ]; then
+    echo "    Skipping Kokoro TTS (macOS uses native Siri TTS)"
+    echo "      💾 Saved: ~1GB bundle size"
+  else
+    echo "    Copying Kokoro TTS (required for $BUILD_TARGET - no Siri available)..."
+
+    # Copy Kokoro ONNX model for cross-platform TTS
+    mkdir -p "$TAURI_SERVER_DIR/models/kokoro"
+    if [ -f "../server/models/kokoro/kokoro-v1.0.onnx" ]; then
+      cp "../server/models/kokoro/kokoro-v1.0.onnx" "$TAURI_SERVER_DIR/models/kokoro/" || true
+      echo "      ✅ Kokoro ONNX (~337MB)"
+    fi
+    if [ -f "../server/models/kokoro/voices-v1.0.bin" ]; then
+      cp "../server/models/kokoro/voices-v1.0.bin" "$TAURI_SERVER_DIR/models/kokoro/" || true
+    fi
+
+    # Also copy Kokoro from HF cache if present
+    if [ -d "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M" ]; then
+      cp -r "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M" \
+        "$TAURI_SERVER_DIR/models/hf_cache/hub/" 2>/dev/null || true
+      echo "      ✅ Kokoro HF model (~312MB)"
+    fi
   fi
 fi
-
-# Hydrate Kokoro MLX voices from HF cache into bundled voices directory
-# Remove Kokoro-MLX hydration (Siri + ONNX only build)
 
 # Step 3.5: Copy complete .env configuration to bundle (preserves all settings)
 echo "  Copying .env configuration to server dir..."
@@ -249,41 +348,63 @@ mkdir -p "$DMG_DIR"
 rm -f "$DMG_PATH"
 
 # Create temporary mount point for DMG creation
-TMP_DMG="/tmp/LocalCat_temp.dmg"
+TMP_DMG="/tmp/LocalCat_temp_$$.dmg"  # Use PID to avoid conflicts
 rm -f "$TMP_DMG"
 
-# Create DMG with the complete .app (try LZFSE first, fallback to zlib)
+# Create DMG with the complete .app (calculate size with 15% headroom for filesystem overhead)
 echo "  Creating disk image..."
-if hdiutil create -volname "LocalCat" \
-    -srcfolder "$TARGET_DIR/bundle/macos/LocalCat.app" \
-    -ov -format ULFO -imagekey lzfse-level=19 "$TMP_DMG"; then
-  echo "  ✅ Created LZFSE-compressed DMG"
-else
-  echo "  ⚠️  LZFSE not available; falling back to zlib (UDZO)"
-  hdiutil create -volname "LocalCat" \
-    -srcfolder "$TARGET_DIR/bundle/macos/LocalCat.app" \
-    -ov -format UDZO -imagekey zlib-level=9 "$TMP_DMG"
-fi
 
-# Move to final DMG path
-echo "  Finalizing DMG..."
-mv -f "$TMP_DMG" "$DMG_PATH"
+# Calculate required DMG size with overhead
+APP_SIZE_KB=$(du -sk "$TARGET_DIR/bundle/macos/LocalCat.app" | cut -f1)
+DMG_SIZE_KB=$((APP_SIZE_KB * 150 / 100))  # Add 50% overhead
+DMG_SIZE_MB=$((DMG_SIZE_KB / 1024))
+echo "    App size: $((APP_SIZE_KB / 1024))MB, DMG size with overhead: ${DMG_SIZE_MB}MB"
+
+# Try creating DMG with explicit size (prevents "no space left" errors)
+if hdiutil create -volname "LocalCat_Install" \
+    -srcfolder "$TARGET_DIR/bundle/macos/LocalCat.app" \
+    -size "${DMG_SIZE_MB}m" \
+    -ov -format UDZO -imagekey zlib-level=9 "$TMP_DMG" 2>/dev/null; then
+  echo "  ✅ Created compressed DMG"
+  mv -f "$TMP_DMG" "$DMG_PATH"
+else
+  echo "  ⚠️  DMG creation failed (permission issue)"
+  echo "  This is usually due to missing Full Disk Access for Terminal/iTerm."
+  echo ""
+  echo "  To fix:"
+  echo "    1. Open System Settings → Privacy & Security → Full Disk Access"
+  echo "    2. Add Terminal.app or iTerm.app"
+  echo "    3. Restart your terminal and run this script again"
+  echo ""
+  echo "  Or create DMG manually after build:"
+  echo "    hdiutil create -volname LocalCat_Install -srcfolder $TARGET_DIR/bundle/macos/LocalCat.app -ov -format UDZO LocalCat.dmg"
+  echo ""
+  echo "  ℹ️  The .app bundle is ready and can be distributed without DMG"
+  DMG_PATH=""  # Clear DMG path so we don't show it in summary
+fi
 
 # Get bundle size
 BUNDLE_SIZE=$(du -sh "$TARGET_DIR/bundle/macos/LocalCat.app" | cut -f1)
-DMG_SIZE=$(du -sh "$DMG_PATH" | cut -f1)
 
 echo ""
 echo "🎉 Build complete!"
 echo "📦 Bundle size: $BUNDLE_SIZE"
-echo "📦 DMG size: $DMG_SIZE"
 echo "📍 .app: $(pwd)/$TARGET_DIR/bundle/macos/LocalCat.app"
-echo "📍 .dmg: $(pwd)/$DMG_PATH"
-echo ""
-echo "To test DMG installation:"
-echo "  1. Open the DMG: open $DMG_PATH"
-echo "  2. Drag LocalCat to Applications"
-echo "  3. Open from Applications folder"
+
+if [ -n "$DMG_PATH" ] && [ -f "$DMG_PATH" ]; then
+  DMG_SIZE=$(du -sh "$DMG_PATH" | cut -f1)
+  echo "📦 DMG size: $DMG_SIZE"
+  echo "📍 .dmg: $(pwd)/$DMG_PATH"
+  echo ""
+  echo "To test DMG installation:"
+  echo "  1. Open the DMG: open $DMG_PATH"
+  echo "  2. Drag LocalCat to Applications"
+  echo "  3. Open from Applications folder"
+else
+  echo ""
+  echo "To test the .app bundle:"
+  echo "  open $TARGET_DIR/bundle/macos/LocalCat.app"
+fi
 
 if [ "$LIGHTWEIGHT" = "1" ]; then
   echo ""

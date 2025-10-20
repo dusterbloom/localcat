@@ -1,5 +1,88 @@
 # LocalCat Server Development Backlog
 
+## 🚨 P0: Siri TTS Regression + Tech Debt (2025-10-20)
+
+- Problem: Defaulting to premium Siri voice IDs breaks TTS on fresh macOS installs where those voices aren’t present. The sidecar exits non‑zero and the Python pipeline emits `ErrorFrame`, so the assistant never speaks.
+  - Evidence: `server/core/tts/siri_streaming.py:47` uses `com.apple.voice.premium.*` IDs; Swift validates installed voices when `--voice-id` is supplied and fails if missing.
+  - Sidecar behavior: If called with `--lang`, Swift selects the first installed voice for that language and streams successfully.
+
+- Acceptance Criteria
+  - [ ] Siri TTS speaks on stock macOS (no premium voices installed)
+  - [ ] If an explicit `--voice-id` is missing, retry once with `--lang` transparently
+  - [ ] Add a smoke test that synthesizes a short utterance and confirms at least one audio frame
+
+- Implementation Plan (Day 1)
+  - [ ] Change default invocation to pass `--lang` unless a user‑configured voice ID is explicitly set (`server/core/tts/siri_streaming.py:160`)
+  - [ ] On non‑zero exit with “Requested voice-id not installed”, log warning and retry with `--lang`
+  - [ ] Keep curated mapping as documentation only; do not force premium IDs by default
+
+---
+
+## ⚠️ Critical Technical Debt (Validated)
+
+- Hardcoded Rust Config (ports, PID files, timeouts)
+  - Files: `app/src-tauri/src/daemon_manager.rs:9`, `:10`, `:11`
+  - Risk: Changing ports requires rebuild; `/tmp` PID files vanish on reboot
+  - Fix: Introduce `DaemonConfig` from env (e.g., `LOCALCAT_TTS_PORT`, `LOCALCAT_TTS_PID_FILE`, `LOCALCAT_TTS_HEALTH_INTERVAL_MS`)
+
+- Path Resolution Duplication (sidecars/resources)
+  - Files: `server/core/tts/siri_streaming.py:236`, `server/core/factories/service_factory.py:284`, `app/src-tauri/src/daemon_manager.rs:177`
+  - Fix: Create `server/core/paths.py` with `locate_siri_tts_binary()` and reuse everywhere
+
+- Env Var Sprawl (150+ unique keys)
+  - Finding: `server/` references 150+ unique vars via `os.getenv`
+  - Fix: Consolidate behind typed config (extend `server/config/settings.py:1`) with validation and “config doctor” output
+
+- ServiceFactory God Object (594 LOC, 18 methods)
+  - File: `server/core/factories/service_factory.py:1`
+  - Fix: Extract sub‑factories (TTS/STT/LLM); remove path probing from factory and inject via `core.paths`
+
+- Daemon Lifecycle Lacks Recovery
+  - Files: `app/src-tauri/src/daemon_manager.rs:81-195` (health polling, detach), PID mismatch with sidecar `server/sidecars/tts_sidecar_onnx_hardened.py:41`
+  - Fix: Supervisor loop with bounded restart + unify PID filename via env
+
+- Frontend Component Complexity
+  - File: `client/src/components/VoiceApp.tsx:1` (~938 LOC, 18+ state hooks)
+  - Fix: Extract hooks (`useVoiceConnection`, `useTranscript`, `usePerformanceMonitor`) and subcomponents
+
+---
+
+## 🚀 Updated Action Plan
+
+- Week 1 (Production Blockers)
+  - Day 1: P0 Siri TTS fix (default to `--lang`, add retry) + add Siri smoke test
+  - Day 1–2: Add `server/core/paths.py`; refactor Siri sidecar resolution callers to use it
+  - Day 3: Externalize Rust constants to `DaemonConfig` (env‑driven); align PID file via `LOCALCAT_TTS_PID_FILE`
+  - Day 4–5: Strengthen config: extend `server/config/settings.py` parsing/validation; add “config doctor” CLI output
+
+- Week 2 (Architecture)
+  - Day 6–7: Split `ServiceFactory` into sub‑factories; inject path/infra deps
+  - Day 8–9: Implement daemon supervisor with health monitoring and bounded restart
+  - Day 10: Separate dev/prod Tauri configs and resource checks
+
+- Week 3 (Frontend & Testing)
+  - Day 11–13: Extract `VoiceApp` hooks and components
+  - Day 14–15: Add Tauri↔Python integration tests (launch, `openapi.json`, clean shutdown)
+  - Day 16: Unify structured logging (Rust tracing + Python loguru + TypeScript)
+
+---
+
+## 📎 Implementation Notes
+
+- Siri Sidecar Behavior: `app/src-tauri/sidecar/siri-tts/main-streaming-hardened.swift:111-160` validates `--voice-id` against installed voices; `--lang` chooses the first available voice per language and streams successfully.
+- PID Alignment: Set and read PID via `LOCALCAT_TTS_PID_FILE` in both Rust and Python sidecars to avoid drift.
+- Metrics Correction: Prior “16 state variables” in `VoiceApp.tsx` is understated; current count is ≥18, reinforcing the need for extraction.
+
+---
+
+## ✅ Exit Criteria (for this batch)
+
+- [ ] Siri TTS works on stock macOS without manual voice installs
+- [ ] Single `core.paths` used by Python + alignment with Rust via env
+- [ ] `DaemonConfig` env overrides present and documented
+- [ ] CI includes Siri and Tauri↔Python smoke tests
+
+
 ## ✅ DX & Docs Update (2025-10-11)
 
 - Added `server/.env.example` with sensible, working defaults and comments

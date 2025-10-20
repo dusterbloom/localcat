@@ -41,7 +41,7 @@ from pipecat.services.tts_service import TTSService
 # If a voice isn't available, the system will fall back to the default for that language
 SIRI_VOICE_MAP = {
     # English - Premium quality voices for natural sound
-    "en-US": "com.apple.voice.premium.en-US.Ava",  # Natural female voice
+    "en-US": "com.apple.voice.premium.en-US.Zoe",  # Natural female voice
     "en-GB": "com.apple.voice.premium.en-GB.Daniel",  # Natural male voice
     "en-AU": "com.apple.voice.premium.en-AU.Karen",
     "en-IN": "com.apple.voice.premium.en-IN.Rishi",

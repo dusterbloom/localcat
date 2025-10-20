@@ -145,7 +145,7 @@ The app includes:
 2. Move `LocalCat.app` from Applications to Trash
 3. (Optional) Remove cached models:
    ```bash
-   rm -rf ~/Library/Application\ Support/com.localcat
+   rm -rf ~/Library/Application\ Support/io.localcat.app
    ```
 
 ### Can I change the voice?
