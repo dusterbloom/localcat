@@ -336,8 +336,9 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
     if (!client || (appState !== "idle" && appState !== "disconnected")) return;
 
     try {
+      const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL || "http://127.0.0.1:7860";
       await client.connect({
-        connectionUrl: "/api/offer",
+        connectionUrl: `${serverUrl}/api/offer`,
       });
     } catch (error) {
       console.error("Connection error:", error);
@@ -398,6 +399,7 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
 
   if (showDebugUI && client) {
     // Debug/dev mode - use shared client to preserve connection
+    const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL || "http://127.0.0.1:7860";
     return (
       <PipecatClientProvider client={client}>
         <FullScreenContainer>
@@ -413,7 +415,7 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
             <ConsoleTemplate
               transportType="smallwebrtc"
               connectParams={{
-                connectionUrl: "/api/offer",
+                connectionUrl: `${serverUrl}/api/offer`,
               }}
               noUserVideo={!videoEnabled}
             />

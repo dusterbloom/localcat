@@ -7,6 +7,7 @@ and can be tested independently.
 """
 
 import os
+from pathlib import Path
 from typing import Dict, Any, Optional
 from loguru import logger
 
@@ -55,6 +56,34 @@ try:
     MIC_PROBE_AVAILABLE = True
 except ImportError:
     MIC_PROBE_AVAILABLE = False
+
+
+def resolve_parakeet_model_path(model_id_or_path: str) -> str:
+    """
+    Resolve Parakeet model path for production (Tauri bundle) vs development.
+
+    In production with HF_HUB_OFFLINE=1, HuggingFace can't resolve repo IDs
+    to cached models. This function detects production mode and returns the
+    absolute path to the bundled model.
+
+    Args:
+        model_id_or_path: HuggingFace model ID or local path
+
+    Returns:
+        Absolute path if in production, otherwise returns input unchanged
+    """
+    default_model_id = "mlx-community/parakeet-tdt-0.6b-v3"
+
+    # Only resolve if we're in Tauri bundle and using default model
+    if "TAURI_RESOURCE_DIR" in os.environ and model_id_or_path == default_model_id:
+        hf_home = Path(os.environ.get("HF_HOME", ""))
+        if hf_home.exists():
+            bundled_model = hf_home / "hub" / "models--mlx-community--parakeet-tdt-0.6b-v3"
+            if bundled_model.exists():
+                logger.debug(f"Resolved Parakeet model to bundled path: {bundled_model}")
+                return str(bundled_model)
+
+    return model_id_or_path
 
 
 class ServiceFactory:
@@ -122,9 +151,12 @@ class ServiceFactory:
             try:
                 # Try Parakeet streaming first (ultra-low latency)
                 from core.stt.parakeet_streaming import ParakeetStreamingSTT
-                logger.debug(f"Initializing Parakeet streaming STT with model: {stt_config.get('model', 'mlx-community/parakeet-tdt-0.6b-v3')}")
+                model_path = resolve_parakeet_model_path(
+                    stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
+                )
+                logger.debug(f"Initializing Parakeet streaming STT with model: {model_path}")
                 stt = ParakeetStreamingSTT(
-                    model_path=stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3"),
+                    model_path=model_path,
                     language=stt_config.get("language", "en"),
                     chunk_duration=float(os.getenv("PARAKEET_CHUNK_DURATION", "1.0")),
                     enable_vad=os.getenv("PARAKEET_ENABLE_VAD", "false").lower() in ("1", "true", "yes"),
@@ -142,8 +174,11 @@ class ServiceFactory:
                     # Fallback to Parakeet batch mode (higher accuracy)
                     from core.stt.parakeet_batch import ParakeetBatchSTT
                     logger.debug("Falling back to Parakeet batch STT")
+                    model_path = resolve_parakeet_model_path(
+                        stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
+                    )
                     stt = ParakeetBatchSTT(
-                        model_path=stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3"),
+                        model_path=model_path,
                         language=stt_config.get("language", "en"),
                         temperature=float(os.getenv("PARAKEET_TEMPERATURE", "0.0"))
                     )
@@ -158,8 +193,12 @@ class ServiceFactory:
             try:
                 from core.stt.parakeet_batch import ParakeetBatchSTT
                 logger.debug("Using Parakeet batch STT (explicit)")
+
+                model_path = resolve_parakeet_model_path(
+                    stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
+                )
                 stt = ParakeetBatchSTT(
-                    model_path=stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3"),
+                    model_path=model_path,
                     language=stt_config.get("language", "en"),
                     temperature=float(os.getenv("PARAKEET_TEMPERATURE", "0.0"))
                 )
@@ -173,8 +212,11 @@ class ServiceFactory:
             try:
                 from core.stt.parakeet_streaming import ParakeetStreamingSTT
                 logger.debug("Using Parakeet streaming STT (legacy name)")
+                model_path = resolve_parakeet_model_path(
+                    stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
+                )
                 stt = ParakeetStreamingSTT(
-                    model_path=stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3"),
+                    model_path=model_path,
                     language=stt_config.get("language", "en"),
                     chunk_duration=float(os.getenv("PARAKEET_CHUNK_DURATION", "1.0")),
                     enable_vad=os.getenv("PARAKEET_ENABLE_VAD", "false").lower() in ("1", "true", "yes")
@@ -234,16 +276,25 @@ class ServiceFactory:
             logger.debug("Using Siri Streaming TTS (native macOS)")
             # Determine binary path (dev vs production)
             from pathlib import Path
+            import os
 
             # Try multiple possible locations for the siri-tts binary
-            binary_candidates = [
+            binary_candidates = []
+
+            # FIRST: Check TAURI_RESOURCE_DIR (Tauri bundle production mode)
+            if "TAURI_RESOURCE_DIR" in os.environ:
+                tauri_resource_dir = Path(os.environ["TAURI_RESOURCE_DIR"])
+                binary_candidates.append(tauri_resource_dir / "sidecar" / "siri-tts" / "siri-tts")
+
+            # Fallback paths for development and alternative production layouts
+            binary_candidates.extend([
                 # Production (Tauri bundle): Resources/siri-tts/siri-tts
                 Path(__file__).parent.parent.parent / "siri-tts" / "siri-tts",
                 # Development: app/src-tauri/sidecar/siri-tts/siri-tts
                 Path(__file__).parent.parent.parent.parent / "app" / "src-tauri" / "sidecar" / "siri-tts" / "siri-tts",
                 # Alternative production path: _up_/siri-tts/siri-tts
                 Path(__file__).parent.parent.parent / "_up_" / "siri-tts" / "siri-tts",
-            ]
+            ])
 
             binary_path = None
             for candidate in binary_candidates:

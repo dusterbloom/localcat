@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Privacy - Microphone Usage Description (REQUIRED) -->
+    <!-- Shown to user when app first requests microphone access -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>LocalCat needs microphone access to enable voice conversations with your AI assistant. Your voice is processed locally on your device for privacy.</string>
+
+    <!-- Privacy - Camera Usage Description (REQUIRED if camera entitlement exists) -->
+    <!-- Shown to user when app first requests camera access -->
+    <key>NSCameraUsageDescription</key>
+    <string>LocalCat may use camera access for optional video features in future updates.</string>
+
+    <!-- Application Category -->
+    <!-- Helps macOS categorize the app properly -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+
+    <!-- Support high-resolution displays -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!-- Minimum macOS version -->
+    <!-- Should match your deployment target -->
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+</dict>
+</plist>

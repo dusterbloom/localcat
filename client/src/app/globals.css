@@ -1,3 +1,6 @@
+/* Tailwind CSS v4 - Must be first */
+@import "tailwindcss";
+
 /* Voice UI Kit base styles */
 @import "@pipecat-ai/voice-ui-kit/styles.css";
 

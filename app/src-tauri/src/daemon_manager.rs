@@ -310,11 +310,18 @@ fn get_daemon_paths(app: &AppHandle) -> (PathBuf, PathBuf) {
         }
     }
 
-    // Development mode
+    // Development mode - fallback
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
         .unwrap_or_else(|_| ".".to_string());
     let manifest_path = Path::new(&manifest_dir);
-    let server_dir = manifest_path.parent().unwrap().parent().unwrap().join("server");
+
+    // Safely navigate up the directory tree
+    let server_dir = manifest_path
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("server"))
+        .unwrap_or_else(|| PathBuf::from("server"));
+
     let python = server_dir.join(".venv/bin/python3");
 
     (python, server_dir)

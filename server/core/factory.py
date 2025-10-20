@@ -25,6 +25,7 @@ from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, Ice
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIProcessor, RTVIObserver
+from pipecat.processors.transcript_processor import TranscriptProcessor
 
 # Local imports
 from config import VoiceAgentConfig
@@ -177,6 +178,16 @@ class VoiceAgentFactory:
         # CRITICAL: Disable sentence boundaries so full intro message plays as one unit
         intro_tts = self.create_tts_service(use_boundaries=False)
 
+        # CRITICAL: Add text aggregator to intro pipeline to collect multiple TextFrames
+        # EnrollmentCoordinator sends multiple TextFrames (e.g., choice message + UI hint)
+        # Without aggregator, these go to TTS as separate chunks causing truncation
+        from core.aggregators.fast_text import FastTextAggregator
+        intro_text_aggregator = FastTextAggregator(
+            min_tokens=25,   # Lower threshold for quick intro responses
+            max_tokens=500,  # Higher limit to allow full intro messages
+            max_time=1.5     # Longer timeout for multi-sentence intros
+        )
+
         # Optional: prevent TTS from being interrupted during intro/enrollment
         async def _no_intro_interruptions(frame) -> bool:
             try:
@@ -186,7 +197,11 @@ class VoiceAgentFactory:
                 return True
 
         from pipecat.processors.filters.function_filter import FunctionFilter as _FF
-        intro_processors = [_FF(_no_intro_interruptions), intro_tts]
+        intro_processors = [
+            _FF(_no_intro_interruptions),
+            intro_text_aggregator,  # Aggregate TextFrames before TTS
+            intro_tts
+        ]
         
         # Define conversation pipeline (full processing)
         # IMPORTANT: Memory processor should only run in conversation branch
@@ -281,22 +296,46 @@ class VoiceAgentFactory:
         # Build main pipeline stages
         stages = [transport.input()]
 
+        # CRITICAL: Add mic gate filter to mute mic during intro/choice
+        # This prevents TTS from being interrupted by mic input during enrollment
+        async def _mic_gate_filter(frame) -> bool:
+            """Only allow input frames when NOT in CHOICE or INTRO states."""
+            from pipecat.frames.frames import UserAudioRawFrame
+            if isinstance(frame, UserAudioRawFrame):
+                current_state = router.current_state
+                if current_state in (EnrollmentState.CHOICE, EnrollmentState.INTRO):
+                    # Drop audio during intro/choice to prevent interruption
+                    logger.debug(f"[MicGate] Dropping audio frame (state: {current_state.value})")
+                    return False
+            return True
+
+        from pipecat.processors.filters.function_filter import FunctionFilter as _FF
+        stages.append(_FF(_mic_gate_filter))
+
         # Optional mic probe
         mic_probe = services.get('mic_probe')
         if mic_probe:
             stages.append(mic_probe)
 
+        # Create transcript processor for UI display
+        transcript = TranscriptProcessor()
+
         # Core processing before router
         stages.extend([
             services['stt'],
+            transcript.user(),  # Capture user transcriptions for UI
             services['rtvi'],
             services['audio_intelligence'],  # Emits enrollment frames
             coordinator,  # Generates feedback and controls router
         ])
-        
+
         # Router splits to intro vs conversation
         stages.append(router)
-        
+
+        # CRITICAL: Capture assistant transcripts BEFORE transport.output()
+        # TTSTextFrame must be processed by transcript.assistant() before being sent to client
+        stages.append(transcript.assistant())
+
         # Output
         stages.append(transport.output())
         
@@ -328,9 +367,13 @@ class VoiceAgentFactory:
             logger.info("🎤 Audio Intelligence enabled - speaker recognition active")
             stages.append(audio_intel)
 
+        # Create transcript processor for UI display
+        transcript = TranscriptProcessor()
+
         # Main processing pipeline - start with STT
         stages.extend([
             services['stt'],
+            transcript.user(),  # Capture user transcriptions for UI
             services['rtvi'],
         ])
 
@@ -365,6 +408,7 @@ class VoiceAgentFactory:
             services['llm'],
             services['text_aggregator'],  # Intelligent sentence boundary detection
             services['tts'],
+            transcript.assistant(),  # Capture assistant responses BEFORE output
             transport.output(),
             services['context_aggregator'].assistant(),
         ])

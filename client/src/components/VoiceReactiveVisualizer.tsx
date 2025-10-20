@@ -32,7 +32,7 @@ const VoiceReactiveVisualizer: React.FC<VoiceReactiveVisualizerProps> = ({ isDar
   const audioTrack = usePipecatClientMediaTrack("audio", "bot");
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const dataArrayRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const animationFrameIdRef = useRef<number | null>(null);
   const smoothedVolumeRef = useRef(0);
   const blobPhysicsRef = useRef<BlobPhysics[]>([]);
@@ -91,14 +91,14 @@ const VoiceReactiveVisualizer: React.FC<VoiceReactiveVisualizerProps> = ({ isDar
     if (!audioTrack) return;
     const setupAudio = async () => {
       try {
-        const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+        const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         if (!AudioContextClass) throw new Error('AudioContext not supported');
         const context = new AudioContextClass();
         audioContextRef.current = context;
         const analyser = context.createAnalyser();
         analyser.fftSize = 256;
         analyserRef.current = analyser;
-        dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
+        dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount) as Uint8Array<ArrayBuffer>;
         const stream = new MediaStream([audioTrack]);
         const source = context.createMediaStreamSource(stream);
         source.connect(analyser);
@@ -130,7 +130,7 @@ const VoiceReactiveVisualizer: React.FC<VoiceReactiveVisualizerProps> = ({ isDar
       {blobs.map((blob, i) => (
         <div
           key={blob.id}
-          ref={el => (blobElementsRef.current[i] = el)}
+          ref={el => { blobElementsRef.current[i] = el; }}
           className="absolute rounded-full mix-blend-multiply filter blur-3xl opacity-40"
           style={{
             width: blob.size,

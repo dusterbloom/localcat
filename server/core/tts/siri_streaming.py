@@ -31,51 +31,54 @@ from pipecat.frames.frames import (
     TTSAudioRawFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
+    TTSTextFrame,
     ErrorFrame,
 )
 from pipecat.services.tts_service import TTSService
 
 # Voice ID mapping: language code → Siri voice identifier
+# NOTE: Using premium quality voices for most natural sound
+# If a voice isn't available, the system will fall back to the default for that language
 SIRI_VOICE_MAP = {
-    # English
-    "en-US": "com.apple.voice.enhanced.en-US.Ava",
-    "en-GB": "com.apple.voice.enhanced.en-GB.Serena",
-    "en-AU": "com.apple.voice.enhanced.en-AU.Karen",
-    "en-IN": "com.apple.voice.enhanced.en-IN.Rishi",
+    # English - Premium quality voices for natural sound
+    "en-US": "com.apple.voice.premium.en-US.Ava",  # Natural female voice
+    "en-GB": "com.apple.voice.premium.en-GB.Daniel",  # Natural male voice
+    "en-AU": "com.apple.voice.premium.en-AU.Karen",
+    "en-IN": "com.apple.voice.premium.en-IN.Rishi",
 
     # European languages
-    "fr-FR": "com.apple.voice.enhanced.fr-FR.Thomas",
-    "de-DE": "com.apple.voice.enhanced.de-DE.Anna",
-    "es-ES": "com.apple.voice.enhanced.es-ES.Monica",
-    "it-IT": "com.apple.voice.enhanced.it-IT.Alice",
-    "pt-PT": "com.apple.voice.enhanced.pt-PT.Joana",
-    "pt-BR": "com.apple.voice.enhanced.pt-BR.Luciana",
-    "nl-NL": "com.apple.voice.enhanced.nl-NL.Ellen",
-    "pl-PL": "com.apple.voice.enhanced.pl-PL.Zosia",
-    "ru-RU": "com.apple.voice.enhanced.ru-RU.Milena",
+    "fr-FR": "com.apple.voice.premium.fr-FR.Thomas",
+    "de-DE": "com.apple.voice.premium.de-DE.Anna",
+    "es-ES": "com.apple.voice.premium.es-ES.Monica",
+    "it-IT": "com.apple.voice.premium.it-IT.Alice",
+    "pt-PT": "com.apple.voice.premium.pt-PT.Joana",
+    "pt-BR": "com.apple.voice.premium.pt-BR.Luciana",
+    "nl-NL": "com.apple.voice.premium.nl-NL.Ellen",
+    "pl-PL": "com.apple.voice.premium.pl-PL.Zosia",
+    "ru-RU": "com.apple.voice.premium.ru-RU.Milena",
 
     # Asian languages
-    "ja-JP": "com.apple.voice.enhanced.ja-JP.Kyoko",
-    "ko-KR": "com.apple.voice.enhanced.ko-KR.Yuna",
-    "zh-CN": "com.apple.voice.enhanced.zh-CN.Ting-Ting",
-    "zh-HK": "com.apple.voice.enhanced.zh-HK.Sin-Ji",
-    "zh-TW": "com.apple.voice.enhanced.zh-TW.Mei-Jia",
+    "ja-JP": "com.apple.voice.premium.ja-JP.Kyoko",
+    "ko-KR": "com.apple.voice.premium.ko-KR.Yuna",
+    "zh-CN": "com.apple.voice.premium.zh-CN.Ting-Ting",
+    "zh-HK": "com.apple.voice.premium.zh-HK.Sin-Ji",
+    "zh-TW": "com.apple.voice.premium.zh-TW.Mei-Jia",
 
     # Middle Eastern
-    "ar-SA": "com.apple.voice.enhanced.ar-SA.Maged",
-    "he-IL": "com.apple.voice.enhanced.he-IL.Carmit",
-    "tr-TR": "com.apple.voice.enhanced.tr-TR.Yelda",
+    "ar-SA": "com.apple.voice.premium.ar-SA.Maged",
+    "he-IL": "com.apple.voice.premium.he-IL.Carmit",
+    "tr-TR": "com.apple.voice.premium.tr-TR.Yelda",
 
     # Nordic
-    "sv-SE": "com.apple.voice.enhanced.sv-SE.Alva",
-    "no-NO": "com.apple.voice.enhanced.no-NO.Nora",
-    "da-DK": "com.apple.voice.enhanced.da-DK.Sara",
-    "fi-FI": "com.apple.voice.enhanced.fi-FI.Satu",
+    "sv-SE": "com.apple.voice.premium.sv-SE.Alva",
+    "no-NO": "com.apple.voice.premium.no-NO.Nora",
+    "da-DK": "com.apple.voice.premium.da-DK.Sara",
+    "fi-FI": "com.apple.voice.premium.fi-FI.Satu",
 
     # Other
-    "th-TH": "com.apple.voice.enhanced.th-TH.Kanya",
-    "id-ID": "com.apple.voice.enhanced.id-ID.Damayanti",
-    "vi-VN": "com.apple.voice.enhanced.vi-VN.Linh",
+    "th-TH": "com.apple.voice.premium.th-TH.Kanya",
+    "id-ID": "com.apple.voice.premium.id-ID.Damayanti",
+    "vi-VN": "com.apple.voice.premium.vi-VN.Linh",
 }
 
 
@@ -137,6 +140,9 @@ class SiriStreamingTTSService(TTSService):
 
         # Signal start
         yield TTSStartedFrame()
+
+        # Emit text frame for transcript processor
+        yield TTSTextFrame(text=text)
 
         try:
             # Build command

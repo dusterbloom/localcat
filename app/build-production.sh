@@ -6,18 +6,17 @@ set -e  # Exit on error
 
 echo "🏗️  Building LocalCat production app..."
 
-# Step 1: Build the client first
-echo "📦 Step 1/5: Building Next.js client..."
-cd ../client
-# Ensure the client points to our local server when running in the app
+# Step 1: Build the Tauri .app bundle
+# Note: Client build happens automatically via beforeBuildCommand in tauri.conf.json
+echo "📦 Step 1/5: Building Tauri .app bundle..."
+echo "  Client will be built automatically by Tauri's beforeBuildCommand"
 export NEXT_PUBLIC_SERVER_URL=${NEXT_PUBLIC_SERVER_URL:-"http://127.0.0.1:7860"}
 echo "  Using NEXT_PUBLIC_SERVER_URL=$NEXT_PUBLIC_SERVER_URL"
-npm run build
-cd ../app
 
-# Step 2: Build the Tauri .app bundle (without DMG, without server files to avoid stack overflow)
+# Step 2: Run Tauri build
 echo "📦 Step 2/5: Building Tauri .app..."
 cd src-tauri
+
 # Ensure a default PNG icon exists for Tauri v2 toolchain
 if [ ! -f "icons/icon.png" ]; then
   if [ -f "icons/128x128.png" ]; then
@@ -25,6 +24,7 @@ if [ ! -f "icons/icon.png" ]; then
     cp icons/128x128.png icons/icon.png || true
   fi
 fi
+
 # Verify frontendDist exists (../../client/out relative to src-tauri)
 if [ ! -d "../../client/out" ]; then
   echo "❌ Error: frontend assets not found at ../../client/out"
@@ -32,16 +32,44 @@ if [ ! -d "../../client/out" ]; then
   echo "   You can inspect with: ls -la ../client/out from the repo root."
   exit 1
 fi
-npx tauri build || echo "⚠️  Tauri build completed with warnings (DMG step may fail)"
-cd ..
 
-BUNDLE_PATH="src-tauri/target/release/bundle/macos/LocalCat.app/Contents/Resources"
-TAURI_SERVER_DIR="$BUNDLE_PATH/_up_/_up_/server"
-
-if [ ! -d "src-tauri/target/release/bundle/macos/LocalCat.app" ]; then
-    echo "❌ Error: .app bundle not found"
+# Build with explicit --bundles app flag (required for .app creation)
+echo "  Running: npx tauri build --bundles app --target aarch64-apple-darwin"
+if ! npx tauri build --bundles app --target aarch64-apple-darwin; then
+    echo "❌ Error: tauri build failed"
+    echo "Debug info:"
+    echo "  Current directory: $(pwd)"
+    echo "  Binary exists: $(ls -la target/release/localcat 2>/dev/null || echo 'NO')"
+    echo "  Bundle exists: $(ls -la target/release/bundle/macos/ 2>/dev/null || echo 'NO')"
     exit 1
 fi
+
+cd ..
+
+# Use target-specific path (aarch64-apple-darwin creates subdirectory)
+TARGET_DIR="src-tauri/target/aarch64-apple-darwin/release"
+BUNDLE_PATH="$TARGET_DIR/bundle/macos/LocalCat.app/Contents/Resources"
+TAURI_SERVER_DIR="$BUNDLE_PATH/_up_/_up_/server"
+
+# Check if .app bundle was created
+if [ ! -d "$TARGET_DIR/bundle/macos/LocalCat.app" ]; then
+    echo "❌ Error: .app bundle not found at $TARGET_DIR/bundle/macos/LocalCat.app"
+    echo "Debug info:"
+    echo "  Checking what was built..."
+    ls -la "$TARGET_DIR/" 2>/dev/null || echo "  No target release directory"
+    ls -la "$TARGET_DIR/bundle/" 2>/dev/null || echo "  No bundle directory"
+
+    # Check if at least the binary was built
+    if [ -f "$TARGET_DIR/localcat" ]; then
+        echo ""
+        echo "ℹ️  Binary was built but .app bundle was not created."
+        echo "   Binary location: $TARGET_DIR/localcat"
+        echo "   You can run it directly, but bundling into .app failed."
+    fi
+    exit 1
+fi
+
+echo "  ✅ .app bundle created successfully"
 
 # Step 3: Copy server files to the .app bundle
 echo "📂 Step 3/5: Copying server files and sidecars to bundle..."
@@ -213,7 +241,7 @@ fi
 
 # Step 5: Create DMG from the complete .app
 echo "📦 Step 5/5: Creating DMG installer..."
-DMG_DIR="src-tauri/target/release/bundle/dmg"
+DMG_DIR="$TARGET_DIR/bundle/dmg"
 DMG_PATH="$DMG_DIR/LocalCat_1.0.0_aarch64.dmg"
 mkdir -p "$DMG_DIR"
 
@@ -227,13 +255,13 @@ rm -f "$TMP_DMG"
 # Create DMG with the complete .app (try LZFSE first, fallback to zlib)
 echo "  Creating disk image..."
 if hdiutil create -volname "LocalCat" \
-    -srcfolder "src-tauri/target/release/bundle/macos/LocalCat.app" \
+    -srcfolder "$TARGET_DIR/bundle/macos/LocalCat.app" \
     -ov -format ULFO -imagekey lzfse-level=19 "$TMP_DMG"; then
   echo "  ✅ Created LZFSE-compressed DMG"
 else
   echo "  ⚠️  LZFSE not available; falling back to zlib (UDZO)"
   hdiutil create -volname "LocalCat" \
-    -srcfolder "src-tauri/target/release/bundle/macos/LocalCat.app" \
+    -srcfolder "$TARGET_DIR/bundle/macos/LocalCat.app" \
     -ov -format UDZO -imagekey zlib-level=9 "$TMP_DMG"
 fi
 
@@ -242,14 +270,14 @@ echo "  Finalizing DMG..."
 mv -f "$TMP_DMG" "$DMG_PATH"
 
 # Get bundle size
-BUNDLE_SIZE=$(du -sh "src-tauri/target/release/bundle/macos/LocalCat.app" | cut -f1)
+BUNDLE_SIZE=$(du -sh "$TARGET_DIR/bundle/macos/LocalCat.app" | cut -f1)
 DMG_SIZE=$(du -sh "$DMG_PATH" | cut -f1)
 
 echo ""
 echo "🎉 Build complete!"
 echo "📦 Bundle size: $BUNDLE_SIZE"
 echo "📦 DMG size: $DMG_SIZE"
-echo "📍 .app: $(pwd)/src-tauri/target/release/bundle/macos/LocalCat.app"
+echo "📍 .app: $(pwd)/$TARGET_DIR/bundle/macos/LocalCat.app"
 echo "📍 .dmg: $(pwd)/$DMG_PATH"
 echo ""
 echo "To test DMG installation:"

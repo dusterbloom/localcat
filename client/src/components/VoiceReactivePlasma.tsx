@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import FallbackPlasma from './FallbackPlasma';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let PlasmaVisualizer: any = null;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
