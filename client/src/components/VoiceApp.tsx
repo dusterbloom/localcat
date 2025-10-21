@@ -155,8 +155,41 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
             }
           },
           onBotTranscript: (transcript) => {
-            // IGNORE LLM transcript - we only want to show text when TTS actually speaks it
-            console.log('LLM transcript received (ignoring):', transcript?.text?.substring(0, 50) + '...');
+            // Fallback: some TTS services emit assistant text via transcript events
+            try {
+              const raw = transcript?.text || '';
+              if (!raw.trim()) return;
+
+              const newText = formatBotText(raw);
+              // Mirror the onBotTtsText handling so we save only full, non-duplicate sentences
+              setCurrentAssistantTranscript(prevText => {
+                if (!prevText || newText.length > prevText.length) {
+                  const endsWithPunctuation = /[.!?]$/.test(newText.trim());
+                  if (endsWithPunctuation) {
+                    setConversationHistory(prev => {
+                      const allAssistantMessages = prev.filter(msg => msg.role === 'assistant');
+                      for (const msg of allAssistantMessages) {
+                        if (
+                          msg.text === newText ||
+                          msg.text.includes(newText) ||
+                          newText.includes(msg.text)
+                        ) {
+                          // Duplicate/partial detected — skip
+                          return prev;
+                        }
+                      }
+                      const messageId = `assistant-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+                      return [...prev, { role: 'assistant', text: newText, id: messageId }];
+                    });
+                    return '';
+                  }
+                  return newText;
+                }
+                return prevText;
+              });
+            } catch (e) {
+              console.warn('onBotTranscript fallback handling failed:', e);
+            }
           },
           // Try different possible TTS text event names
           onBotTtsText: (ttsData) => {

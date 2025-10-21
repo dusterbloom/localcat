@@ -11,7 +11,16 @@ logger = logging.getLogger(__name__)
 
 
 class SessionTracker:
-    def __init__(self, *, storage_path: str | None = None):
+    def __init__(self, *, storage_path: str | None = None, ephemeral: bool = False):
+        self._ephemeral = ephemeral
+
+        if self._ephemeral:
+            logger.info("[SessionTracker] Ephemeral mode: skipping persistent storage")
+            self._path = None
+            self._data = {}
+            return
+
+        # Normal mode: initialize database
         default_path = Path(os.getenv("SESSION_STATS_PATH", "data/session_stats.json"))
         self._path = Path(storage_path) if storage_path else default_path
         if not self._path.parent.exists():
@@ -27,11 +36,17 @@ class SessionTracker:
                 self._data = {}
 
     def _save(self) -> None:
+        if self._ephemeral or not self._path:
+            return  # Skip silently in ephemeral mode
         tmp_path = self._path.with_suffix(".tmp")
         tmp_path.write_text(json.dumps(self._data, indent=2))
         tmp_path.replace(self._path)
 
     def start_session(self, user_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+        if self._ephemeral:
+            # Return minimal stats without persistence
+            return {"session_id": session_id or "ephemeral", "ephemeral": True}
+
         now = time.time()
         user_entry = self._data.setdefault(
             user_id,
@@ -68,6 +83,10 @@ class SessionTracker:
         return dict(session_data)
 
     def record_turn(self, user_id: str, session_id: Optional[str], turn_duration_sec: float) -> Dict[str, Any]:
+        if self._ephemeral:
+            # Return minimal stats without persistence
+            return {"session_id": session_id or "ephemeral", "ephemeral": True}
+
         user_entry = self._data.get(user_id)
         if not user_entry:
             # Create user entry if it doesn't exist
@@ -121,6 +140,9 @@ class SessionTracker:
         return merged
 
     def end_session(self, user_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+        if self._ephemeral:
+            return {}  # Skip silently in ephemeral mode
+
         user_entry = self._data.get(user_id)
         if not user_entry:
             return {}
@@ -139,6 +161,9 @@ class SessionTracker:
         return {}
 
     def get_stats(self, user_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+        if self._ephemeral:
+            return {}  # Skip silently in ephemeral mode
+
         user_entry = self._data.get(user_id, {})
         if not user_entry:
             return {}

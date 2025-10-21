@@ -529,7 +529,13 @@ class ServiceFactory:
         return anonymous_aggregator
 
     def create_session_tracker(self) -> SessionTracker:
-        """Create session tracker."""
+        """Create session tracker with ephemeral mode support."""
+        from core.memory.config_manager import MemoryConfiguration
+
+        # Get ephemeral mode from memory configuration
+        memory_config = MemoryConfiguration.from_env()
+        storage_path = os.getenv("SESSION_STATS_PATH")
+
         # Use database tracker if configured and available
         use_db = os.getenv("SESSION_USE_DATABASE", "false").lower() in ("true", "1", "yes")
 
@@ -537,8 +543,14 @@ class ServiceFactory:
             logger.info("Using database-backed SessionTracker")
             tracker = DatabaseSessionTracker()
         else:
-            logger.info("Using JSON-based SessionTracker")
-            tracker = SessionTracker()
+            logger.info(
+                f"Using JSON-based SessionTracker "
+                f"(ephemeral={memory_config.ephemeral_mode})"
+            )
+            tracker = SessionTracker(
+                storage_path=storage_path,
+                ephemeral=memory_config.ephemeral_mode
+            )
 
         self._services_cache['session_tracker'] = tracker
         return tracker

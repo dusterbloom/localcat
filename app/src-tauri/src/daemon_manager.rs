@@ -298,6 +298,41 @@ pub fn start_server(app: &AppHandle) -> Result<(), String> {
     }
 }
 
+/// Stop the main Python server gracefully
+pub fn stop_server() {
+    println!("🛑 Stopping LocalCat server...");
+
+    // Force kill via PID file (server doesn't have shutdown endpoint)
+    if let Ok(pid_str) = fs::read_to_string(SERVER_PID_FILE) {
+        if let Ok(pid) = pid_str.trim().parse::<i32>() {
+            println!("🔪 Killing server PID: {}", pid);
+            let _ = Command::new("kill")
+                .args(&["-15", &pid.to_string()])  // SIGTERM first for graceful shutdown
+                .spawn();
+
+            // Give it time to shut down gracefully
+            std::thread::sleep(Duration::from_millis(2000));
+
+            // Check if still running, force kill if needed
+            if Command::new("kill")
+                .args(&["-0", &pid.to_string()])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                println!("⚠️  Server still running, force killing...");
+                let _ = Command::new("kill")
+                    .args(&["-9", &pid.to_string()])
+                    .spawn();
+            }
+        }
+    }
+
+    // Clean up PID file
+    let _ = fs::remove_file(SERVER_PID_FILE);
+    println!("✅ Server stopped");
+}
+
 /// Stop the TTS daemon gracefully
 pub fn stop_daemon() {
     println!("🛑 Stopping TTS daemon...");
@@ -381,4 +416,34 @@ fn kill_process_on_port(port: u16) {
             }
             Ok(())
         });
+}
+
+/// Proactively cleanup any stale processes on port 7860 before starting server
+/// This prevents "address already in use" errors from stale processes
+pub fn cleanup_stale_server_processes() -> Result<(), String> {
+    println!("🧹 Cleaning up stale processes on port 7860...");
+
+    let output = Command::new("lsof")
+        .args(&["-ti:7860"])
+        .output()
+        .map_err(|e| format!("Failed to check port 7860: {}", e))?;
+
+    if !output.stdout.is_empty() {
+        let pids = String::from_utf8_lossy(&output.stdout);
+        for pid in pids.lines() {
+            if let Ok(pid_num) = pid.trim().parse::<i32>() {
+                println!("🔪 Killing stale process {} on port 7860", pid_num);
+                let _ = Command::new("kill")
+                    .args(&["-9", &pid_num.to_string()])
+                    .output();
+            }
+        }
+        // Give OS time to release port
+        std::thread::sleep(Duration::from_millis(500));
+        println!("✅ Stale processes cleaned up");
+    } else {
+        println!("✅ No stale processes found on port 7860");
+    }
+
+    Ok(())
 }
