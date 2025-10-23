@@ -21,7 +21,10 @@ class SessionTracker:
             return
 
         # Normal mode: initialize database
-        default_path = Path(os.getenv("SESSION_STATS_PATH", "data/session_stats.json"))
+        env_default = os.getenv("SESSION_STATS_PATH", "data/session_stats.json")
+        # Expand ~ and $VARS for production bundles
+        env_default = os.path.expanduser(os.path.expandvars(env_default))
+        default_path = Path(env_default)
         self._path = Path(storage_path) if storage_path else default_path
         if not self._path.parent.exists():
             self._path.parent.mkdir(parents=True, exist_ok=True)

@@ -5,6 +5,7 @@ Replaces ONNX implementation with native MLX for 5-10x performance improvement.
 
 import asyncio
 import concurrent.futures
+import os
 import time
 from pathlib import Path
 from typing import AsyncGenerator, Optional
@@ -23,13 +24,24 @@ from pipecat.services.tts_service import TTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
 
 from tools.text_formatter import split_text_for_kokoro_streaming
+from core.utils.mlx_lock import MLX_GLOBAL_LOCK
 
 
 class MLXKokoroTTSService(TTSService):
     """
     MLX-based Kokoro TTS service optimized for Apple Silicon.
-    Replaces ONNX implementation for dramatically better performance.
+
+    DESIGN (fixes battery drain):
+    - SINGLETON PATTERN: Shared pipeline across all instances (no multiple models)
+    - SERIALIZED GENERATION: Lock during TTS to prevent concurrent STT+TTS (MLX requirement)
+    - LOCKED INITIALIZATION: Serializes model loading with STT
+
+    MLX is not thread-safe for concurrent operations. Lock is required.
     """
+
+    # Shared MLX pipeline across all instances (singleton pattern)
+    _shared_pipeline = None
+    _pipeline_init_lock = None
 
     def __init__(
         self,
@@ -50,78 +62,78 @@ class MLXKokoroTTSService(TTSService):
         self._sample_rate = sample_rate
 
         # Thread pool for non-blocking TTS generation
+        # Single worker since MLX operations must be serialized via lock
         self._executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=2, thread_name_prefix="kokoro-mlx"
+            max_workers=1, thread_name_prefix="mlx-kokoro"
         )
 
-        # Initialize MLX Kokoro pipeline
-        self._pipeline = None
+        # Initialize shared MLX Kokoro pipeline (only once across all instances)
         self._initialize_mlx_pipeline()
 
-        logger.debug(f"✅ MLX Kokoro TTS initialized with voice: {self._voice}")
-
-    def can_generate_metrics(self) -> bool:
-        """Check if this service can generate processing metrics.
-
-        Returns:
-            True, as this service supports metrics generation.
-        """
-        return True
+        logger.info(f"✅ MLX Kokoro TTS initialized (SINGLETON) with voice: {self._voice}")
 
     def _initialize_mlx_pipeline(self):
-        """Initialize the MLX Kokoro pipeline"""
+        """Initialize the SHARED MLX Kokoro pipeline with singleton pattern.
+
+        DESIGN:
+        - SINGLETON: Only ONE model instance across all service instances
+        - LOCKED INIT: Serializes model loading with STT (prevents concurrent Metal access)
+        - SERIALIZED GENERATION: Lock also used during generation (MLX not thread-safe)
+
+        This prevents battery drain (singleton fixes 6x model instances).
+        """
+        # Initialize lock reference on first instantiation
+        if MLXKokoroTTSService._pipeline_init_lock is None:
+            MLXKokoroTTSService._pipeline_init_lock = MLX_GLOBAL_LOCK  # Share with STT for serialized init
+
+        # Check if pipeline is already initialized (singleton fast path)
+        if MLXKokoroTTSService._shared_pipeline is not None:
+            logger.debug("✅ Using existing shared MLX Kokoro pipeline (singleton)")
+            return
+
         try:
-            from mlx_audio.tts.models.kokoro import Model, ModelConfig, KokoroPipeline
-            from huggingface_hub import hf_hub_download
-            import json
+            logger.info(f"🔒 Acquiring MLX lock for Kokoro initialization (singleton, generation also locked)...")
+            with MLXKokoroTTSService._pipeline_init_lock:
+                # Double-check after acquiring lock (thread-safe singleton pattern)
+                if MLXKokoroTTSService._shared_pipeline is not None:
+                    logger.debug("Pipeline already initialized by another instance")
+                    return
 
-            logger.debug(f"🚀 Initializing MLX Kokoro TTS with voice: {self._voice}")
-
-            # Load model config from HuggingFace
-            config_path = hf_hub_download(Model.REPO_ID, "config.json")
-            with open(config_path) as f:
-                config_dict = json.load(f)
-
-            # Create model config and model
-            config = ModelConfig.from_dict(config_dict)
-            model = Model(config, repo_id=Model.REPO_ID)
-
-            # Store model directly for generation (simpler than pipeline)
-            self._pipeline = model
-
-            logger.debug(f"✅ MLX Kokoro pipeline loaded successfully")
-
-            # Aggressive warmup for consistent performance
-            logger.debug("🔥 Warming up MLX Kokoro model...")
-            warmup_texts = [
-                "Hello",
-                "This is a test of the MLX text to speech system.",
-                "The quick brown fox jumps over the lazy dog and runs through the forest.",
-                "Testing punctuation: Hello! How are you? Fine, thanks.",
-                "Numbers and symbols: 123 test."
-            ]
-
-            warmup_start = time.time()
-            for i, warmup_text in enumerate(warmup_texts):
+                # CRITICAL: Disable espeak-ng initialization to use Misaki-only G2P
+                # mlx-audio Kokoro uses Misaki as primary G2P (handles 99% of English)
+                # Espeak is only a fallback for rare out-of-vocabulary words - we can skip it
+                # This fixes phontab error by preventing espeak initialization at import time
+                #
+                # STRATEGY: Patch espeakng_loader BEFORE misaki.espeak imports it
+                # misaki.espeak calls these functions at module import time
                 try:
-                    result_generator = self._pipeline.generate(
-                        text=warmup_text,
-                        voice=self._voice,
-                        speed=self._speed,
-                        lang_code="a"
-                    )
-                    # Process generator to trigger actual generation
-                    for result in result_generator:
-                        if hasattr(result, 'audio'):
-                            break
-                    logger.debug(f"🔥 Warmup {i+1}/{len(warmup_texts)}: {len(warmup_text)} chars")
-                except Exception as warmup_error:
-                    logger.warning(f"Warmup {i+1} failed: {warmup_error}")
+                    import espeakng_loader
+                    # Return dummy safe paths to prevent espeak-ng from loading data files
+                    espeakng_loader.get_library_path = lambda: ""
+                    espeakng_loader.get_data_path = lambda: "/tmp"
+                    logger.debug("✅ Patched espeakng_loader to return dummy paths (using Misaki-only G2P)")
+                except ImportError:
+                    logger.debug("⚠️  espeakng_loader not available, espeak disabled by default")
 
-            warmup_time = (time.time() - warmup_start) * 1000
-            logger.debug(f"🔥 MLX Kokoro warmup completed in {warmup_time:.1f}ms")
+                from mlx_audio.tts.utils import load_model
+                from mlx_audio.tts.models.kokoro import KokoroPipeline
 
-            logger.info("MLX Kokoro TTS ready")
+                logger.debug(f"🚀 Loading SHARED MLX Kokoro model: mlx-community/Kokoro-82M-bf16")
+
+                # Load model
+                model = load_model("mlx-community/Kokoro-82M-bf16")
+
+                # CRITICAL: Pre-create KokoroPipeline during initialization (under lock)
+                # This prevents lazy creation during first .generate() call (which would be after Parakeet loads)
+                # Lazy creation allocates Metal resources without lock protection → macOS Sequoia kills process
+                logger.debug("Pre-creating KokoroPipeline to prevent lazy Metal allocation during first TTS...")
+                pipeline = KokoroPipeline(model=model, repo_id="mlx-community/Kokoro-82M-bf16", lang_code='a')
+
+                # Store model AND pipeline as tuple
+                MLXKokoroTTSService._shared_pipeline = (model, pipeline)
+
+                logger.debug(f"✅ Shared MLX Kokoro model and pipeline loaded successfully")
+                logger.info("🎯 MLX Kokoro TTS ready (SINGLETON, serialized generation)")
 
         except ImportError as e:
             logger.error(f"MLX Audio not available: {e}")
@@ -129,39 +141,64 @@ class MLXKokoroTTSService(TTSService):
             raise
         except Exception as e:
             logger.error(f"❌ Failed to initialize MLX Kokoro: {e}")
-            self._pipeline = None
+            import traceback
+            logger.error(traceback.format_exc())
             raise
 
     def _generate_audio_sync(self, text: str) -> Optional[tuple[np.ndarray, int]]:
-        """Synchronous audio generation using MLX - runs in thread pool"""
-        if not self._pipeline:
-            logger.error("MLX Kokoro pipeline not initialized")
+        """Synchronous audio generation using SHARED MLX pipeline
+
+        CRITICAL: Uses MLX_GLOBAL_LOCK to prevent concurrent Metal access during generation.
+        macOS Sequoia kills processes when STT and TTS access Metal simultaneously.
+        """
+        if not MLXKokoroTTSService._shared_pipeline:
+            logger.error("Shared MLX Kokoro pipeline not initialized")
             return None
 
         try:
             start_time = time.time()
 
-            # Generate audio using MLX Kokoro (returns generator)
-            result_generator = self._pipeline.generate(
-                text=text,
-                voice=self._voice,
-                speed=self._speed,
-                lang_code="a"
-            )
+            logger.debug(f"Generating audio for: {text}")
 
-            # Process the generator to get audio
-            audio_data = None
-            sample_rate = self._sample_rate
+            # Force garbage collection before heavy GPU work (macOS Sequoia workaround)
+            import gc
+            gc.collect()
 
-            for result in result_generator:
-                if hasattr(result, 'audio') and result.audio is not None:
-                    audio_data = result.audio
-                    sample_rate = getattr(result, 'sample_rate', self._sample_rate)
-                    break  # Use the first valid audio result
+            # CRITICAL: Acquire MLX lock to prevent concurrent STT + TTS access
+            # This is REQUIRED - MLX is not thread-safe for concurrent operations
+            # Singleton prevents multiple models, lock prevents concurrent access
+            with MLX_GLOBAL_LOCK:
+                # Unpack shared model and pre-created pipeline
+                model, pipeline = MLXKokoroTTSService._shared_pipeline
 
-            if audio_data is None:
-                logger.warning("No audio data generated from MLX pipeline")
-                return None
+                # Collect ALL audio segments (not just first one!)
+                audio_segments = []
+
+                # Call pipeline directly (not model.generate which creates pipeline lazily)
+                # pipeline() returns (graphemes, phonemes, audio) tuples
+                for graphemes, phonemes, audio in pipeline(
+                    text,
+                    voice=self._voice,
+                    speed=self._speed,
+                    split_pattern=r'\n+'
+                ):
+                    # pipeline() returns audio directly in the tuple, not as an attribute
+                    if audio is not None:
+                        audio_segments.append(audio)
+
+                # Concatenate all audio segments (INSIDE LOCK - these are MLX operations!)
+                if len(audio_segments) == 0:
+                    logger.warning("No audio generated")
+                    return None
+                elif len(audio_segments) == 1:
+                    audio_array = audio_segments[0]
+                else:
+                    # Concatenate multiple segments using MLX
+                    import mlx.core as mx
+                    audio_array = mx.concatenate(audio_segments, axis=0)
+
+                # Convert MLX array to NumPy array (INSIDE LOCK - accesses Metal!)
+                audio_np = np.array(audio_array, copy=False)
 
             generation_time = time.time() - start_time
 
@@ -169,10 +206,16 @@ class MLXKokoroTTSService(TTSService):
             chars_per_sec = len(text) / generation_time if generation_time > 0 else 0
             logger.debug(f"MLX generated {len(text)} chars in {generation_time:.3f}s ({chars_per_sec:.1f} chars/s)")
 
-            return audio_data, sample_rate
+            # Force garbage collection after generation (macOS Sequoia workaround)
+            import gc
+            gc.collect()
+
+            return audio_np, self._sample_rate
 
         except Exception as e:
             logger.error(f"MLX Kokoro TTS generation failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
 
     @traced_tts
@@ -198,10 +241,6 @@ class MLXKokoroTTSService(TTSService):
         overall_start_time = time.time()
         first_audio_sent = False
 
-        # Start metrics tracking
-        await self.start_ttfb_metrics()
-        await self.start_processing_metrics()
-
         yield TTSStartedFrame()
 
         try:
@@ -226,7 +265,6 @@ class MLXKokoroTTSService(TTSService):
                         if not first_audio_sent:
                             ttfb = (time.time() - overall_start_time) * 1000
                             logger.debug(f"🚀 MLX KOKORO TTFB: {ttfb:.1f}ms")
-                            await self.stop_ttfb_metrics()
                             first_audio_sent = True
 
                         chunk_latency = (time.time() - chunk_start_time) * 1000
@@ -266,14 +304,6 @@ class MLXKokoroTTSService(TTSService):
             logger.error(f"MLX Kokoro TTS error: {e}")
             yield ErrorFrame(error=str(e))
         finally:
-            # Stop metrics tracking
-            await self.stop_processing_metrics()
-            if not first_audio_sent:
-                await self.stop_ttfb_metrics()
-
-            # Send usage metrics for the full text
-            await self.start_tts_usage_metrics(text)
-
             yield TTSStoppedFrame()
 
     async def __aenter__(self):

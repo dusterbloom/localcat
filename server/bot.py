@@ -11,6 +11,10 @@ from typing import Dict, Optional
 # Prevent tokenizers parallelism warning when forking processes
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
+# Suppress PyTorch deprecation warnings (RNN dropout, weight_norm)
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='torch')
+warnings.filterwarnings('ignore', category=FutureWarning, module='torch')
 
 # Add local pipecat to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "pipecat", "src"))

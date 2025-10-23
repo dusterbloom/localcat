@@ -3,7 +3,7 @@
 # Builds .app, adds server files, then creates DMG manually to avoid stack overflow
 #
 # Platform-Intelligent Bundling:
-#   - macOS: Uses Siri TTS (skips Kokoro models) → ~3.6GB bundle
+#   - macOS: Uses Kokoro MLX TTS (~160MB models) → ~3.8GB bundle
 #   - Windows/Linux: Uses Kokoro TTS (includes models) → ~4.6GB bundle
 #
 # Optional Environment Variables:
@@ -14,9 +14,10 @@
 #   - Parakeet STT: 2.3GB
 #   - Smart-turn: 362MB
 #   - Speaker recognition (ECAPA-TDNN): 85MB ← CRITICAL for voice enrollment
+#   - Kokoro MLX TTS: 160MB ← Better voice quality than Siri
 #   - Python venv: ~1.8GB (or ~1.3GB with SLIM_VENV=1)
 #   - Server code: ~10MB
-#   Total: ~3.6GB (or ~4.6GB with Kokoro on Windows/Linux)
+#   Total: ~3.8GB (or ~4.6GB with Kokoro ONNX on Windows/Linux)
 
 set -e  # Exit on error
 
@@ -30,7 +31,28 @@ export NEXT_PUBLIC_SERVER_URL=${NEXT_PUBLIC_SERVER_URL:-"http://127.0.0.1:7860"}
 echo "  Using NEXT_PUBLIC_SERVER_URL=$NEXT_PUBLIC_SERVER_URL"
 
 # Step 2: Run Tauri build
-echo "📦 Step 2/5: Building Tauri .app..."
+echo "📦 Step 2/6: Building Tauri .app..."
+
+# Clean Python bytecode from source to avoid bundling stale caches
+echo "  Cleaning Python bytecode from source (../server)..."
+find ../server -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+find ../server -name "*.pyc" -delete 2>/dev/null || true
+
+# Pre-build sidecars required by tauri.conf.json resources so paths exist at compile time
+echo "  Pre-building sidecars required by resources..."
+(
+  cd src-tauri/sidecar/macos-stt 2>/dev/null || exit 1
+  if [ -x "macos-stt" ]; then
+    echo "    ✅ macos-stt already built"
+  else
+    if [ -f "build.sh" ]; then
+      bash build.sh || { echo "    ❌ Failed to build macos-stt"; exit 1; }
+    else
+      echo "    ❌ build.sh missing in sidecar/macos-stt"; exit 1
+    fi
+  fi
+) || { echo "  ❌ Pre-build of macos-stt failed"; exit 1; }
+
 cd src-tauri
 
 # Ensure a default PNG icon exists for Tauri v2 toolchain
@@ -88,7 +110,7 @@ fi
 echo "  ✅ .app bundle created successfully"
 
 # Step 3: Copy server files to the .app bundle
-echo "📂 Step 3/5: Copying server files and sidecars to bundle..."
+echo "📂 Step 3/6: Copying server files and sidecars to bundle..."
 
 # Ensure Tauri server dir exists (Tauri places ../../server under Resources/_up_/_up_/server)
 mkdir -p "$TAURI_SERVER_DIR"
@@ -119,6 +141,32 @@ cp -f "$SIDECAR_BIN" "$SIDECAR_DST_BIN/" 2>/dev/null || true
 chmod +x "$SIDECAR_DST_BIN/siri-tts" 2>/dev/null || true
 echo "  ✅ siri-tts available for direct binary: $SIDECAR_DST_BIN/siri-tts"
 
+## 3.b Build and bundle macOS STT sidecar (native Speech framework)
+STT_SIDECAR_SRC="src-tauri/sidecar/macos-stt"
+STT_SIDECAR_BIN="$STT_SIDECAR_SRC/macos-stt"
+STT_SIDECAR_DST="src-tauri/target/release/bundle/macos/LocalCat.app/Contents/Resources/sidecar/macos-stt"
+STT_SIDECAR_DST_BIN="src-tauri/target/release/sidecar/macos-stt" # for running target/release/localcat directly
+echo "  Building macos-stt sidecar (swift)..."
+if [ -x "$STT_SIDECAR_BIN" ]; then
+  echo "  ✅ macos-stt already built"
+else
+  if [ -f "$STT_SIDECAR_SRC/build.sh" ]; then
+    bash "$STT_SIDECAR_SRC/build.sh" || { echo "  ❌ Failed to build macos-stt"; exit 1; }
+  else
+    echo "  ❌ Missing sidecar build script: $STT_SIDECAR_SRC/build.sh"; exit 1
+  fi
+fi
+mkdir -p "$STT_SIDECAR_DST"
+cp -f "$STT_SIDECAR_BIN" "$STT_SIDECAR_DST/" || { echo "  ❌ Failed to copy macos-stt into bundle"; exit 1; }
+chmod +x "$STT_SIDECAR_DST/macos-stt"
+echo "  ✅ Bundled macos-stt → $(/usr/bin/dirname "$STT_SIDECAR_DST/macos-stt")"
+
+# Also place sidecar near compiled binary for direct runs
+mkdir -p "$STT_SIDECAR_DST_BIN"
+cp -f "$STT_SIDECAR_BIN" "$STT_SIDECAR_DST_BIN/" 2>/dev/null || true
+chmod +x "$STT_SIDECAR_DST_BIN/macos-stt" 2>/dev/null || true
+echo "  ✅ macos-stt available for direct binary: $STT_SIDECAR_DST_BIN/macos-stt"
+
 LIGHTWEIGHT=${LIGHTWEIGHT:-0}
 
 # Copy virtual environment unless LIGHTWEIGHT=1
@@ -141,6 +189,21 @@ else
       find "$TAURI_SERVER_DIR/.venv" -name "*.pyc" -delete -o -name "*.pyo" -delete || true
       find "$TAURI_SERVER_DIR/.venv" -type d -name "tests" -prune -exec rm -rf {} + || true
       echo "  ✅ venv pruning complete"
+
+      # CRITICAL: Sign eSpeak dylib to prevent macOS Sequoia SIGKILL
+      # This fixes code signature violation when Kokoro MLX loads eSpeak for phonemization
+      ESPEAK_DYLIB="$TAURI_SERVER_DIR/.venv/lib/python3.12/site-packages/espeakng_loader/libespeak-ng.dylib"
+      if [ -f "$ESPEAK_DYLIB" ]; then
+        echo "  🔐 Signing eSpeak dylib for production bundle..."
+        if codesign --force --deep --sign - "$ESPEAK_DYLIB" 2>/dev/null; then
+          echo "  ✅ eSpeak dylib signed successfully"
+        else
+          echo "  ⚠️  Failed to sign eSpeak dylib (continuing, may cause runtime issues)"
+        fi
+      else
+        echo "  ⚠️  eSpeak dylib not found at: $ESPEAK_DYLIB"
+        echo "     Kokoro MLX TTS may fail if this library is missing!"
+      fi
 
       # Optional: aggressively slim venv for platform-specific builds
       if [ "${SLIM_VENV:-0}" = "1" ]; then
@@ -167,9 +230,10 @@ PY
 
         # Platform-specific package removal
         if [ "$BUILD_TARGET" = "macos" ]; then
-          # macOS with Siri TTS - can remove TTS-specific heavy packages
-          echo "     Removing TTS packages (using Siri native TTS)..."
-          for pkg in onnxruntime onnxruntime_gpu espeakng_loader; do
+          # macOS with Kokoro MLX TTS - remove heavy ONNX packages
+          # NOTE: Keep espeakng_loader (required by Kokoro MLX for phonemization)
+          echo "     Removing ONNX packages (using MLX instead)..."
+          for pkg in onnxruntime onnxruntime_gpu; do
             if [ -d "$VENV_SITE/$pkg" ] || ls "$VENV_SITE" 2>/dev/null | grep -q "^$pkg[-_]"; then
               echo "       - Removing $pkg"
               rm -rf "$VENV_SITE/$pkg" "$VENV_SITE/${pkg}-"* 2>/dev/null || true
@@ -208,6 +272,12 @@ echo "  Cleaning up development artifacts from bundle..."
 # Remove .logs directories (development artifacts)
 find "$TAURI_SERVER_DIR" -type d -name ".logs" -exec rm -rf {} + 2>/dev/null || true
 echo "  ✅ Removed .logs directories"
+
+# Remove any Python bytecode from bundled server code to prevent stale imports
+echo "  Pruning Python bytecode from bundled server code..."
+find "$TAURI_SERVER_DIR" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+find "$TAURI_SERVER_DIR" -name "*.pyc" -delete 2>/dev/null || true
+echo "  ✅ Removed __pycache__ and *.pyc from bundle"
 
 # Platform-intelligent model bundling
 if [ "$LIGHTWEIGHT" != "1" ]; then
@@ -273,8 +343,30 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
 
   # Platform-specific TTS models
   if [ "$BUILD_TARGET" = "macos" ]; then
-    echo "    Skipping Kokoro TTS (macOS uses native Siri TTS)"
-    echo "      💾 Saved: ~1GB bundle size"
+    echo "    Copying Kokoro MLX TTS models for macOS..."
+
+    # Copy Kokoro MLX model from HF cache (required for in-process TTS)
+    if [ -d "../server/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16" ]; then
+      if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16/" \
+        "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16/"; then
+        echo "      ✅ Kokoro MLX (~160MB)"
+      else
+        echo "      ⚠️  Failed to copy Kokoro MLX model"
+      fi
+    else
+      echo "      ⚠️  Kokoro MLX model not found in cache"
+      echo "         Run server once to download: cd ../server && python bot.py"
+    fi
+
+    # Also copy prince-canuma variant if present (alternative model)
+    if [ -d "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M" ]; then
+      if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/" \
+        "$TAURI_SERVER_DIR/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/"; then
+        echo "      ✅ Kokoro MLX (prince-canuma variant)"
+      fi
+    fi
+
+    echo "      Note: Using Kokoro MLX for better voice quality than Siri"
   else
     echo "    Copying Kokoro TTS (required for $BUILD_TARGET - no Siri available)..."
 
@@ -342,7 +434,7 @@ else
 fi
 
 # Step 5: Create DMG from the complete .app
-echo "📦 Step 5/5: Creating DMG installer..."
+echo "📦 Step 5/6: Creating DMG installer..."
 DMG_DIR="$TARGET_DIR/bundle/dmg"
 DMG_PATH="$DMG_DIR/LocalCat_1.0.0_aarch64.dmg"
 mkdir -p "$DMG_DIR"

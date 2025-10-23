@@ -206,6 +206,7 @@ class EnrollmentCoordinator(FrameProcessor):
     async def _send_choice_message(self, direction: FrameDirection):
         """Ask the user to choose anonymous chat vs quick enrollment."""
         # NOTE: Mic is automatically muted during CHOICE state by mic_gate_filter in factory.py
+        logger.info("[EnrollmentCoordinator] Sending choice prompt (sign up / sign in / anonymous)")
         text = (
             "Would you like to sign up, sign in, "
             "or chat anonymously without storing anything? Say 'sign up', 'recognize me', or 'anonymous'."
@@ -231,16 +232,34 @@ class EnrollmentCoordinator(FrameProcessor):
         # Update router to intro state
         await self._router.update_state(EnrollmentState.INTRO)
         
-        await self.push_frame(TextFrame(intro_text), direction)
-        # If using fixed phrase, instruct the user
-        if self._fixed_phrase:
+        # CRITICAL FIX: Remove sentence-ending punctuation to prevent Pipecat from splitting
+        # Even with aggregate_sentences=False, Pipecat may split on ! ? .
+        # Replace with commas to keep the flow natural without triggering splits
+        import re
+        intro_clean = re.sub(r'([!?])\s+', r', ', intro_text)  # ! ? → ,
+        intro_clean = re.sub(r'(\.)(\s+[A-Z])', r',\2', intro_clean)  # . before capital → ,
+
+        # Optionally combine intro + instruction into a single TTS pass to avoid engine boundary splitting
+        combine = os.getenv("ENROLLMENT_COMBINE_INTRO", "true").lower() in ("1", "true", "yes")
+        if combine and self._fixed_phrase:
             instruct = f"Please repeat exactly: '{self._fixed_phrase}' three times."
-            await self.push_frame(TextFrame(instruct), direction)
+            instruct_clean = re.sub(r'([!?])\s+', r', ', instruct)
+            instruct_clean = re.sub(r'(\.)(\s+[A-Z])', r',\2', instruct_clean)
+            combined = f"{intro_clean} {instruct_clean}"
+            await self.push_frame(TextFrame(combined), direction)
+        else:
+            await self.push_frame(TextFrame(intro_clean), direction)
+            # If using fixed phrase, instruct the user
+            if self._fixed_phrase:
+                instruct = f"Please repeat exactly: '{self._fixed_phrase}' three times."
+                instruct_clean = re.sub(r'([!?])\s+', r', ', instruct)
+                instruct_clean = re.sub(r'(\.)(\s+[A-Z])', r',\2', instruct_clean)
+                await self.push_frame(TextFrame(instruct_clean), direction)
         
         self._intro_sent = True
-        
-        # Brief pause after intro before starting enrollment
-        await asyncio.sleep(0.1)
+
+        # No need for artificial delay - intro message will play naturally through TTS pipeline
+        # and enrollment will start when user speaks after intro finishes
     
     async def _handle_unknown_speaker_detected(
         self,
@@ -259,13 +278,13 @@ class EnrollmentCoordinator(FrameProcessor):
             return  # Already handled
         
         logger.info("[EnrollmentCoordinator] Unknown speaker detected - starting intro")
-        
+
         await self._send_intro_message(direction)
         self._enrollment_started = True
-        
-        # Automatically transition to enrolling state
-        # (AudioIntelligenceProcessor will start collecting samples)
-        await self._router.update_state(EnrollmentState.ENROLLING, progress=0)
+
+        # Don't transition to ENROLLING immediately - let intro message finish speaking
+        # The transition will happen naturally when the next EnrollmentProgressFrame arrives
+        # and is processed by _handle_enrollment_progress
     
     async def _handle_enrollment_progress(
         self,
@@ -290,15 +309,18 @@ class EnrollmentCoordinator(FrameProcessor):
             logger.info("[EnrollmentCoordinator] Starting enrollment from first progress frame")
             await self._send_intro_message(direction)
             self._enrollment_started = True
-            await self._router.update_state(EnrollmentState.ENROLLING, progress=0)
-            
-            # CRITICAL: Give intro message time to be spoken before sending progress update
-            # The intro message takes ~2-3 seconds to synthesize and speak
-            await asyncio.sleep(3.0)  # Wait for intro to finish speaking
+            # Don't transition to ENROLLING immediately or block with sleep - let intro finish
+            # The state will transition naturally on the next progress frame
+            return  # Skip processing this progress frame, let intro play first
         
         if not self._enrollment_started:
             return  # Still not in enrollment flow
-        
+
+        # If intro has been sent but we're still in INTRO state, transition to ENROLLING now
+        if self._intro_sent and self._router.current_state == EnrollmentState.INTRO:
+            logger.info("[EnrollmentCoordinator] Transitioning INTRO → ENROLLING (intro complete, user speaking)")
+            await self._router.update_state(EnrollmentState.ENROLLING, progress=0)
+
         # Only provide feedback on progress changes
         if current == self._last_progress:
             return
@@ -365,6 +387,26 @@ class EnrollmentCoordinator(FrameProcessor):
         )
         self._name_capture_pending = True
         self._pending_speaker_id = frame.speaker_id
+
+        # CRITICAL FIX: Pause audio intelligence during name capture to prevent state confusion
+        # Without this, audio intelligence continues collecting enrollment samples
+        try:
+            if self._audio_intel and hasattr(self._audio_intel, 'set_enabled'):
+                self._audio_intel.set_enabled(False)
+        except Exception:
+            pass
+
+        # CRITICAL FIX: Suppress the next transcription frame to prevent immediate validation
+        # The utterance that triggered recognition is still in the pipeline and would
+        # be incorrectly interpreted as a name attempt, causing "didn't catch valid name" error
+        try:
+            loop = asyncio.get_event_loop()
+            self._suppress_next_transcription = True
+            self._suppress_deadline_ts = loop.time() + 1.0  # Short window
+            logger.debug("[EnrollmentCoordinator] Suppressing next transcription (post-recognition for name capture)")
+        except Exception:
+            pass
+
         await self.push_frame(TextFrame("Great, I recognized your voice. What name or ID should I use for you?"), direction)
     
     async def _handle_enrollment_complete(
@@ -465,6 +507,18 @@ class EnrollmentCoordinator(FrameProcessor):
         if not text:
             return
 
+        # CRITICAL: Drop suppressed transcriptions (e.g., post-recognition stale frames)
+        if self._suppress_next_transcription:
+            try:
+                now = asyncio.get_event_loop().time()
+                if now <= self._suppress_deadline_ts:
+                    self._suppress_next_transcription = False
+                    logger.debug(f"[EnrollmentCoordinator] Dropped suppressed transcription: '{text}'")
+                    return
+            except Exception:
+                pass
+            self._suppress_next_transcription = False
+
         # Handle initial choice
         if self._enable_ephemeral_choice and self._awaiting_choice and self._router.current_state == EnrollmentState.CHOICE:
             normalized = text.lower()
@@ -473,7 +527,11 @@ class EnrollmentCoordinator(FrameProcessor):
                 await self._router.update_state(EnrollmentState.INTRO)
                 await self._send_intro_message(direction)
                 self._enrollment_started = True
-                await self._router.update_state(EnrollmentState.ENROLLING, progress=0)
+                # CRITICAL FIX: Don't transition to ENROLLING immediately - let intro message finish speaking.
+                # The transition to ENROLLING will happen naturally when:
+                # 1. User speaks after intro → _handle_unknown_speaker_detected triggers
+                # 2. Or when first EnrollmentProgressFrame arrives → _handle_enrollment_progress triggers
+                # Immediate transition was causing intro TTS to be interrupted/stopped prematurely.
                 return
             if self._contains_any(normalized, self._anonymous_terms):
                 self._awaiting_choice = False

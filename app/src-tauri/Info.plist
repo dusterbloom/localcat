@@ -21,6 +21,10 @@
     <key>NSHighResolutionCapable</key>
     <true/>
 
+    <!-- Privacy - Speech Recognition Usage Description (for macOS native STT sidecar) -->
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>LocalCat uses on-device speech recognition to transcribe your voice privately on your Mac.</string>
+
     <!-- Minimum macOS version -->
     <!-- Should match your deployment target -->
     <key>LSMinimumSystemVersion</key>

@@ -27,6 +27,11 @@ from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIProcessor, RTVIObserver
 from pipecat.processors.transcript_processor import TranscriptProcessor
+from pipecat.processors.filters.stt_mute_filter import (
+    STTMuteFilter,
+    STTMuteConfig,
+    STTMuteStrategy
+)
 
 # Local imports
 from config import VoiceAgentConfig
@@ -42,6 +47,11 @@ class VoiceAgentFactory:
         self._services_cache: Dict[str, Any] = {}
         # Delegate service creation to ServiceFactory
         self._service_factory = ServiceFactory(config)
+
+        # CRITICAL: Global lock for MLX operations (STT + TTS share MLX runtime)
+        # This prevents heap corruption from concurrent MLX access on macOS Sequoia
+        self.mlx_lock = asyncio.Lock()
+        logger.info("🔒 MLX global lock initialized (prevents concurrent Metal access)")
 
     def create_transport(self, webrtc_connection: SmallWebRTCConnection) -> SmallWebRTCTransport:
         """Create WebRTC transport with VAD and turn detection."""
@@ -168,7 +178,8 @@ class VoiceAgentFactory:
         
         logger.info(
             f"[Factory] Creating intro-aware pipeline "
-            f"(initial_state={initial_state.value}, has_profiles={has_profiles})"
+            f"(initial_state={initial_state.value}, has_profiles={has_profiles}, "
+            f"flags: intro={self.config.enable_intro_pipeline}, choice={self.config.enable_ephemeral_choice}, force={self.config.force_intro})"
         )
         
         # CRITICAL: ParallelPipeline requires separate processor instances for each branch
@@ -176,18 +187,9 @@ class VoiceAgentFactory:
         
         # Define intro pipeline (bypasses LLM for direct feedback)
         # Create a separate TTS instance for intro messages
-        # CRITICAL: Disable sentence boundaries so full intro message plays as one unit
+        # CRITICAL: Disable sentence boundaries so the full intro/instructions play as a single unit.
+        # For Siri, this uses a no-boundaries mode; for Kokoro, aggregate_sentences/use_boundaries are disabled.
         intro_tts = self.create_tts_service(use_boundaries=False)
-
-        # CRITICAL: Add text aggregator to intro pipeline to collect multiple TextFrames
-        # EnrollmentCoordinator sends multiple TextFrames (e.g., choice message + UI hint)
-        # Without aggregator, these go to TTS as separate chunks causing truncation
-        from core.aggregators.fast_text import FastTextAggregator
-        intro_text_aggregator = FastTextAggregator(
-            min_tokens=25,   # Lower threshold for quick intro responses
-            max_tokens=500,  # Higher limit to allow full intro messages
-            max_time=1.5     # Longer timeout for multi-sentence intros
-        )
 
         # Optional: prevent TTS from being interrupted during intro/enrollment
         async def _no_intro_interruptions(frame) -> bool:
@@ -198,9 +200,19 @@ class VoiceAgentFactory:
                 return True
 
         from pipecat.processors.filters.function_filter import FunctionFilter as _FF
+
+        # Debug: log TextFrames entering the INTRO TTS to ensure instructions are present
+        async def _log_intro_text(frame) -> bool:
+            from pipecat.frames.frames import TextFrame
+            if isinstance(frame, TextFrame):
+                txt = getattr(frame, 'text', '') or ''
+                logger.debug(f"[Intro] TextFrame -> TTS: '{txt[:120]}{'...' if len(txt)>120 else ''}'")
+            return True
+
+        # Feed intro TextFrames directly to TTS; keep a small logger before TTS
         intro_processors = [
             _FF(_no_intro_interruptions),
-            intro_text_aggregator,  # Aggregate TextFrames before TTS
+            _FF(_log_intro_text),
             intro_tts
         ]
         
@@ -337,67 +349,44 @@ class VoiceAgentFactory:
         # Build main pipeline stages
         stages = [transport.input()]
 
-        # CRITICAL: Add mic gate filter to mute mic during intro/choice
-        # This prevents TTS from being interrupted by mic input during enrollment
-        # Track when intro TTS starts/completes to prevent STT hallucinations
-        intro_tts_started = asyncio.Event()
-        intro_tts_completed = asyncio.Event()
+        # Note: We add Audio Intelligence and EnrollmentCoordinator after STT,
+        # so coordinator TextFrames reach the router directly without passing through STT.
 
-        async def _track_intro_tts(frame) -> bool:
-            """Track intro TTS lifecycle to gate mic input"""
+        # Mic gate (KISS): Only block mic while the CHOICE prompt TTS is playing.
+        # This avoids accidental interruption but doesn't block the user from answering.
+        choice_tts_active = asyncio.Event()
+
+        async def _track_choice_tts(frame) -> bool:
             from pipecat.frames.frames import TTSStartedFrame, TTSStoppedFrame
-
-            # Detect first TTS started in INTRO state
-            if isinstance(frame, TTSStartedFrame):
-                if router.current_state == EnrollmentState.INTRO:
-                    intro_tts_started.set()
-                    logger.debug("[MicGate] Intro TTS started, mic still muted")
-
-            # Detect first TTS completed
-            elif isinstance(frame, TTSStoppedFrame):
-                if intro_tts_started.is_set() and not intro_tts_completed.is_set():
-                    intro_tts_completed.set()
-                    logger.info("[MicGate] ✅ Intro TTS completed, mic NOW ENABLED")
-
-            return True  # Always pass TTS frames through
-
-        async def _mic_gate_filter(frame) -> bool:
-            """Block mic input AND VAD/interruption events during onboarding and intro TTS playback"""
-            from pipecat.frames.frames import (
-                InputAudioRawFrame,
-                UserStartedSpeakingFrame,
-                UserStoppedSpeakingFrame,
-                InterruptionTaskFrame,
-            )
-
-            # Block audio frames, VAD events, and interruption frames
-            if isinstance(frame, (InputAudioRawFrame, UserStartedSpeakingFrame, UserStoppedSpeakingFrame, InterruptionTaskFrame)):
-                current_state = router.current_state
-
-                # Block during CHOICE state (prevents interruption during choice message)
-                if current_state == EnrollmentState.CHOICE:
-                    logger.debug(f"[MicGate] Blocking {type(frame).__name__} during CHOICE state")
-                    return False
-
-                # Block during INTRO state until TTS completes
-                if current_state == EnrollmentState.INTRO:
-                    if not intro_tts_completed.is_set():
-                        logger.debug(f"[MicGate] Blocking {type(frame).__name__} during INTRO TTS")
-                        return False
-
-                # Block during ENROLLING until intro TTS is done
-                if current_state == EnrollmentState.ENROLLING:
-                    if not intro_tts_completed.is_set():
-                        logger.debug(f"[MicGate] Blocking {type(frame).__name__} during intro TTS in ENROLLING state")
-                        return False
-
+            state = router.current_state
+            if state == EnrollmentState.CHOICE and isinstance(frame, TTSStartedFrame):
+                choice_tts_active.set()
+                logger.debug("[MicGate] CHOICE TTS started → mic muted")
+            elif state == EnrollmentState.CHOICE and isinstance(frame, TTSStoppedFrame):
+                if choice_tts_active.is_set():
+                    choice_tts_active.clear()
+                    logger.debug("[MicGate] CHOICE TTS finished → mic enabled")
             return True
 
-        # Add mic gate filter to pipeline (TTS watcher is added after router)
-        from pipecat.processors.filters.function_filter import FunctionFilter as _FF
-        stages.extend([
-            _FF(_mic_gate_filter),
-        ])
+        async def should_mute_enrollment(stt_filter: STTMuteFilter) -> bool:
+            """Mute ONLY during CHOICE state when enrollment TTS is playing.
+
+            This prevents echo/loopback from triggering false interruptions while
+            the bot speaks enrollment prompts. Uses Pipecat's STTMuteFilter which
+            properly blocks VAD frames (UserStartedSpeaking, etc.) unlike the old
+            custom MicGate filter.
+            """
+            return (router.current_state == EnrollmentState.CHOICE and
+                    choice_tts_active.is_set())
+
+        # Create STTMuteFilter for enrollment (replaces old MicGate)
+        # This blocks VAD frames + interruptions during CHOICE TTS only
+        stt_mute_filter = STTMuteFilter(
+            config=STTMuteConfig(
+                strategies={STTMuteStrategy.CUSTOM},
+                should_mute_callback=should_mute_enrollment
+            )
+        )
 
         # Optional mic probe
         mic_probe = services.get('mic_probe')
@@ -410,29 +399,51 @@ class VoiceAgentFactory:
         # Core processing before router
         stages.extend([
             services['stt'],
+            stt_mute_filter,  # Block VAD frames during enrollment CHOICE TTS
             transcript.user(),  # Capture user transcriptions for UI
             services['rtvi'],
-            services['audio_intelligence'],  # Emits enrollment frames
-            coordinator,  # Generates feedback and controls router
         ])
+
+        # Feed Audio Intelligence (if enabled) and then the EnrollmentCoordinator
+        ai = services.get('audio_intelligence')
+        if ai:
+            stages.append(ai)
+        stages.append(coordinator)
 
         # Router splits to intro vs conversation
         stages.append(router)
 
-        # Add TTS watcher AFTER router so it sees TTS frames from both pipelines
-        stages.append(_FF(_track_intro_tts))
+        # Add CHOICE TTS watcher AFTER router so it sees TTS frames from both pipelines
+        stages.append(_FF(_track_choice_tts))
 
-        # Output
+        # Light TTS output probe: helps diagnose muted enrollment speech
+        # Logs TTSStarted/TTSText and first audio chunk per synthesis
+        tts_audio_logged = {"seen": False}
+
+        async def _log_tts_events(frame) -> bool:
+            from pipecat.frames.frames import TTSStartedFrame, TTSTextFrame, TTSAudioRawFrame, TTSStoppedFrame
+            try:
+                if isinstance(frame, TTSStartedFrame):
+                    tts_audio_logged["seen"] = False
+                    logger.debug("[Pipeline] TTS started")
+                elif isinstance(frame, TTSTextFrame):
+                    txt = getattr(frame, 'text', '') or ''
+                    logger.debug(f"[Pipeline] TTS text: '{txt[:80]}{'...' if len(txt) > 80 else ''}'")
+                elif isinstance(frame, TTSAudioRawFrame):
+                    if not tts_audio_logged["seen"]:
+                        tts_audio_logged["seen"] = True
+                        logger.debug(f"[Pipeline] First TTS audio chunk: {len(getattr(frame, 'audio', b''))} bytes")
+                elif isinstance(frame, TTSStoppedFrame):
+                    logger.debug("[Pipeline] TTS stopped")
+            except Exception:
+                pass
+            return True
+
+        stages.append(_FF(_log_tts_events))
+
+        # Output audio first, then capture assistant transcripts (per Pipecat docs)
         stages.append(transport.output())
-
-        # Capture assistant transcripts AFTER transport.output() (per Pipecat docs)
-        # TTSTextFrame flows: TTS -> router -> transport.output() -> transcript.assistant()
         stages.append(transcript.assistant())
-
-        # Forward assistant transcript events to client UI via RTVI
-        # Linking order in logs should become:
-        # SmallWebRTCOutputTransport -> AssistantTranscriptProcessor -> RTVIProcessor -> Sink
-        stages.append(services['rtvi'])
         
         pipeline = Pipeline(stages)
         self._services_cache['pipeline'] = pipeline
@@ -503,10 +514,10 @@ class VoiceAgentFactory:
             services['llm'],
             services['text_aggregator'],  # Intelligent sentence boundary detection
             services['tts'],
+            # Output audio then capture assistant transcripts (per Pipecat docs)
             transport.output(),
-            # NOTE: context_aggregator.assistant() removed - it's in conversation pipeline only
-            transcript.assistant(),  # Capture assistant responses AFTER output (per Pipecat docs)
-            services['rtvi'],        # Forward assistant transcript to client UI
+            transcript.assistant(),
+            services['rtvi'],        # Forward transcript events to client UI
 
         ])
 

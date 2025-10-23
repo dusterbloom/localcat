@@ -22,6 +22,8 @@ from pipecat.frames.frames import (
 )
 from pipecat.services.stt_service import STTService
 
+from core.utils.mlx_lock import MLX_GLOBAL_LOCK
+
 try:
     from parakeet_mlx import from_pretrained
     PARAKEET_AVAILABLE = True
@@ -50,9 +52,15 @@ class ParakeetBatchSTT(STTService):
     # Known Parakeet hallucination patterns (common false positives on silence/noise)
     # NOTE: These should be normalized (no punctuation) since we strip punctuation before matching
     HALLUCINATION_PATTERNS = {
-        "yeah", "yep", "yes", "mmhmm", "mmhmmm", "mhm", "uhhuh",
-        "im just", "thank you", "thanks", "okay", "ok",
+        "yeah", "yep", "mmhmm", "mmhmmm", "mhm", "uhhuh",
+        "im just", "thank you", "thanks",
         "uh", "um", "hmm", "ah", "oh", "Почему?","Scary."
+    }
+
+    # CRITICAL: Words that should NEVER be filtered, even if short
+    # These are essential for user interactions (confirmations, names, commands)
+    CRITICAL_WORDS = {
+        "yes", "no", "ok", "okay", "go", "hi", "hey", "bye", "one", "two"
     }
 
     def __init__(
@@ -95,16 +103,20 @@ class ParakeetBatchSTT(STTService):
     def _init_parakeet_model(self):
         """Initialize the Parakeet model for batch processing"""
         try:
-            logger.info(f"Loading Parakeet model: {self._model_path}")
+            logger.info(f"🔒 Acquiring MLX lock for Parakeet batch initialization...")
+            with MLX_GLOBAL_LOCK:
+                logger.info(f"Loading Parakeet model: {self._model_path}")
 
-            if PARAKEET_OLD_FORMAT:
-                # Legacy mlx_audio format
-                self._model = load_model(self._model_path)
-            else:
-                # New parakeet_mlx format
-                self._model = from_pretrained(self._model_path)
+                if PARAKEET_OLD_FORMAT:
+                    # Legacy mlx_audio format
+                    self._model = load_model(self._model_path)
+                else:
+                    # New parakeet_mlx format
+                    self._model = from_pretrained(self._model_path)
 
-            logger.info("✅ Parakeet batch model loaded successfully")
+                logger.info("✅ Parakeet batch model loaded successfully")
+                logger.debug("Keeping MLX model in memory (shares Metal heap with Kokoro MLX TTS)")
+
         except Exception as e:
             logger.error(f"Failed to load Parakeet model: {e}")
             raise
@@ -196,31 +208,44 @@ class ParakeetBatchSTT(STTService):
         import re
         normalized = re.sub(r'[^\w\s]', '', normalized)
 
+        # CRITICAL: Check whitelist first - never filter critical words
+        if normalized in self.CRITICAL_WORDS:
+            return False
+
         # Check if entire text matches a hallucination pattern
         if normalized in self.HALLUCINATION_PATTERNS:
             logger.debug(f"Blocked hallucination: '{text}'")
             return True
 
         # Check for very short single-word outputs (likely noise)
+        # Skip this check if the word is in the critical whitelist
         words = normalized.split()
         if len(words) == 1 and len(words[0]) <= 3:
-            logger.debug(f"Blocked short noise: '{text}'")
-            return True
+            # Double-check it's not a critical word (belt and suspenders)
+            if words[0] not in self.CRITICAL_WORDS:
+                logger.debug(f"Blocked short noise: '{text}'")
+                return True
 
         return False
 
     def _process_audio_batch_sync(self, audio_bytes: bytes) -> tuple[str, str]:
-        """Synchronous batch processing - returns (text, audio_path)"""
+        """Synchronous batch processing - returns (text, audio_path)
+
+        CRITICAL: Uses MLX_GLOBAL_LOCK to prevent concurrent Metal access during transcription.
+        """
         # Convert to temporary WAV file
         audio_path = self._audio_bytes_to_wav(audio_bytes)
 
-        # Generate transcription (use model's transcribe API to avoid shape issues)
-        if PARAKEET_OLD_FORMAT:
-            # Legacy mlx_audio API may expect raw path for generate
-            result = self._model.generate(audio_path)
-        else:
-            # New parakeet_mlx API exposes transcribe(path) → AlignedResult
-            result = self._model.transcribe(audio_path)
+        # CRITICAL: Acquire lock during transcription to prevent concurrent Metal access
+        # This prevents process killing when Parakeet STT and Kokoro TTS run simultaneously
+        with MLX_GLOBAL_LOCK:
+            # Generate transcription (use model's transcribe API to avoid shape issues)
+            if PARAKEET_OLD_FORMAT:
+                # Legacy mlx_audio API may expect raw path for generate
+                result = self._model.generate(audio_path)
+            else:
+                # New parakeet_mlx API exposes transcribe(path) → AlignedResult
+                result = self._model.transcribe(audio_path)
 
         # Extract text from result
         text = ""

@@ -1,10 +1,16 @@
 """
 Parakeet Streaming STT Service for Pipecat
 Provides ultra-low latency streaming transcription with VAD and smart chunking.
+
+Enhancements:
+- Hallucination suppression (short/noise-like outputs are filtered)
+- Env-tunable thresholds for interim/final text length and volume gating
 """
 
 import numpy as np
 import time
+import os
+import re
 from typing import AsyncGenerator
 
 from loguru import logger
@@ -18,6 +24,8 @@ from pipecat.frames.frames import (
     UserStoppedSpeakingFrame
 )
 from pipecat.services.ai_services import STTService
+
+from core.utils.mlx_lock import MLX_GLOBAL_LOCK
 
 try:
     from parakeet_mlx import from_pretrained
@@ -86,6 +94,23 @@ class ParakeetStreamingSTT(STTService):
         self._vad_active = False  # Track if we're between start/stop speaking frames
         self._last_finalized_time = 0.0
 
+        # Hallucination filtering configuration (env-tunable)
+        self._filter_hallucinations: bool = os.getenv("PARAKEET_FILTER_HALLUCINATIONS", "true").lower() in ("1", "true", "yes")
+        try:
+            self._interim_min_chars: int = int(os.getenv("PARAKEET_INTERIM_MIN_CHARS", "5"))
+        except Exception:
+            self._interim_min_chars = 5
+        try:
+            self._final_min_chars: int = int(os.getenv("PARAKEET_FINAL_MIN_CHARS", "6"))
+        except Exception:
+            self._final_min_chars = 6
+        # Known Parakeet hallucination patterns (align with batch service)
+        self._hallucination_patterns = {
+            "yeah", "yep", "yes", "mmhmm", "mmhmmm", "mhm", "uhhuh",
+            "im just", "thank you", "thanks", "okay", "ok",
+            "uh", "um", "hmm", "ah", "oh", "почему", "scary"
+        }
+
         # Initialize model
         self._init_parakeet_model()
 
@@ -96,6 +121,31 @@ class ParakeetStreamingSTT(STTService):
             True, as this service supports metrics generation.
         """
         return True
+
+    def _normalize_text_for_filter(self, text: str) -> str:
+        if not text:
+            return ""
+        t = text.strip().lower()
+        # Remove punctuation for robust matching
+        t = re.sub(r'[^\w\s]', '', t)
+        return t
+
+    def _is_hallucination_like(self, text: str, *, allow_short_word: bool = False) -> bool:
+        if not self._filter_hallucinations:
+            return False
+        if not text:
+            return True
+        norm = self._normalize_text_for_filter(text)
+        if not norm:
+            return True
+        # Exact match against known short noise-like tokens
+        if norm in self._hallucination_patterns:
+            return True
+        words = norm.split()
+        # Very short single-word snippets are often noise; allow override
+        if not allow_short_word and len(words) == 1 and len(words[0]) <= 3:
+            return True
+        return False
 
     def _normalize_audio(self, audio_np: np.ndarray) -> np.ndarray:
         """Normalize audio volume to optimal levels for transcription"""
@@ -132,38 +182,40 @@ class ParakeetStreamingSTT(STTService):
             raise ImportError("Parakeet MLX not available")
 
         try:
-            logger.info(f"Loading Parakeet model: {self.model_path}")
+            logger.info(f"🔒 Acquiring MLX lock for Parakeet streaming initialization...")
+            with MLX_GLOBAL_LOCK:
+                logger.info(f"Loading Parakeet model: {self.model_path}")
 
-            if PARAKEET_OLD_FORMAT:
-                # Legacy mlx_audio format - not supported for streaming
-                raise ImportError("Legacy Parakeet format not supported for streaming")
-            else:
-                # New parakeet_mlx format - handle variable return values
-                result = from_pretrained(self.model_path)
-                if isinstance(result, tuple):
-                    if len(result) >= 2:
-                        self._model, self._processor = result[0], result[1]
-                    elif len(result) == 1:
-                        self._model = result[0]
-                        self._processor = None
-                    else:
-                        raise ValueError(f"Unexpected return from from_pretrained: {result}")
+                if PARAKEET_OLD_FORMAT:
+                    # Legacy mlx_audio format - not supported for streaming
+                    raise ImportError("Legacy Parakeet format not supported for streaming")
                 else:
-                    # Single return value
-                    self._model = result
-                    self._processor = None
+                    # New parakeet_mlx format - handle variable return values
+                    result = from_pretrained(self.model_path)
+                    if isinstance(result, tuple):
+                        if len(result) >= 2:
+                            self._model, self._processor = result[0], result[1]
+                        elif len(result) == 1:
+                            self._model = result[0]
+                            self._processor = None
+                        else:
+                            raise ValueError(f"Unexpected return from from_pretrained: {result}")
+                    else:
+                        # Single return value
+                        self._model = result
+                        self._processor = None
 
-            # Create streaming transcriber context and enter it
-            self._transcriber_context = self._model.transcribe_stream(
-                context_size=self.context_size,
-                depth=self.depth,
-                keep_original_attention=False  # Use local attention for streaming
-            )
+                # Create streaming transcriber context and enter it
+                self._transcriber_context = self._model.transcribe_stream(
+                    context_size=self.context_size,
+                    depth=self.depth,
+                    keep_original_attention=False  # Use local attention for streaming
+                )
 
-            # Enter the context manager to get the actual transcriber
-            self._transcriber = self._transcriber_context.__enter__()
+                # Enter the context manager to get the actual transcriber
+                self._transcriber = self._transcriber_context.__enter__()
 
-            logger.info("✅ Parakeet streaming model loaded successfully")
+                logger.info("✅ Parakeet streaming model loaded successfully")
 
         except Exception as e:
             logger.error(f"Failed to load Parakeet model: {e}")
@@ -239,21 +291,26 @@ class ParakeetStreamingSTT(STTService):
                             new_text = full_text[self._last_sent_length:]
 
                             if new_text:  # Only send if there's actual new content
-                                # Send as interim transcription during speech
-                                frame = InterimTranscriptionFrame(
-                                    text=new_text,
-                                    user_id=getattr(self, '_user_id', None) or "user",
-                                    timestamp=str(time.time())
-                                )
+                                # Filter obvious hallucinations and trivial noise
+                                if (len(new_text.strip()) < self._interim_min_chars) or self._is_hallucination_like(new_text):
+                                    # Do not update _last_sent_length here so we can accumulate more before sending
+                                    pass
+                                else:
+                                    # Send as interim transcription during speech
+                                    frame = InterimTranscriptionFrame(
+                                        text=new_text,
+                                        user_id=getattr(self, '_user_id', None) or "user",
+                                        timestamp=str(time.time())
+                                    )
 
-                                # Only log interim frames occasionally to reduce log spam
-                                if len(new_text.strip()) > 5:  # Log meaningful chunks
-                                    logger.debug(f"[Parakeet STT] Interim: {new_text.strip()}")
-                                yield frame
+                                    # Only log interim frames occasionally to reduce log spam
+                                    if len(new_text.strip()) > 5:  # Log meaningful chunks
+                                        logger.debug(f"[Parakeet STT] Interim: {new_text.strip()}")
+                                    yield frame
 
-                                # Update tracking for next iteration
-                                self._last_sent_length = len(full_text)
-                                self._current_turn_text = full_text  # Track complete turn text
+                                    # Update tracking for next iteration
+                                    self._last_sent_length = len(full_text)
+                                    self._current_turn_text = full_text  # Track complete turn text
 
         except Exception as e:
             logger.error(f"Streaming STT error: {e}")
@@ -292,15 +349,24 @@ class ParakeetStreamingSTT(STTService):
             if hasattr(result, 'text'):
                 full_text = result.text.strip()
                 if full_text:
-                    # Yield final transcription with complete accumulated text
-                    frame = TranscriptionFrame(
-                        text=full_text,
-                        user_id=getattr(self, '_user_id', None) or "user",
-                        timestamp=str(time.time())
-                    )
-                    await self.push_frame(frame)
-                    self._last_sent_length = 0  # Reset for next utterance
-                    logger.info(f"[Parakeet STT] Final: {full_text}")
+                    # Skip final output if it looks like a hallucination or too short to be useful
+                    if (len(self._normalize_text_for_filter(full_text)) < self._final_min_chars) or self._is_hallucination_like(full_text, allow_short_word=True):
+                        # Treat as no meaningful speech captured
+                        self._last_sent_length = 0
+                        self.audio_buffer = []
+                        self.buffer_duration = 0.0
+                        self._last_finalized_time = time.time()
+                        self._current_turn_text = ""
+                    else:
+                        # Yield final transcription with complete accumulated text
+                        frame = TranscriptionFrame(
+                            text=full_text,
+                            user_id=getattr(self, '_user_id', None) or "user",
+                            timestamp=str(time.time())
+                        )
+                        await self.push_frame(frame)
+                        self._last_sent_length = 0  # Reset for next utterance
+                        logger.info(f"[Parakeet STT] Final: {full_text}")
 
             # Clear buffers
             self.audio_buffer = []

@@ -21,13 +21,20 @@ class DatabaseSessionTracker:
     def __init__(self, *, db_path: str | None = None):
         # Single source of truth: SESSION_DB_PATH (relative to server/)
         env_path = os.getenv("SESSION_DB_PATH")
+        if env_path:
+            # Expand ~ and environment variables for production bundles
+            env_path = os.path.expanduser(os.path.expandvars(env_path))
         default_path = Path(env_path) if env_path else Path("data/sessions.db")
+        # Allow explicit override via constructor
         self._db_path = Path(db_path) if db_path else default_path
         logger.info(f"Session DB path resolved to: {self._db_path}")
 
         # Ensure directory exists
-        if not self._db_path.parent.exists():
+        try:
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Failed to create sessions DB directory '{self._db_path.parent}': {e}")
+            raise
 
         self._init_database()
 

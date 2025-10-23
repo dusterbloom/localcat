@@ -205,7 +205,9 @@ pub fn start_server(app: &AppHandle) -> Result<(), String> {
 
     // Build command: python bot.py --host 127.0.0.1 --port 7860
     let mut cmd = Command::new(&python);
-    cmd.arg("bot.py")
+    // -B prevents reading/writing .pyc bytecode; combined with PYTHONDONTWRITEBYTECODE keeps imports fresh
+    cmd.arg("-B")
+        .arg("bot.py")
         .arg("--host").arg("127.0.0.1")
         .arg("--port").arg("7860")
         .current_dir(&server_dir)
@@ -239,6 +241,31 @@ pub fn start_server(app: &AppHandle) -> Result<(), String> {
         .env("TRANSFORMERS_OFFLINE", "1")
         .env("HF_HOME", &hf_home)
         .env("HUGGINGFACE_HUB_CACHE", &hf_hub_cache);
+
+    // Configure espeak-ng data path for Kokoro TTS phonemization
+    // espeak-ng-data is bundled in the venv's espeakng_loader package
+    let espeak_data_path = server_dir
+        .join(".venv/lib/python3.12/site-packages/espeakng_loader/espeak-ng-data");
+    cmd.env("ESPEAK_DATA_PATH", &espeak_data_path);
+    println!("   ESPEAK_DATA_PATH: {:?}", espeak_data_path);
+
+    // CRITICAL: Create/update /tmp/espeak-ng-data symlink
+    // The kokoro-onnx library has a hardcoded CI build path that expects espeak-ng-data in /tmp
+    // This works around the hardcoded path without patching the binary
+    let tmp_symlink = Path::new("/tmp/espeak-ng-data");
+
+    // Remove old symlink if it exists (might point to old DMG mount)
+    if tmp_symlink.exists() || tmp_symlink.read_link().is_ok() {
+        let _ = std::fs::remove_file(tmp_symlink);
+        println!("   Removed old /tmp/espeak-ng-data symlink");
+    }
+
+    // Create fresh symlink pointing to current bundle
+    if let Err(e) = std::os::unix::fs::symlink(&espeak_data_path, tmp_symlink) {
+        println!("   ⚠️  Could not create /tmp/espeak-ng-data symlink: {}", e);
+    } else {
+        println!("   ✅ Created /tmp/espeak-ng-data -> {:?}", espeak_data_path);
+    }
 
     // Add Homebrew binaries to PATH for ffmpeg (needed by Parakeet STT)
     if let Ok(current_path) = std::env::var("PATH") {

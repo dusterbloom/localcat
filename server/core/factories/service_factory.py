@@ -48,6 +48,8 @@ except ImportError:
 
 from core.tts.kokoro_professional import ProfessionalKokoroTTSService
 from core.tts.kokoro_mlx import MLXKokoroTTSService
+from core.tts.kokoro_pytorch import KokoroPyTorchTTSService
+from core.tts.kokoro_pytorch_lockfree import KokoroPyTorchLockFreeTTSService
 from core.tts.siri_streaming import SiriStreamingTTSService
 
 # Import optional components
@@ -226,6 +228,20 @@ class ServiceFactory:
                 logger.error(f"❌ Parakeet STT failed: {e}", exc_info=True)
                 logger.warning("Falling back to Whisper MLX batch mode")
                 stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
+        elif self.config.stt_engine == "macos_native":
+            try:
+                from core.stt.macos_native import MacOSNativeSTT
+                logger.debug("Using macOS native Speech framework STT")
+                stt = MacOSNativeSTT(
+                    language=stt_config.get("language", "en-US"),
+                    sample_rate=int(os.getenv("STT_SAMPLE_RATE", "16000")),
+                    on_device=os.getenv("MACOS_STT_ON_DEVICE", "true").lower() in ("1", "true", "yes"),
+                )
+                logger.info("✅ macOS native STT ready")
+            except Exception as e:
+                logger.error(f"❌ macOS native STT failed: {e}")
+                logger.warning("Falling back to Whisper MLX batch mode")
+                stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
         elif self.config.stt_engine == "whisper_mlx":
             logger.debug("Using Whisper MLX batch mode")
             stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
@@ -258,25 +274,38 @@ class ServiceFactory:
             )
             logger.info("✅ Professional Kokoro TTS ready")
         elif self.config.tts_engine == "kokoro_mlx":
-            logger.debug("Using Ultra-Low Latency MLX Kokoro TTS")
-            from core.tts.tts_mlx_ultra_low_latency import TTSMLXUltraLowLatency
-            # Use buffer_ms from environment or default to 40ms
-            buffer_ms = int(os.getenv("TTS_BUFFER_MS", "40"))
-            tts = TTSMLXUltraLowLatency(
-                model="mlx-community/Kokoro-82M-bf16",
+            logger.debug("Using MLX Kokoro TTS (in-process, minirepo-aligned)")
+            # Use the fixed MLXKokoroTTSService with KokoroPipeline and threading.Lock
+            # This matches the working minirepo implementation
+            tts = MLXKokoroTTSService(
+                voice=tts_config["voice"],
+                speed=tts_config["speed"],
+                sample_rate=tts_config["sample_rate"]
+            )
+            logger.info("✅ MLX Kokoro TTS ready (in-process)")
+        elif self.config.tts_engine == "kokoro_pytorch":
+            logger.debug("Using Kokoro PyTorch TTS (official hexgrad package)")
+            tts = KokoroPyTorchTTSService(
+                voice=tts_config["voice"],
+                speed=tts_config["speed"],
+                sample_rate=tts_config["sample_rate"]
+            )
+            logger.info("✅ Kokoro PyTorch TTS ready")
+        elif self.config.tts_engine == "kokoro_pytorch_lockfree":
+            logger.debug("Using Kokoro PyTorch TTS (LOCK-FREE mode - like offline-voice-ai)")
+            max_workers = int(os.getenv("TTS_MAX_WORKERS", "4"))
+            tts = KokoroPyTorchLockFreeTTSService(
                 voice=tts_config["voice"],
                 speed=tts_config["speed"],
                 sample_rate=tts_config["sample_rate"],
-                buffer_ms=buffer_ms,  # Respects TTS_BUFFER_MS from .env
-                use_boundaries=use_boundaries,  # Control sentence boundary detection
-                aggregate_sentences=use_boundaries  # CRITICAL: Disable sentence aggregation for intro
+                max_workers=max_workers
             )
-            logger.info("✅ Ultra-Low Latency MLX Kokoro TTS ready")
+            logger.info(f"✅ Kokoro PyTorch LOCK-FREE TTS ready (workers: {max_workers})")
         elif self.config.tts_engine == "siri_streaming":
             logger.debug("Using Siri Streaming TTS (native macOS)")
             # Determine binary path (dev vs production)
             from pathlib import Path
-            import os
+            # Note: os already imported at module level
 
             # Try multiple possible locations for the siri-tts binary
             binary_candidates = []
@@ -311,9 +340,11 @@ class ServiceFactory:
                 binary_path=str(binary_path),
                 language=os.getenv("SIRI_TTS_LANGUAGE", "en-US"),
                 voice_id=os.getenv("SIRI_TTS_VOICE_ID"),  # Optional override
+                use_system_voice=os.getenv("SIRI_TTS_USE_SYSTEM_VOICE", "false").lower() in ("1", "true", "yes"),
                 rate=float(os.getenv("SIRI_TTS_RATE", "0.52")),
                 pitch=float(os.getenv("SIRI_TTS_PITCH", "1.0")),
-                sample_rate=tts_config["sample_rate"]
+                sample_rate=tts_config["sample_rate"],
+                no_boundaries=(not use_boundaries),
             )
             logger.info("✅ Siri Streaming TTS ready")
         else:
@@ -431,12 +462,21 @@ class ServiceFactory:
         # Create confidence strategy based on configuration
         confidence_strategy = self._create_confidence_strategy()
 
+        # Resolve storage paths for production (expand ~ and $VARS)
+        def _expand(p: str | None) -> str | None:
+            if not p:
+                return p
+            try:
+                return os.path.expanduser(os.path.expandvars(p))
+            except Exception:
+                return p
+
         hotmem_service = HotMemService(
             user_id=os.getenv("USER_ID", "default-user"),
             agent_id=os.getenv("AGENT_ID", "locat"),
             run_id=f"session_{os.getenv('USER_ID', 'default')}",
-            sqlite_path=os.getenv("MEMORY_SQLITE_PATH"),
-            lmdb_dir=os.getenv("MEMORY_LMDB_PATH"),
+            sqlite_path=_expand(os.getenv("MEMORY_SQLITE_PATH")),
+            lmdb_dir=_expand(os.getenv("MEMORY_LMDB_PATH")),
             session_tracker=session_tracker,
             confidence_strategy=confidence_strategy
         )

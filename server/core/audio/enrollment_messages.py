@@ -19,7 +19,7 @@ class EnrollmentMessages:
     """
     
     intro_message: str = (
-        "Hi! I'm LocalCat. I can learn to recognize your voice for a more "
+        "Hi!  I can learn to recognize your voice for a more "
         "personalized experience. Just speak naturally for a moment, and I'll "
         "remember you next time!"
     )

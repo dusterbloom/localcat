@@ -100,15 +100,37 @@ class SiriStreamingTTSService(TTSService):
         binary_path: str,
         language: str = "en-US",
         voice_id: Optional[str] = None,
+        use_system_voice: bool = False,
         rate: float = 0.52,
         pitch: float = 1.0,
         sample_rate: int = 16000,
+        no_boundaries: bool = False,
     ):
-        super().__init__()
+        # super().__init__()
+        super().__init__(aggregate_sentences=False)
 
         self._binary_path = Path(binary_path)
         self._language = language
-        self._voice_id = voice_id or SIRI_VOICE_MAP.get(language)
+        self._no_boundaries = bool(no_boundaries)
+        # Resolve voice preference order: explicit -> system -> map
+        resolved_voice = voice_id
+        if not resolved_voice and use_system_voice:
+            try:
+                # Ask sidecar for system default voice id
+                import subprocess
+                result = subprocess.run(
+                    [str(self._binary_path), "--print-default-voice-id"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2.0,
+                )
+                if result.returncode == 0:
+                    vid = result.stdout.strip()
+                    if vid:
+                        resolved_voice = vid
+            except Exception as e:
+                logger.debug(f"System voice probe failed: {e}")
+        self._voice_id = resolved_voice or SIRI_VOICE_MAP.get(language)
         self._rate = rate
         self._pitch = pitch
         self._sample_rate = sample_rate
@@ -138,10 +160,22 @@ class SiriStreamingTTSService(TTSService):
         """
         logger.debug(f"Siri TTS generating: '{text[:80]}{'...' if len(text) > 80 else ''}'")
 
+        # CRITICAL WORKAROUND: If no_boundaries is enabled, remove sentence-ending punctuation
+        # to prevent Siri TTS (AVSpeechSynthesizer) from stopping after the first sentence.
+        # This is a temporary fix until the Swift sidecar supports --no-boundaries flag.
+        processed_text = text
+        if self._no_boundaries:
+            import re
+            # Replace sentence-ending punctuation (! . ?) with commas + space
+            # This prevents AVSpeechSynthesizer from treating them as sentence boundaries
+            processed_text = re.sub(r'([!?])\s+', r', ', processed_text)  # ! ? → ,
+            processed_text = re.sub(r'(\.)(\s+[A-Z])', r',\2', processed_text)  # . before capital → ,
+            logger.debug(f"[no_boundaries] Preprocessed text: '{processed_text[:80]}...'")
+
         # Signal start
         yield TTSStartedFrame()
 
-        # Emit text frame for transcript processor
+        # Emit text frame for transcript processor (use original text for transcript)
         yield TTSTextFrame(text=text)
 
         try:
@@ -149,7 +183,7 @@ class SiriStreamingTTSService(TTSService):
             cmd = [
                 str(self._binary_path),
                 "--stream-pcm",
-                "--text", text,
+                "--text", processed_text,  # Use preprocessed text if no_boundaries enabled
                 "--target-rate", str(self._sample_rate),
                 "--rate", str(self._rate),
                 "--pitch", str(self._pitch),
@@ -159,7 +193,19 @@ class SiriStreamingTTSService(TTSService):
             if self._voice_id:
                 cmd.extend(["--voice-id", self._voice_id])
             else:
-                cmd.extend(["--lang", self._language])
+                # If user wants system voice but we couldn't resolve an ID yet,
+                # allow sidecar to select system voice by flag
+                if os.getenv("SIRI_TTS_USE_SYSTEM_VOICE", "false").lower() in ("1", "true", "yes"):
+                    cmd.append("--use-system-voice")
+                if self._language:
+                    cmd.extend(["--lang", self._language])
+
+            # WORKAROUND for sentence boundary splitting:
+            # The Swift sidecar doesn't support --no-boundaries flag yet.
+            # As a temporary fix, when no_boundaries is True, we pre-process the text
+            # to replace sentence-ending punctuation with pauses/commas to prevent
+            # Siri TTS from stopping after the first sentence.
+            # This is handled below before spawning the process.
 
             # Spawn subprocess
             process = await asyncio.create_subprocess_exec(
@@ -250,9 +296,28 @@ def resolve_siri_binary() -> Path:
             resolved = shutil.which(candidate)
             if resolved:
                 logger.debug(f"Found siri-tts in PATH: {resolved}")
-                return Path(resolved)
+        return Path(resolved)
 
     raise FileNotFoundError(
         "siri-tts binary not found in any expected location. "
         "Build it with: cd app/src-tauri/sidecar/siri-tts && ./build.sh"
     )
+
+    async def process_frame(self, frame: Frame, direction=None):
+        """Optionally bypass sentence-boundary splitting by the base TTSService.
+
+        When `no_boundaries` is True (used for INTRO), stream the full TextFrame
+        as a single TTS synthesis without base aggregation/splitting.
+        """
+        from pipecat.frames.frames import TextFrame
+        if self._no_boundaries and isinstance(frame, TextFrame):
+            text = getattr(frame, 'text', '') or ''
+            if not text.strip():
+                return
+            try:
+                async for out in self.run_tts(text):
+                    await self.push_frame(out)
+            except Exception as e:
+                await self.push_frame(ErrorFrame(f"Siri TTS error: {e}"))
+            return
+        await super().process_frame(frame, direction)

@@ -12,6 +12,7 @@ struct Args {
     var outputPath: String = ""
     var language: String? = nil
     var voiceId: String? = nil
+    var useSystemVoice: Bool = false
     var rate: Float = AVSpeechUtteranceDefaultSpeechRate
     var pitch: Float = 1.0
     var targetRate: Int = 24000  // Target sample rate (16000 for WebRTC, 24000 native)
@@ -28,6 +29,13 @@ func parseArgs() -> Args? {
 
     while let arg = it.next() {
         switch arg {
+        case "--print-default-voice-id":
+            if let vid = systemDefaultVoiceIdentifier() ?? voiceOverDefaultVoiceIdentifier() {
+                print(vid)
+                exit(0)
+            } else {
+                exit(1)
+            }
         case "--stream-pcm":
             args.mode = .stream
         case "--text":
@@ -36,6 +44,8 @@ func parseArgs() -> Args? {
             args.language = it.next()
         case "--voice-id":
             args.voiceId = it.next()
+        case "--use-system-voice":
+            args.useSystemVoice = true
         case "--rate":
             args.rate = Float(it.next() ?? "") ?? AVSpeechUtteranceDefaultSpeechRate
         case "--pitch":
@@ -84,6 +94,7 @@ func printUsage() {
       --text "..."               Text to synthesize (required)
       --lang LANG                Language code (e.g., en-US, it-IT, es-ES)
       --voice-id ID              Specific voice identifier
+      --use-system-voice        Use macOS Accessibility default voice (Spoken Content/VoiceOver)
       --rate FLOAT               Speech rate 0.0-1.0 (default: normal)
       --pitch FLOAT              Pitch multiplier (default: 1.0)
       --target-rate RATE         Target sample rate: 16000 or 24000 (default: 24000)
@@ -105,9 +116,16 @@ func printUsage() {
 // MARK: - Voice Selection
 
 func selectVoice(args: Args) -> AVSpeechSynthesisVoice? {
-    // Priority: 1) Explicit voice ID, 2) Language, 3) Default Ava
+    // Priority: 1) Explicit voice ID, 2) System default, 3) Language, 4) Ava
     if let vid = args.voiceId, let voice = AVSpeechSynthesisVoice(identifier: vid) {
         return voice
+    }
+
+    if args.useSystemVoice {
+        if let systemId = systemDefaultVoiceIdentifier() ?? voiceOverDefaultVoiceIdentifier(),
+           let v = AVSpeechSynthesisVoice(identifier: systemId) {
+            return v
+        }
     }
 
     if let lang = args.language {
@@ -124,6 +142,33 @@ func selectVoice(args: Args) -> AVSpeechSynthesisVoice? {
         return ava
     }
 
+    return nil
+}
+
+// Attempt to read the default voice from Spoken Content preferences
+func systemDefaultVoiceIdentifier() -> String? {
+    if let domain = UserDefaults.standard.persistentDomain(forName: "com.apple.speech.voice.prefs") as? [String: Any] {
+        if let id = domain["SelectedVoiceIdentifier"] as? String { return id }
+        if let selected = domain["SpokenContentSelectedVoiceIdentifier"] as? String { return selected }
+        if let dict = domain["SelectedVoice"] as? [String: Any], let id = dict["VoiceIdentifier"] as? String { return id }
+        if let name = domain["SelectedVoiceName"] as? String {
+            for v in AVSpeechSynthesisVoice.speechVoices() {
+                if v.name == name { return v.identifier }
+            }
+        }
+    }
+    return nil
+}
+
+// Attempt to read VoiceOver default voice
+func voiceOverDefaultVoiceIdentifier() -> String? {
+    if let domain = UserDefaults.standard.persistentDomain(forName: "com.apple.VoiceOver4/default") as? [String: Any] {
+        if let attrs = domain["com.apple.speech.synthesis.voice-attributes"] as? [String: Any],
+           let id = attrs["VoiceIdentifier"] as? String {
+            return id
+        }
+        if let id = domain["VoiceIdentifier"] as? String { return id }
+    }
     return nil
 }
 

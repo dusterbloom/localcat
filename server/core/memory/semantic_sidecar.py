@@ -79,7 +79,8 @@ class SemanticMemorySidecar:
             max_vectors: Maximum vectors to store in index
         """
         self.model_name = model_name
-        self.index_dir = Path(index_dir)
+        # Expand ~ and $VARS for production bundles
+        self.index_dir = Path(os.path.expanduser(os.path.expandvars(index_dir)))
         self.similarity_threshold = similarity_threshold
         self.max_vectors = max_vectors
         

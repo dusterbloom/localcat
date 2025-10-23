@@ -29,12 +29,31 @@ class Paths:
         # Only set defaults if not explicitly provided (including ":memory:")
         if self.sqlite_path is None:
             self.sqlite_path = os.getenv("HOTMEM_SQLITE", "memory.db")
-        # For LMDB, None means disabled, so don't set a default in that case
+
+        # Expand ~ and env vars for production bundles (Tauri)
+        if isinstance(self.sqlite_path, str) and self.sqlite_path != ":memory":
+            self.sqlite_path = os.path.expanduser(os.path.expandvars(self.sqlite_path))
+
+        # Ensure parent directory exists for file-based SQLite
+        if isinstance(self.sqlite_path, str) and self.sqlite_path not in (None, ":memory:"):
+            try:
+                parent = os.path.dirname(self.sqlite_path)
+                if parent and not os.path.isdir(parent):
+                    os.makedirs(parent, exist_ok=True)
+            except Exception as e:
+                logger.error(f"Failed to ensure SQLite parent directory '{self.sqlite_path}': {e}")
+                raise
+
+        # For LMDB, None means disabled; otherwise expand and ensure directory
         if self.lmdb_dir is None:
             env_lmdb = os.getenv("HOTMEM_LMDB_DIR")
             if env_lmdb:
                 self.lmdb_dir = env_lmdb
             # else keep it as None to disable LMDB
+
+        if self.lmdb_dir:
+            self.lmdb_dir = os.path.expanduser(os.path.expandvars(self.lmdb_dir))
+
         logger.debug(f"Paths initialized: sqlite_path={self.sqlite_path!r}, lmdb_dir={self.lmdb_dir!r}")
 
 

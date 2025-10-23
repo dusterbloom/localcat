@@ -7,8 +7,10 @@ openai>=1.74.0,<=1.99.1  # Compatible with pipecat-ai requirements
 
 # Computer vision and ML
 opencv-python==4.10.0.84
-mlx-lm>=0.23.0  # Updated for mlx-audio compatibility
+mlx-lm==0.28.3  # REQUIRED: Updated for macOS Sequoia compatibility
 mlx-audio==0.2.5
+mlx==0.29.3  # REQUIRED: Updated for macOS Sequoia compatibility
+mlx-metal==0.29.3  # REQUIRED: Matches mlx version
 
 # Pipecat with specific extras
 pipecat-ai[openai,deepgram,rime,silero,mlx-whisper,local-smart-turn]>=0.0.80
@@ -28,5 +30,7 @@ tiktoken>=0.7.0  # Accurate token counting for context management
 
 
 # Audio Intelligence (Session 1: Speaker Recognition)
-speechbrain>=1.0.0  # Unified speaker recognition, emotion, prosody
+torch==2.9.0  # REQUIRED: 2.9.0+ for macOS Sequoia compatibility (fixes ML process killing bug)
+torchaudio==2.9.0  # REQUIRED: Matches torch version
+speechbrain>=1.0.0  # Unified speaker recognition, emotion, prosody (requires manual patch for torchaudio 2.9.0)
 praat-parselmouth>=0.4.3  # Prosody analysis (Session 3)
