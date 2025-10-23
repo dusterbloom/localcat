@@ -49,7 +49,6 @@ except ImportError:
 from core.tts.kokoro_professional import ProfessionalKokoroTTSService
 from core.tts.kokoro_mlx import MLXKokoroTTSService
 from core.tts.kokoro_pytorch import KokoroPyTorchTTSService
-from core.tts.kokoro_pytorch_lockfree import KokoroPyTorchLockFreeTTSService
 from core.tts.siri_streaming import SiriStreamingTTSService
 
 # Import optional components
@@ -291,16 +290,6 @@ class ServiceFactory:
                 sample_rate=tts_config["sample_rate"]
             )
             logger.info("✅ Kokoro PyTorch TTS ready")
-        elif self.config.tts_engine == "kokoro_pytorch_lockfree":
-            logger.debug("Using Kokoro PyTorch TTS (LOCK-FREE mode - like offline-voice-ai)")
-            max_workers = int(os.getenv("TTS_MAX_WORKERS", "4"))
-            tts = KokoroPyTorchLockFreeTTSService(
-                voice=tts_config["voice"],
-                speed=tts_config["speed"],
-                sample_rate=tts_config["sample_rate"],
-                max_workers=max_workers
-            )
-            logger.info(f"✅ Kokoro PyTorch LOCK-FREE TTS ready (workers: {max_workers})")
         elif self.config.tts_engine == "siri_streaming":
             logger.debug("Using Siri Streaming TTS (native macOS)")
             # Determine binary path (dev vs production)
