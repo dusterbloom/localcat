@@ -24,6 +24,7 @@ from pipecat.services.tts_service import TTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
 
 from tools.text_formatter import split_text_for_kokoro_streaming
+from tools.audio_utils import convert_to_pcm16
 from core.utils.mlx_lock import MLX_GLOBAL_LOCK
 
 
@@ -270,20 +271,8 @@ class MLXKokoroTTSService(TTSService):
                         chunk_latency = (time.time() - chunk_start_time) * 1000
                         logger.debug(f"✅ MLX Chunk {i+1}/{len(sentences)}: {len(sentence)} chars → {chunk_latency:.1f}ms")
 
-                        # Convert to int16 for Pipecat
-                        # MLX arrays need to be converted to numpy first
-                        import mlx.core as mx
-                        if hasattr(audio_data, 'astype') and hasattr(mx, 'array'):
-                            # This is an MLX array, convert to numpy
-                            audio_np = np.array(audio_data)
-                        else:
-                            audio_np = audio_data
-
-                        if audio_np.dtype != np.int16:
-                            # Convert float to int16
-                            audio_int16 = (audio_np * 32767).astype(np.int16)
-                        else:
-                            audio_int16 = audio_np
+                        # Convert to int16 for Pipecat (MLX audio is already normalized, no clipping needed)
+                        audio_int16 = convert_to_pcm16(audio_data, clip=False)
 
                         frame = TTSAudioRawFrame(
                             audio=audio_int16.tobytes(),

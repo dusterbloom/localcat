@@ -23,6 +23,7 @@ from pipecat.frames.frames import (
 from pipecat.services.tts_service import TTSService
 
 from tools.text_formatter import split_text_for_kokoro_streaming
+from tools.audio_utils import convert_to_pcm16
 
 # CRITICAL: Import global Metal lock to serialize PyTorch initialization with MLX operations
 from core.utils.mlx_lock import MLX_GLOBAL_LOCK
@@ -203,13 +204,8 @@ class KokoroPyTorchTTSService(TTSService):
                         chunk_latency = (time.time() - chunk_start_time) * 1000
                         logger.debug(f"✅ Chunk {i+1}/{len(sentences)}: {len(sentence)} chars → {chunk_latency:.1f}ms")
 
-                        # Convert to int16 for Pipecat
-                        if audio_data.dtype != np.int16:
-                            # Kokoro outputs float32 in range -1 to 1
-                            audio_int16 = np.clip(audio_data, -1.0, 1.0)
-                            audio_int16 = (audio_int16 * 32767).astype(np.int16)
-                        else:
-                            audio_int16 = audio_data
+                        # Convert to int16 for Pipecat (PyTorch audio needs clipping for safety)
+                        audio_int16 = convert_to_pcm16(audio_data, clip=True)
 
                         frame = TTSAudioRawFrame(
                             audio=audio_int16.tobytes(),
