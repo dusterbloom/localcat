@@ -26,6 +26,12 @@ from pipecat.utils.tracing.service_decorators import traced_tts
 from tools.text_formatter import split_text_for_kokoro_streaming
 from tools.audio_utils import convert_to_pcm16
 from core.utils.mlx_lock import MLX_GLOBAL_LOCK
+from core.tts.kokoro_config import (
+    MLX_EXECUTOR_WORKERS,
+    CHUNK_MIN_LENGTH,
+    CHUNK_MAX_LENGTH,
+    THREAD_PREFIX_MLX,
+)
 
 
 class MLXKokoroTTSService(TTSService):
@@ -65,7 +71,8 @@ class MLXKokoroTTSService(TTSService):
         # Thread pool for non-blocking TTS generation
         # Single worker since MLX operations must be serialized via lock
         self._executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="mlx-kokoro"
+            max_workers=MLX_EXECUTOR_WORKERS,
+            thread_name_prefix=THREAD_PREFIX_MLX
         )
 
         # Initialize shared MLX Kokoro pipeline (only once across all instances)
@@ -228,8 +235,12 @@ class MLXKokoroTTSService(TTSService):
             yield TTSStoppedFrame()
             return
 
-        # Split text into optimal chunks for Kokoro (50-120 chars)
-        sentences = split_text_for_kokoro_streaming(text, min_length=50, max_length=120)
+        # Split text into optimal chunks for Kokoro
+        sentences = split_text_for_kokoro_streaming(
+            text,
+            min_length=CHUNK_MIN_LENGTH,
+            max_length=CHUNK_MAX_LENGTH
+        )
 
         if not sentences:
             logger.debug(f"🔇 Skipping TTS for empty text: '{text}'")

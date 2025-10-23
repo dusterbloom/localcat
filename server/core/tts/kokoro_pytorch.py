@@ -28,6 +28,13 @@ from tools.audio_utils import convert_to_pcm16
 # CRITICAL: Import global Metal lock to serialize PyTorch initialization with MLX operations
 from core.utils.mlx_lock import MLX_GLOBAL_LOCK
 
+from core.tts.kokoro_config import (
+    PYTORCH_EXECUTOR_WORKERS,
+    CHUNK_MIN_LENGTH,
+    CHUNK_MAX_LENGTH,
+    THREAD_PREFIX_PYTORCH,
+)
+
 
 class KokoroPyTorchTTSService(TTSService):
     """
@@ -57,7 +64,8 @@ class KokoroPyTorchTTSService(TTSService):
 
         # Thread pool for non-blocking TTS generation
         self._executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=2, thread_name_prefix="kokoro-pytorch"
+            max_workers=PYTORCH_EXECUTOR_WORKERS,
+            thread_name_prefix=THREAD_PREFIX_PYTORCH
         )
 
         # CRITICAL: Lock to prevent concurrent access (same as minirepo)
@@ -157,7 +165,11 @@ class KokoroPyTorchTTSService(TTSService):
             return
 
         # Split text into optimal chunks
-        sentences = split_text_for_kokoro_streaming(text, min_length=50, max_length=120)
+        sentences = split_text_for_kokoro_streaming(
+            text,
+            min_length=CHUNK_MIN_LENGTH,
+            max_length=CHUNK_MAX_LENGTH
+        )
 
         if not sentences:
             logger.debug(f"🔇 Skipping TTS for empty text: '{text}'")
