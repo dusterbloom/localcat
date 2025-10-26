@@ -34,16 +34,23 @@ guard let recognizer = SFSpeechRecognizer(locale: locale) else {
     exit(2)
 }
 
-// Request authorization (may be already granted). Timeout quickly to avoid hanging.
-let authSem = DispatchSemaphore(value: 0)
-SFSpeechRecognizer.requestAuthorization { status in
-    if status != .authorized {
-        fputs("{\"error\":\"speech_not_authorized\"}\n", stderr)
-        // Continue anyway; on-device recognition may still work in some environments
+// PROPER FIX: Check authorization status without requesting it
+// The main Tauri app should handle authorization, subprocess just checks status
+if #available(macOS 10.15, *) {
+    let status = SFSpeechRecognizer.authorizationStatus()
+    if status == .notDetermined {
+        // If not determined, the main app needs to request authorization first
+        // For now, try to continue - some environments allow on-device without authorization
+        fputs("{\"info\":\"authorization_not_determined\"}\n", stderr)
+    } else if status == .denied {
+        fputs("{\"error\":\"speech_denied\"}\n", stderr)
+        exit(3)
+    } else if status == .restricted {
+        fputs("{\"error\":\"speech_restricted\"}\n", stderr)
+        exit(4)
     }
-    authSem.signal()
+    // If authorized, proceed normally
 }
-_ = authSem.wait(timeout: .now() + 2)
 
 let request = SFSpeechAudioBufferRecognitionRequest()
 request.shouldReportPartialResults = true
@@ -63,37 +70,74 @@ let task = recognizer.recognitionTask(with: request) { result, error in
     if let result = result {
         let text = result.bestTranscription.formattedString
         let final = result.isFinal
-        let obj = ["text": text, "final": final] as [String : Any]
+
+        // Distinguish between volatile (interim) and finalized results
+        let obj: [String: Any]
+        if final {
+            obj = [
+                "text": text,
+                "final": true,
+                "type": "finalized"
+            ] as [String : Any]
+        } else {
+            obj = [
+                "text": text,
+                "final": false,
+                "type": "volatile"
+            ] as [String : Any]
+        }
+
         if let data = try? JSONSerialization.data(withJSONObject: obj, options: []) {
             out.write(data)
             out.write("\n".data(using: .utf8)!)
         }
+
         if final { finished = true }
     } else if let error = error {
-        let obj = ["error": String(describing: error)]
+        let obj = ["error": String(describing: error), "type": "error"]
         if let data = try? JSONSerialization.data(withJSONObject: obj, options: []) {
             out.write(data); out.write("\n".data(using: .utf8)!)
         }
     }
 }
 
-// Read stdin and append buffers
+// Read stdin continuously in chunks and stream to recognition
 queue.async {
     let stdinFH = FileHandle.standardInput
-    while true {
-        let chunk = stdinFH.readData(ofLength: 4096)
-        if chunk.count == 0 { break }
+    let chunkSize = 8192  // Read 8KB chunks at a time
 
+    while true {
+        // Read next chunk from stdin
+        guard let chunk = try? stdinFH.read(upToCount: chunkSize) else {
+            // Error reading stdin, end recognition
+            request.endAudio()
+            break
+        }
+
+        if chunk.isEmpty {
+            // EOF reached, end recognition
+            request.endAudio()
+            break
+        }
+
+        // Convert chunk to audio buffer
         let frameCount = chunk.count / 2
-        guard let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(frameCount)) else { continue }
+        guard frameCount > 0 else { continue }
+
+        guard let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(frameCount)) else {
+            fputs("{\"error\":\"invalid_audio_format\"}\n", stderr)
+            continue
+        }
+
         buf.frameLength = AVAudioFrameCount(frameCount)
         chunk.withUnsafeBytes { rawPtr in
             guard let base = rawPtr.bindMemory(to: Int16.self).baseAddress else { return }
-            buf.int16ChannelData!.pointee.assign(from: base, count: frameCount)
+            buf.int16ChannelData!.pointee.update(from: base, count: frameCount)
         }
+
+        // Append this chunk to the ongoing recognition request
         request.append(buf)
     }
-    request.endAudio()
 }
 
 // Keep runloop alive

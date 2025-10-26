@@ -27,8 +27,20 @@ xcrun swiftc -O \
 
 if [ -f macos-stt ]; then
   chmod +x macos-stt
+
+  # Codesign with entitlements for microphone access
+  echo "🔐 Signing macos-stt with entitlements..."
+  if [ -f entitlements.plist ]; then
+    codesign --force --sign - --entitlements entitlements.plist macos-stt
+    echo "✅ Signed with microphone entitlements"
+  else
+    echo "⚠️ No entitlements.plist found, signing without entitlements"
+    codesign --force --sign - macos-stt
+  fi
+
   echo "✅ Built: $(pwd)/macos-stt"
   file macos-stt || true
+  codesign -dv macos-stt 2>/dev/null || echo "No signature info available"
 else
   echo "❌ Build failed"
   exit 1

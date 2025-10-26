@@ -240,13 +240,20 @@ pub fn start_server(app: &AppHandle) -> Result<(), String> {
     cmd.env("HF_HUB_OFFLINE", "1")
         .env("TRANSFORMERS_OFFLINE", "1")
         .env("HF_HOME", &hf_home)
-        .env("HUGGINGFACE_HUB_CACHE", &hf_hub_cache);
+        .env("HUGGINGFACE_HUB_CACHE", &hf_hub_cache)
+        .env("SKIP_TTS_VALIDATION", "true");  // Skip pre-validation in bundle - models are pre-bundled
 
     // Configure espeak-ng data path for Kokoro TTS phonemization
     // espeak-ng-data is bundled in the venv's espeakng_loader package
     let espeak_data_path = server_dir
         .join(".venv/lib/python3.12/site-packages/espeakng_loader/espeak-ng-data");
+
+    // Set MULTIPLE environment variables for espeak/phonemizer compatibility
     cmd.env("ESPEAK_DATA_PATH", &espeak_data_path);
+    cmd.env("PHONEMIZER_ESPEAK_PATH", &espeak_data_path);  // For phonemizer library
+    cmd.env("PHONEMIZER_ESPEAK_LIBRARY",
+            server_dir.join(".venv/lib/python3.12/site-packages/espeakng_loader/libespeak-ng.dylib"));
+
     println!("   ESPEAK_DATA_PATH: {:?}", espeak_data_path);
 
     // CRITICAL: Create/update /tmp/espeak-ng-data symlink

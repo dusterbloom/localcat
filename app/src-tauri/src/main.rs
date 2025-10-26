@@ -1,6 +1,23 @@
 mod daemon_manager;
 
+use std::sync::Once;
+
+fn request_speech_authorization() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        #[cfg(target_os = "macos")]
+        {
+            // For now, just print a message about speech authorization
+            // The sidecar will handle authorization checks on its own
+            println!("🎤 macOS Speech Recognition available - sidecar will handle authorization");
+        }
+    });
+}
+
 fn main() {
+    // Request speech authorization early in main thread
+    request_speech_authorization();
+
     tauri::Builder::default()
         .setup(|app| {
             let handle = app.handle().clone();

@@ -14,10 +14,13 @@
 #   - Parakeet STT: 2.3GB
 #   - Smart-turn: 362MB
 #   - Speaker recognition (ECAPA-TDNN): 85MB ← CRITICAL for voice enrollment
-#   - Kokoro MLX TTS: 160MB ← Better voice quality than Siri
+#   - Kokoro TTS models: 785MB total (3 variants for max compatibility)
+#     • Kokoro PyTorch (hexgrad): 313MB ← Required by kokoro_pytorch
+#     • Kokoro MLX (mlx-community): 160MB ← Required by kokoro_mlx
+#     • Kokoro Alternative (prince-canuma): 312MB ← Backup option
 #   - Python venv: ~1.8GB (or ~1.3GB with SLIM_VENV=1)
 #   - Server code: ~10MB
-#   Total: ~3.8GB (or ~4.6GB with Kokoro ONNX on Windows/Linux)
+#   Total: ~4.4GB (or ~5.2GB with Kokoro ONNX on Windows/Linux)
 
 set -e  # Exit on error
 
@@ -71,14 +74,69 @@ if [ ! -d "../../client/out" ]; then
   exit 1
 fi
 
+# Step 2.1: Clean extended attributes from source files BEFORE bundling
+echo "  Cleaning extended attributes from source files..."
+echo "    Removing xattr from server/.venv (prevents codesign 'Operation not permitted')"
+xattr -cr ../server/.venv 2>/dev/null || true
+echo "    Removing xattr from server/ directory"
+xattr -cr ../server 2>/dev/null || true
+echo "    Ensuring files are writable"
+chmod -R u+rwX ../server/.venv 2>/dev/null || true
+echo "  ✅ Source files cleaned"
+
 # Build with explicit --bundles app flag (required for .app creation)
 echo "  Running: npx tauri build --bundles app --target aarch64-apple-darwin"
+TAURI_BUILD_FAILED=0
 if ! npx tauri build --bundles app --target aarch64-apple-darwin; then
-    echo "❌ Error: tauri build failed"
+    TAURI_BUILD_FAILED=1
+    echo "⚠️  Warning: tauri build failed (likely codesign issue)"
     echo "Debug info:"
     echo "  Current directory: $(pwd)"
     echo "  Binary exists: $(ls -la target/release/localcat 2>/dev/null || echo 'NO')"
     echo "  Bundle exists: $(ls -la target/release/bundle/macos/ 2>/dev/null || echo 'NO')"
+fi
+
+# Check if .app bundle was created despite signing failure
+TARGET_DIR_TMP="target/aarch64-apple-darwin/release"
+if [ $TAURI_BUILD_FAILED -eq 1 ] && [ -d "$TARGET_DIR_TMP/bundle/macos/LocalCat.app" ]; then
+    echo ""
+    echo "🔄 Bundle was created but signing failed. Attempting manual cleanup and re-sign..."
+
+    # Clean the bundle
+    APP_BUNDLE="$TARGET_DIR_TMP/bundle/macos/LocalCat.app"
+    echo "  Stripping extended attributes from bundle..."
+    xattr -cr "$APP_BUNDLE" 2>/dev/null || true
+
+    echo "  Fixing file permissions..."
+    chmod -R u+rwX "$APP_BUNDLE" 2>/dev/null || true
+
+    echo "  Removing quarantine flags..."
+    xattr -dr com.apple.quarantine "$APP_BUNDLE" 2>/dev/null || true
+
+    # Retry signing with our certificate
+    SIGNING_IDENTITY="Developer ID Application: Giuseppe Littera (LB4S6GSBK9)"
+    echo "  Re-signing bundle with: $SIGNING_IDENTITY"
+
+    # Sign binary first
+    codesign --force --sign "$SIGNING_IDENTITY" --timestamp \
+        "$APP_BUNDLE/Contents/MacOS/localcat" || {
+        echo "❌ Failed to sign binary"; exit 1;
+    }
+    echo "  ✅ Binary signed"
+
+    # Sign the whole bundle
+    codesign --force --sign "$SIGNING_IDENTITY" --timestamp \
+        --deep "$APP_BUNDLE" || {
+        echo "❌ Failed to sign app bundle"; exit 1;
+    }
+    echo "  ✅ App bundle signed successfully"
+
+    TAURI_BUILD_FAILED=0  # Mark as successful
+fi
+
+# Exit if build still failed
+if [ $TAURI_BUILD_FAILED -eq 1 ]; then
+    echo "❌ Error: tauri build failed and could not recover"
     exit 1
 fi
 
@@ -190,19 +248,25 @@ else
       find "$TAURI_SERVER_DIR/.venv" -type d -name "tests" -prune -exec rm -rf {} + || true
       echo "  ✅ venv pruning complete"
 
-      # CRITICAL: Sign eSpeak dylib to prevent macOS Sequoia SIGKILL
-      # This fixes code signature violation when Kokoro MLX loads eSpeak for phonemization
+      # CRITICAL: Patch and sign eSpeak dylib for Kokoro PyTorch compatibility
+      # This fixes hardcoded CI build path issue in libespeak-ng.dylib
       ESPEAK_DYLIB="$TAURI_SERVER_DIR/.venv/lib/python3.12/site-packages/espeakng_loader/libespeak-ng.dylib"
       if [ -f "$ESPEAK_DYLIB" ]; then
-        echo "  🔐 Signing eSpeak dylib for production bundle..."
-        if codesign --force --deep --sign - "$ESPEAK_DYLIB" 2>/dev/null; then
-          echo "  ✅ eSpeak dylib signed successfully"
+        echo "  🔧 Patching eSpeak dylib to use /tmp/espeak-ng-data..."
+        if python3 "$(dirname "$0")/patch-espeak-dylib.py" "$ESPEAK_DYLIB"; then
+          echo "  ✅ eSpeak dylib patched successfully"
+          echo "  🔐 Signing patched eSpeak dylib for production bundle..."
+          if codesign --force --deep --sign - "$ESPEAK_DYLIB" 2>/dev/null; then
+            echo "  ✅ eSpeak dylib signed successfully"
+          else
+            echo "  ⚠️  Failed to sign eSpeak dylib (continuing, may cause runtime issues)"
+          fi
         else
-          echo "  ⚠️  Failed to sign eSpeak dylib (continuing, may cause runtime issues)"
+          echo "  ⚠️  Failed to patch eSpeak dylib (continuing, may cause phontab errors)"
         fi
       else
         echo "  ⚠️  eSpeak dylib not found at: $ESPEAK_DYLIB"
-        echo "     Kokoro MLX TTS may fail if this library is missing!"
+        echo "     Kokoro PyTorch TTS may fail if this library is missing!"
       fi
 
       # Optional: aggressively slim venv for platform-specific builds
@@ -299,8 +363,8 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
 
   # Copy Parakeet STT model (~2.3GB - required for all platforms)
   if [ -d "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3" ]; then
-    # Use rsync for reliable copy with extended attributes and proper error checking
-    if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/" \
+    # Use rsync for reliable copy with extended attributes and proper error checking (-L follows symlinks)
+    if rsync -aL --exclude='.cache' "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/" \
       "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/"; then
       echo "      ✅ Parakeet STT (~2.3GB)"
     else
@@ -311,7 +375,7 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
 
   # Copy Smart-turn model (~362MB - required for all platforms)
   if [ -d "../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2" ]; then
-    if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2/" \
+    if rsync -aL --exclude='.cache' "../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2/" \
       "$TAURI_SERVER_DIR/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2/"; then
       echo "      ✅ Smart-turn (~362MB)"
     else
@@ -322,7 +386,7 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
 
   # Copy SpeechBrain speaker recognition model (~85MB - CRITICAL for voice enrollment)
   if [ -d "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb" ]; then
-    if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/" \
+    if rsync -aL --exclude='.cache' "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/" \
       "$TAURI_SERVER_DIR/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/"; then
       echo "      ✅ SpeechBrain ECAPA-TDNN speaker recognition (~85MB)"
     else
@@ -333,7 +397,7 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
 
   # Copy emotion recognition model if present (optional feature)
   if [ -d "../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP" ]; then
-    if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP/" \
+    if rsync -aL --exclude='.cache' "../server/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP/" \
       "$TAURI_SERVER_DIR/models/hf_cache/hub/models--speechbrain--emotion-recognition-wav2vec2-IEMOCAP/"; then
       echo "      ✅ SpeechBrain emotion recognition (optional)"
     else
@@ -345,28 +409,185 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
   if [ "$BUILD_TARGET" = "macos" ]; then
     echo "    Copying Kokoro MLX TTS models for macOS..."
 
-    # Copy Kokoro MLX model from HF cache (required for in-process TTS)
-    if [ -d "../server/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16" ]; then
-      if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16/" \
-        "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16/"; then
-        echo "      ✅ Kokoro MLX (~160MB)"
-      else
-        echo "      ⚠️  Failed to copy Kokoro MLX model"
+    # Copy Kokoro PyTorch model from HF cache (required for kokoro_pytorch engine)
+    echo "      🔍 Searching for Kokoro PyTorch model..."
+
+    # Try multiple cache locations
+    FOUND_MODEL=false
+    MODEL_DIRS=(
+      "../server/models/hf_cache/hub/models--hexgrad--Kokoro-82M"
+      "$HOME/AI-Models/shared/huggingface/hub/models--hexgrad--Kokoro-82M"
+      "$HOME/.cache/huggingface/hub/models--hexgrad--Kokoro-82M"
+    )
+
+    for MODEL_DIR in "${MODEL_DIRS[@]}"; do
+      if [ -d "$MODEL_DIR" ]; then
+        echo "      🔍 Found model directory: $MODEL_DIR"
+
+        # Check if this is a snapshot directory structure
+        if [ -d "$MODEL_DIR/snapshots" ]; then
+          echo "      📁 Detected snapshot structure, finding latest snapshot..."
+          LATEST_SNAPSHOT=$(find "$MODEL_DIR/snapshots" -maxdepth 1 -type d ! -path "$MODEL_DIR/snapshots" | head -1)
+          if [ -n "$LATEST_SNAPSHOT" ] && [ -d "$LATEST_SNAPSHOT" ]; then
+            MODEL_DIR="$LATEST_SNAPSHOT"
+            echo "      📍 Using snapshot: $MODEL_DIR"
+          else
+            echo "      ⚠️  No snapshots found, skipping..."
+            continue
+          fi
+        fi
+
+        # Verify required files exist before copying
+        REQUIRED_FILES=("config.json" "kokoro-v1_0.pth")
+        ALL_FILES_PRESENT=true
+
+        for FILE in "${REQUIRED_FILES[@]}"; do
+          if [ ! -f "$MODEL_DIR/$FILE" ]; then
+            echo "      ❌ Missing required file: $FILE"
+            ALL_FILES_PRESENT=false
+          fi
+        done
+
+        if [ "$ALL_FILES_PRESENT" = true ]; then
+          echo "      ✅ All required files present, copying..."
+
+          # Create destination directory
+          mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub/models--hexgrad--Kokoro-82M"
+
+          # Use rsync with verification (-L follows symlinks to copy actual blob files)
+          if rsync -avL --exclude='cache' --exclude='*.lock' --exclude='refs' --exclude='.git' \
+            "$MODEL_DIR/" "$TAURI_SERVER_DIR/models/hf_cache/hub/models--hexgrad--Kokoro-82M/"; then
+
+            # Verify copied files
+            COPIED_FILES=true
+            for FILE in "${REQUIRED_FILES[@]}"; do
+              if [ ! -f "$TAURI_SERVER_DIR/models/hf_cache/hub/models--hexgrad--Kokoro-82M/$FILE" ]; then
+                echo "      ❌ Failed to copy: $FILE"
+                COPIED_FILES=false
+              fi
+            done
+
+            if [ "$COPIED_FILES" = true ]; then
+              # Get actual model size
+              MODEL_SIZE=$(du -sh "$TAURI_SERVER_DIR/models/hf_cache/hub/models--hexgrad--Kokoro-82M" | cut -f1)
+              echo "      ✅ Kokoro PyTorch copied successfully ($MODEL_SIZE) - hexgrad version"
+              FOUND_MODEL=true
+              break
+            else
+              echo "      ❌ File verification failed after copy"
+              rm -rf "$TAURI_SERVER_DIR/models/hf_cache/hub/models--hexgrad--Kokoro-82M"
+            fi
+          else
+            echo "      ❌ rsync copy failed"
+          fi
+        else
+          echo "      ⚠️  Skipping incomplete model directory"
+        fi
       fi
-    else
-      echo "      ⚠️  Kokoro MLX model not found in cache"
+    done
+
+    if [ "$FOUND_MODEL" = false ]; then
+      echo "      ❌ Kokoro PyTorch model not found in any cache"
+      echo "         Required for kokoro_pytorch engine - run server once to download"
+      echo "         Searched locations:"
+      for MODEL_DIR in "${MODEL_DIRS[@]}"; do
+        echo "           - $MODEL_DIR"
+      done
+    fi
+
+    # Copy Kokoro MLX model from HF cache (required for in-process TTS)
+    echo "      🔍 Searching for Kokoro MLX model..."
+    FOUND_MLX_MODEL=false
+    MLX_MODEL_DIRS=(
+      "../server/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16"
+      "$HOME/AI-Models/shared/huggingface/hub/models--mlx-community--Kokoro-82M-bf16"
+      "$HOME/.cache/huggingface/hub/models--mlx-community--Kokoro-82M-bf16"
+    )
+
+    for MODEL_DIR in "${MLX_MODEL_DIRS[@]}"; do
+      if [ -d "$MODEL_DIR" ]; then
+        echo "      🔍 Found MLX model directory: $MODEL_DIR"
+
+        # Check if this is a snapshot directory structure
+        if [ -d "$MODEL_DIR/snapshots" ]; then
+          echo "      📁 Detected MLX snapshot structure, finding latest snapshot..."
+          LATEST_SNAPSHOT=$(find "$MODEL_DIR/snapshots" -maxdepth 1 -type d ! -path "$MODEL_DIR/snapshots" | head -1)
+          if [ -n "$LATEST_SNAPSHOT" ] && [ -d "$LATEST_SNAPSHOT" ]; then
+            MODEL_DIR="$LATEST_SNAPSHOT"
+            echo "      📍 Using MLX snapshot: $MODEL_DIR"
+          else
+            echo "      ⚠️  No MLX snapshots found, skipping..."
+            continue
+          fi
+        fi
+
+        # Verify required files exist before copying
+        MLX_REQUIRED_FILES=("config.json" "kokoro-v1_0.safetensors")
+        ALL_MLX_FILES_PRESENT=true
+
+        for FILE in "${MLX_REQUIRED_FILES[@]}"; do
+          if [ ! -f "$MODEL_DIR/$FILE" ]; then
+            echo "      ❌ Missing required MLX file: $FILE"
+            ALL_MLX_FILES_PRESENT=false
+          fi
+        done
+
+        if [ "$ALL_MLX_FILES_PRESENT" = true ]; then
+          echo "      ✅ All required MLX files present, copying..."
+
+          # Create destination directory
+          mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16"
+
+          # Use rsync with verification (-L follows symlinks to copy actual blob files)
+          if rsync -avL --exclude='cache' --exclude='*.lock' --exclude='refs' --exclude='.git' \
+            "$MODEL_DIR/" "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16/"; then
+
+            # Verify copied files
+            COPIED_MLX_FILES=true
+            for FILE in "${MLX_REQUIRED_FILES[@]}"; do
+              if [ ! -f "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16/$FILE" ]; then
+                echo "      ❌ Failed to copy MLX file: $FILE"
+                COPIED_MLX_FILES=false
+              fi
+            done
+
+            if [ "$COPIED_MLX_FILES" = true ]; then
+              # Get actual model size
+              MODEL_SIZE=$(du -sh "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16" | cut -f1)
+              echo "      ✅ Kokoro MLX copied successfully ($MODEL_SIZE)"
+              FOUND_MLX_MODEL=true
+              break
+            else
+              echo "      ❌ MLX file verification failed after copy"
+              rm -rf "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16"
+            fi
+          else
+            echo "      ❌ MLX rsync copy failed"
+          fi
+        else
+          echo "      ⚠️  Skipping incomplete MLX model directory"
+        fi
+      fi
+    done
+
+    if [ "$FOUND_MLX_MODEL" = false ]; then
+      echo "      ⚠️  Kokoro MLX model not found in any cache"
       echo "         Run server once to download: cd ../server && python bot.py"
+      echo "         Searched locations:"
+      for MODEL_DIR in "${MLX_MODEL_DIRS[@]}"; do
+        echo "           - $MODEL_DIR"
+      done
     fi
 
     # Also copy prince-canuma variant if present (alternative model)
     if [ -d "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M" ]; then
-      if rsync -a --exclude='.cache' "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/" \
+      if rsync -a --exclude='cache' --exclude='*.lock' "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/" \
         "$TAURI_SERVER_DIR/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/"; then
-        echo "      ✅ Kokoro MLX (prince-canuma variant)"
+        echo "      ✅ Kokoro Alternative (~312MB) - prince-canuma variant"
       fi
     fi
 
-    echo "      Note: Using Kokoro MLX for better voice quality than Siri"
+    echo "      Note: Bundling all Kokoro variants for max compatibility"
   else
     echo "    Copying Kokoro TTS (required for $BUILD_TARGET - no Siri available)..."
 
@@ -417,6 +638,40 @@ if [ -f "$TAURI_SERVER_DIR/.env" ]; then
   fi
 else
   echo "  ⚠️  .env missing in bundle ($TAURI_SERVER_DIR/.env)"
+fi
+
+# Step 3.9: Sign all dylibs and .so files in bundle (CRITICAL for macOS security)
+echo "🔐 Step 3.9/6: Signing all dylib and .so files in bundle..."
+APP_PATH="$TARGET_DIR/bundle/macos/LocalCat.app"
+SIGNING_IDENTITY="Developer ID Application: Giuseppe Littera (LB4S6GSBK9)"
+
+# Count total files to sign
+DYLIB_COUNT=$(find "$APP_PATH" -name "*.dylib" 2>/dev/null | wc -l | tr -d ' ')
+SO_COUNT=$(find "$APP_PATH" -name "*.so" 2>/dev/null | wc -l | tr -d ' ')
+TOTAL_COUNT=$((DYLIB_COUNT + SO_COUNT))
+
+echo "  Found $DYLIB_COUNT dylib files and $SO_COUNT .so files to sign"
+
+if [ $TOTAL_COUNT -gt 0 ]; then
+  # Sign all .dylib files
+  if [ $DYLIB_COUNT -gt 0 ]; then
+    echo "  Signing dylib files..."
+    find "$APP_PATH" -name "*.dylib" -exec codesign -f --timestamp \
+      -s "$SIGNING_IDENTITY" {} \; 2>&1 | grep -v "replacing existing signature" || true
+    echo "  ✅ Signed $DYLIB_COUNT dylib files"
+  fi
+
+  # Sign all .so files (Python extensions)
+  if [ $SO_COUNT -gt 0 ]; then
+    echo "  Signing .so files..."
+    find "$APP_PATH" -name "*.so" -exec codesign -f --timestamp \
+      -s "$SIGNING_IDENTITY" {} \; 2>&1 | grep -v "replacing existing signature" || true
+    echo "  ✅ Signed $SO_COUNT .so files"
+  fi
+
+  echo "  ✅ All dynamic libraries signed successfully"
+else
+  echo "  ⚠️  No dylib or .so files found to sign"
 fi
 
 # Step 4: Verify the bundle
