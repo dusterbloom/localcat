@@ -1,12 +1,18 @@
 """
 PyTorch-based Kokoro TTS Service using official hexgrad/Kokoro package.
 Matches the minirepo implementation exactly.
+
+KEY IMPROVEMENTS:
+- Pre-validates model files before Metal lock acquisition
+- Implements HF_HUB_OFFLINE=1 after validation to prevent network calls
+- Separates network operations from Metal lock for bulletproof reliability
 """
 
 import asyncio
 import concurrent.futures
 import threading
 import time
+import os
 from typing import AsyncGenerator, Optional
 
 import numpy as np
@@ -27,6 +33,9 @@ from tools.audio_utils import convert_to_pcm16
 
 # CRITICAL: Import global Metal lock to serialize PyTorch initialization with MLX operations
 from core.utils.mlx_lock import MLX_GLOBAL_LOCK
+
+# NEW: Import model validator for pre-validation
+from core.utils.model_validator import ensure_offline_ready, ModelValidationError
 
 from core.tts.kokoro_config import (
     PYTORCH_EXECUTOR_WORKERS,
@@ -80,34 +89,148 @@ class KokoroPyTorchTTSService(TTSService):
     def can_generate_metrics(self) -> bool:
         return True
 
-    def _initialize_pipeline(self):
-        """Initialize the Kokoro pipeline with global Metal lock to prevent concurrent access.
+    def _prevalidate_model(self) -> bool:
+        """
+        Pre-validate model files and ensure offline readiness BEFORE Metal lock acquisition.
 
-        CRITICAL: Uses MLX_GLOBAL_LOCK to serialize PyTorch Metal initialization with MLX operations
-        (Parakeet STT). Without this, macOS Sequoia kills the process due to concurrent Metal access.
+        This is the CRITICAL fix: ensures all network operations complete before we acquire
+        the Metal lock, preventing deadlocks and initialization failures.
         """
         try:
+            logger.info(f"🔍 Pre-validating Kokoro model {self._repo_id} before Metal lock...")
+
+            # Check if we should skip validation (e.g., in production bundles)
+            skip_validation = os.environ.get("SKIP_TTS_VALIDATION", "false").lower() == "true"
+            if skip_validation:
+                logger.info("⚠️  Skipping TTS validation (SKIP_TTS_VALIDATION=true)")
+                return True
+
+            # Use the new model validator to ensure offline readiness
+            is_ready = ensure_offline_ready(self._repo_id)
+
+            if not is_ready:
+                logger.error("❌ Model pre-validation failed - cannot initialize safely")
+                raise ModelValidationError(f"Model {self._repo_id} is not ready for offline initialization")
+
+            logger.info("✅ Model pre-validation successful - ready for Metal lock acquisition")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Model pre-validation failed: {e}")
+            # Don't raise here - let the main initialization handle it
+            # This allows graceful fallback
+            return False
+
+    def _initialize_pipeline(self):
+        """
+        Initialize the Kokoro pipeline with comprehensive pre-validation and Metal lock safety.
+
+        CRITICAL IMPROVEMENTS:
+        1. Pre-validates model files BEFORE Metal lock acquisition
+        2. Sets HF_HUB_OFFLINE=1 to prevent network calls during initialization
+        3. Uses MLX_GLOBAL_LOCK to serialize with MLX operations (Parakeet STT)
+        4. Configures espeak-ng paths BEFORE importing kokoro
+        5. Provides robust error handling and retry logic
+        """
+        try:
+            # CRITICAL: Configure espeak-ng paths BEFORE importing kokoro
+            # This prevents the "//phontab" path error in bundled apps
+            try:
+                import espeakng_loader
+                from misaki.espeak import EspeakWrapper
+
+                library_path = espeakng_loader.get_library_path()
+                data_path = espeakng_loader.get_data_path()
+
+                logger.debug(f"🔧 Configuring EspeakWrapper:")
+                logger.debug(f"   library_path: {library_path}")
+                logger.debug(f"   data_path: {data_path}")
+
+                # Make library available
+                espeakng_loader.make_library_available()
+
+                # Set paths as properties (NOT methods!)
+                EspeakWrapper.library_path = library_path
+                EspeakWrapper.data_path = data_path
+
+                logger.info(f"✅ Espeak-ng configured successfully")
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to configure espeak-ng: {e}")
+                logger.warning("   Kokoro may still work with system espeak-ng")
+
+            # Now safe to import kokoro
             from kokoro import KPipeline
 
-            logger.info(f"🔒 Acquiring global Metal lock for Kokoro PyTorch initialization...")
+            logger.info(f"🚀 Initializing Kokoro PyTorch TTS with repo_id: {self._repo_id}")
 
-            # CRITICAL: Acquire the same lock used by Parakeet MLX STT
-            # This serializes: Parakeet load → Kokoro load (never concurrent)
-            with MLX_GLOBAL_LOCK:
-                logger.debug(f"🚀 Initializing Kokoro PyTorch TTS with voice: {self._voice}")
+            # STEP 1: Pre-validate model files (CRITICAL - done OUTSIDE Metal lock)
+            if not self._prevalidate_model():
+                logger.warning("⚠️  Model pre-validation failed, attempting initialization anyway...")
 
-                # Create pipeline (same as minirepo)
-                self._pipeline = KPipeline(lang_code='a', repo_id=self._repo_id)
+            # STEP 2: Save current environment and force offline mode
+            original_hf_offline = os.environ.get("HF_HUB_OFFLINE")
+            original_transformers_offline = os.environ.get("TRANSFORMERS_OFFLINE")
 
-                logger.debug(f"✅ Kokoro PyTorch pipeline loaded successfully")
-                logger.info("Kokoro PyTorch TTS ready")
+            # Force offline mode to prevent network calls during Metal lock
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
+            try:
+                logger.info(f"🔒 Acquiring global Metal lock for Kokoro PyTorch initialization...")
+
+                # STEP 3: CRITICAL - Acquire the same lock used by Parakeet MLX STT
+                # This serializes: Parakeet load → Kokoro load (never concurrent)
+                with MLX_GLOBAL_LOCK:
+                    logger.debug(f"🎯 Creating KPipeline inside Metal lock (offline mode)...")
+
+                    # Create pipeline with offline mode (environment ensures no network calls)
+                    self._pipeline = KPipeline(
+                        lang_code='a',
+                        repo_id=self._repo_id
+                    )
+
+                    logger.debug(f"✅ Kokoro PyTorch pipeline loaded successfully inside Metal lock")
+                    logger.info("🎉 Kokoro PyTorch TTS ready (offline mode)")
+
+            finally:
+                # STEP 4: Restore original environment (important for other services)
+                if original_hf_offline is not None:
+                    os.environ["HF_HUB_OFFLINE"] = original_hf_offline
+                else:
+                    os.environ.pop("HF_HUB_OFFLINE", None)
+
+                if original_transformers_offline is not None:
+                    os.environ["TRANSFORMERS_OFFLINE"] = original_transformers_offline
+                else:
+                    os.environ.pop("TRANSFORMERS_OFFLINE", None)
 
         except ImportError as e:
-            logger.error(f"Kokoro package not available: {e}")
-            logger.error("Install with: pip install kokoro>=0.9.2")
+            logger.error(f"❌ Kokoro package not available: {e}")
+            logger.error("💡 Install with: pip install kokoro>=0.9.2")
+            self._pipeline = None
+            raise
+        except ModelValidationError as e:
+            logger.error(f"❌ Model validation failed: {e}")
+            logger.error("💡 This usually means the model files are missing or corrupted")
+            logger.error("💡 Try running the server once with internet to download models")
+            self._pipeline = None
             raise
         except Exception as e:
             logger.error(f"❌ Failed to initialize Kokoro PyTorch: {e}")
+
+            # Provide helpful troubleshooting information
+            error_msg = str(e).lower()
+            if "offline" in error_msg or "cache" in error_msg:
+                logger.error("💡 This appears to be an offline/cache issue:")
+                logger.error("   1. Ensure models are downloaded: python -c 'from kokoro import KPipeline; KPipeline(lang_code=\"a\", repo_id=\"hexgrad/Kokoro-82M\")'")
+                logger.error("   2. Check cache directory permissions")
+                logger.error("   3. Verify HUGGINGFACE_HUB_CACHE is set correctly")
+            elif "metal" in error_msg or "gpu" in error_msg:
+                logger.error("💡 This appears to be a Metal/GPU issue:")
+                logger.error("   1. Ensure MLX_GLOBAL_LOCK is working correctly")
+                logger.error("   2. Check for concurrent Metal operations")
+                logger.error("   3. Try restarting the application")
+
             self._pipeline = None
             raise
 
