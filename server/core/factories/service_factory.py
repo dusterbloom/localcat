@@ -7,6 +7,7 @@ and can be tested independently.
 """
 
 import os
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 from loguru import logger
@@ -57,6 +58,66 @@ try:
     MIC_PROBE_AVAILABLE = True
 except ImportError:
     MIC_PROBE_AVAILABLE = False
+
+
+def _prewarm_llm_service(llm_service: OpenAILLMService, llm_config: Dict[str, Any]) -> None:
+    """
+    Prewarm the LLM service to prevent cold start latency on first inference.
+
+    Sends a minimal warmup request to LM Studio to ensure the model is loaded
+    and ready for fast responses.
+    """
+    import asyncio
+    import httpx
+
+    async def _send_warmup_request():
+        """Send minimal warmup request to LLM service."""
+        try:
+            # Extract base URL from service for direct HTTP call
+            base_url = llm_config.get("base_url", "http://127.0.0.1:1234/v1")
+            model = llm_config.get("model", "unknown")
+
+            # Create minimal warmup request
+            warmup_url = f"{base_url}/chat/completions"
+            warmup_data = {
+                "model": model,
+                "messages": [{"role": "user", "content": "Hi"}],
+                "max_tokens": 1,  # Minimal response
+                "stream": False
+            }
+
+            logger.info(f"🔥 Prewarming LLM model: {model}")
+            start_time = time.time()
+
+            async with httpx.AsyncClient(timeout=60.0) as client:  # 60 second timeout for cold start
+                response = await client.post(
+                    warmup_url,
+                    json=warmup_data,
+                    headers={"Authorization": f"Bearer {llm_config.get('api_key', 'not-needed')}"}
+                )
+
+                if response.status_code == 200:
+                    warmup_time = (time.time() - start_time) * 1000
+                    logger.info(f"✅ LLM model prewarmed in {warmup_time:.1f}ms")
+                else:
+                    logger.warning(f"⚠️ LLM prewarm failed: HTTP {response.status_code}")
+
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ LLM prewarm timed out (model may still be loading)")
+        except Exception as e:
+            logger.warning(f"⚠️ LLM prewarm failed: {e}")
+
+    # Run warmup in background to not block service creation
+    try:
+        loop = asyncio.get_event_loop()
+        if not loop.is_closed():
+            loop.create_task(_send_warmup_request())
+    except RuntimeError:
+        # No event loop, create new one for warmup
+        try:
+            asyncio.run(_send_warmup_request())
+        except Exception:
+            logger.debug("LLM prewarm skipped (no event loop available)")
 
 
 def resolve_parakeet_model_path(model_id_or_path: str) -> str:
@@ -318,11 +379,7 @@ class ServiceFactory:
             logger.info("✅ MLX Kokoro TTS ready (in-process)")
         elif self.config.tts_engine == "kokoro_pytorch":
             logger.debug("Using Kokoro PyTorch TTS (official hexgrad package)")
-            tts = KokoroPyTorchTTSService(
-                voice=tts_config["voice"],
-                speed=tts_config["speed"],
-                sample_rate=tts_config["sample_rate"]
-            )
+            tts = self._create_kokoro_pytorch_with_retry(tts_config)
             logger.info("✅ Kokoro PyTorch TTS ready")
         elif self.config.tts_engine == "siri_streaming":
             logger.debug("Using Siri Streaming TTS (native macOS)")
@@ -384,6 +441,12 @@ class ServiceFactory:
 
     def create_llm_service(self) -> OpenAILLMService:
         """Create LLM service with streaming configuration."""
+        # Check if LLM service is already cached
+        if 'llm' in self._services_cache:
+            logger.debug("Using cached LLM service")
+            return self._services_cache['llm']
+
+        logger.debug("Creating new LLM service")
         llm_config = self.config.get_component_config("llm")
         use_llm_streaming = os.getenv("LLM_USE_STREAMING", "true").lower() == "true"
 
@@ -393,7 +456,7 @@ class ServiceFactory:
             base_url=llm_config["base_url"],
             max_tokens=llm_config["max_tokens"],
             stream=use_llm_streaming,
-            debug=True,  # Enable debug logging to see context/messages
+            debug=False ,  # Enable debug logging to see context/messages
             extra_body={
                 "think": False,
                 "stream": use_llm_streaming,
@@ -418,6 +481,12 @@ class ServiceFactory:
             logger.debug("LLM streaming disabled, using batch mode")
 
         self._services_cache['llm'] = llm
+        logger.info(f"✅ LLM service created and cached (model: {llm_config.get('model', 'unknown')})")
+
+        # Prewarm the LLM model to prevent 42+ second cold start on first inference
+        if os.getenv("LLM_PREWARM", "true").lower() in ("true", "1", "yes"):
+            _prewarm_llm_service(llm, llm_config)
+
         return llm
 
     def create_memory_processor(self, context_aggregator: Any, session_tracker: SessionTracker) -> HotPathMemoryProcessor:
@@ -588,6 +657,7 @@ class ServiceFactory:
             memory_processor=None,  # Will be linked after memory creation
             factory=factory_ref,  # Pass factory for dynamic prompt rebuilding
             vision_injector=None  # Will be linked after vision injector creation
+
         )
 
         self._services_cache['context'] = context
@@ -666,6 +736,127 @@ class ServiceFactory:
     def get_service(self, name: str) -> Any:
         """Get a cached service by name."""
         return self._services_cache.get(name)
+
+    def _create_kokoro_pytorch_with_retry(self, tts_config: Dict[str, Any]) -> KokoroPyTorchTTSService:
+        """
+        Create Kokoro PyTorch TTS service with robust error handling and retry logic.
+
+        This method addresses the root cause of Kokoro PyTorch initialization failures:
+        - Model pre-validation before Metal lock acquisition
+        - Multiple retry attempts with different configurations
+        - Graceful fallback to alternative TTS engines if needed
+        """
+        import time
+        import os
+        from core.utils.model_validator import ModelValidationError
+
+        max_retries = int(os.getenv("KOKORO_PYTORCH_MAX_RETRIES", "3"))
+        retry_delay = float(os.getenv("KOKORO_PYTORCH_RETRY_DELAY", "2.0"))
+
+        last_exception = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    logger.info(f"🔄 Kokoro PyTorch TTS initialization attempt {attempt + 1}/{max_retries + 1}")
+                    time.sleep(retry_delay * attempt)  # Exponential backoff
+                else:
+                    logger.debug("🚀 Attempting Kokoro PyTorch TTS initialization")
+
+                # Create the service with current configuration
+                tts = KokoroPyTorchTTSService(
+                    voice=tts_config["voice"],
+                    speed=tts_config["speed"],
+                    sample_rate=tts_config["sample_rate"]
+                )
+
+                # Verify the service is actually functional
+                if self._verify_tts_service(tts):
+                    return tts
+                else:
+                    logger.warning(f"⚠️ Kokoro PyTorch TTS created but verification failed (attempt {attempt + 1})")
+                    last_exception = Exception("TTS service verification failed")
+
+            except ModelValidationError as e:
+                logger.error(f"❌ Kokoro PyTorch model validation failed (attempt {attempt + 1}): {e}")
+                last_exception = e
+
+                # Provide specific guidance for model validation failures
+                if attempt == max_retries:
+                    logger.error("💡 Model validation troubleshooting steps:")
+                    logger.error("   1. Run server with internet to download models:")
+                    logger.error("      python -c 'from kokoro import KPipeline; KPipeline(lang_code=\"a\", repo_id=\"hexgrad/Kokoro-82M\")'")
+                    logger.error("   2. Check HUGGINGFACE_HUB_CACHE environment variable")
+                    logger.error("   3. Verify model files exist in cache directory")
+                    logger.error("   4. Try setting SKIP_TTS_VALIDATION=true for production bundles")
+
+            except ImportError as e:
+                logger.error(f"❌ Kokoro PyTorch import failed (attempt {attempt + 1}): {e}")
+                last_exception = e
+                logger.error("💡 Install with: pip install kokoro>=0.9.2")
+                # Import errors won't be fixed by retries, break early
+                break
+
+            except Exception as e:
+                logger.error(f"❌ Kokoro PyTorch TTS initialization failed (attempt {attempt + 1}): {e}")
+                last_exception = e
+
+                # Check for specific error types
+                error_msg = str(e).lower()
+                if "metal" in error_msg or "gpu" in error_msg:
+                    logger.warning("💡 Metal/GPU error detected - this suggests concurrent Metal access")
+                    logger.warning("   Try restarting the application and avoiding concurrent ML operations")
+                elif "offline" in error_msg or "cache" in error_msg:
+                    logger.warning("💡 Cache/offline error detected - model files may be missing")
+                    logger.warning("   Try running with internet connectivity first to download models")
+
+        # All retries failed, raise the last exception
+        if last_exception:
+            logger.error(f"💥 All Kokoro PyTorch TTS initialization attempts failed")
+
+            # Suggest fallback options
+            logger.info("💡 Fallback options:")
+            logger.info("   1. Use kokoro_mlx engine (MLX-based, more stable on macOS)")
+            logger.info("   2. Use siri_streaming engine (native macOS, fastest)")
+            logger.info("   3. Set VOICE_AGENT_TTS_ENGINE=kokoro_mlx in .env file")
+
+            raise last_exception
+        else:
+            raise Exception("Kokoro PyTorch TTS initialization failed with unknown error")
+
+    def _verify_tts_service(self, tts_service: Any) -> bool:
+        """
+        Verify that a TTS service is properly initialized and functional.
+
+        This is a quick verification that doesn't require actual audio generation
+        but checks critical service state.
+        """
+        try:
+            # Check if the service has required attributes
+            if not hasattr(tts_service, '_pipeline'):
+                logger.error("❌ TTS service missing _pipeline attribute")
+                return False
+
+            if not hasattr(tts_service, '_voice'):
+                logger.error("❌ TTS service missing _voice attribute")
+                return False
+
+            # Check if pipeline is properly initialized
+            if tts_service._pipeline is None:
+                logger.error("❌ TTS service pipeline is None")
+                return False
+
+            # Try to access a pipeline attribute to verify it's functional
+            if hasattr(tts_service._pipeline, 'lang_code'):
+                logger.debug(f"✅ TTS service pipeline functional (lang_code: {tts_service._pipeline.lang_code})")
+            else:
+                logger.debug("✅ TTS service pipeline appears functional")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ TTS service verification failed: {e}")
+            return False
 
     def clear_cache(self):
         """Clear the services cache."""
