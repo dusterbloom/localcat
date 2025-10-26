@@ -68,6 +68,9 @@ class MLXKokoroTTSService(TTSService):
         self._speed = speed
         self._sample_rate = sample_rate
 
+        # Cancellation flag for graceful interruption handling
+        self._cancelled = False
+
         # Thread pool for non-blocking TTS generation
         # Single worker since MLX operations must be serialized via lock
         self._executor = concurrent.futures.ThreadPoolExecutor(
@@ -168,10 +171,6 @@ class MLXKokoroTTSService(TTSService):
 
             logger.debug(f"Generating audio for: {text}")
 
-            # Force garbage collection before heavy GPU work (macOS Sequoia workaround)
-            import gc
-            gc.collect()
-
             # CRITICAL: Acquire MLX lock to prevent concurrent STT + TTS access
             # This is REQUIRED - MLX is not thread-safe for concurrent operations
             # Singleton prevents multiple models, lock prevents concurrent access
@@ -190,6 +189,15 @@ class MLXKokoroTTSService(TTSService):
                     speed=self._speed,
                     split_pattern=r'\n+'
                 ):
+                    # Check cancellation flag during generation
+                    if self._cancelled:
+                        logger.debug("MLX TTS generation cancelled during pipeline iteration")
+                        # Ensure Metal operations complete before exiting lock
+                        import mlx.core as mx
+                        if audio_segments:
+                            mx.eval(audio_segments)  # Force evaluation of any pending MLX ops
+                        return None
+
                     # pipeline() returns audio directly in the tuple, not as an attribute
                     if audio is not None:
                         audio_segments.append(audio)
@@ -229,6 +237,9 @@ class MLXKokoroTTSService(TTSService):
     @traced_tts
     async def run_tts(self, text: str) -> AsyncGenerator[Frame, None]:
         """Generate speech from text using MLX Kokoro with optimal chunking"""
+
+        # Reset cancellation flag at start of new TTS request
+        self._cancelled = False
 
         if not text.strip():
             yield TTSStartedFrame()
@@ -298,7 +309,9 @@ class MLXKokoroTTSService(TTSService):
                     logger.warning(f"No audio generated for chunk: '{sentence}'")
 
         except asyncio.CancelledError:
-            logger.debug("MLX TTS generation cancelled")
+            # Set cancellation flag to stop any in-progress generation
+            self._cancelled = True
+            logger.debug("MLX TTS generation cancelled - flag set to abort ongoing Metal operations")
             raise
         except Exception as e:
             logger.error(f"MLX Kokoro TTS error: {e}")
@@ -313,3 +326,11 @@ class MLXKokoroTTSService(TTSService):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
         self._executor.shutdown(wait=True)
+
+    def __del__(self):
+        """Cleanup executor on deletion (fallback for non-context-manager usage)"""
+        try:
+            if hasattr(self, '_executor') and self._executor:
+                self._executor.shutdown(wait=False)
+        except Exception:
+            pass  # Ignore errors during cleanup

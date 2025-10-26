@@ -23,24 +23,29 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from loguru import logger
 import httpx
 
+# Import centralized logging configuration
+from core.logging_config import setup_logging_for_bot
 
+# Load environment first
+load_dotenv(override=True)  # Load from local server/.env
 
+# Initialize centralized logging configuration BEFORE importing logger
+setup_logging_for_bot()
+
+# Import logger and modules that use logger AFTER configuration is complete
+from loguru import logger
+
+# Import factory AFTER logger is configured (factory.py imports logger at module level)
+from core.factory import VoiceAgentFactory
+from config import VoiceAgentConfig
 
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-
-from config import VoiceAgentConfig
-from core.factory import VoiceAgentFactory
 from pipecat.frames.frames import TextFrame
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, IceServer
-
-
-load_dotenv(override=True)  # Load from local server/.env
-
 
 
 async def get_initial_greeting() -> str:
@@ -183,36 +188,30 @@ async def run_bot(webrtc_connection):
 async def offer(request: dict, background_tasks: BackgroundTasks):
     pc_id = request.get("pc_id")
 
+    # CRITICAL: Always clean up old sessions to prevent state bleeding
     if pc_id and pc_id in pcs_map:
-        pipecat_connection = pcs_map[pc_id]
-        logger.debug(f"Reusing existing connection for pc_id: {pc_id}")
+        old_connection = pcs_map.pop(pc_id)
+        logger.info(f"Cleaning up old session for pc_id: {pc_id} to prevent state bleeding")
+        try:
+            await old_connection.close()
+        except Exception as e:
+            logger.warning(f"Error closing old connection: {e}")
 
-        # Always renegotiate for simplicity and stability with plain RTCPeerConnection clients
-        # (SmallWebRTCConnection doesn't expose set_remote_description)
-        restart_requested = bool(request.get("restart_pc", False))
-        logger.debug(
-            f"Renegotiating existing connection pc_id: {pc_id} (restart_pc={restart_requested})"
-        )
-        await pipecat_connection.renegotiate(
-            sdp=request["sdp"],
-            type=request["type"],
-            restart_pc=restart_requested,
-        )
-    else:
-        pipecat_connection = SmallWebRTCConnection(ice_servers)
-        await pipecat_connection.initialize(sdp=request["sdp"], type=request["type"])
+    # Always create fresh connection and pipeline for clean sessions
+    pipecat_connection = SmallWebRTCConnection(ice_servers)
+    await pipecat_connection.initialize(sdp=request["sdp"], type=request["type"])
 
-        # Track connection start time for monitoring
-        pipecat_connection._connection_start_time = time.time()
-        pipecat_connection._last_activity = time.time()
+    # Track connection start time for monitoring
+    pipecat_connection._connection_start_time = time.time()
+    pipecat_connection._last_activity = time.time()
 
-        @pipecat_connection.event_handler("closed")
-        async def handle_disconnected(webrtc_connection: SmallWebRTCConnection):
-            logger.debug(f"Discarding peer connection for pc_id: {webrtc_connection.pc_id}")
-            pcs_map.pop(webrtc_connection.pc_id, None)
+    @pipecat_connection.event_handler("closed")
+    async def handle_disconnected(webrtc_connection: SmallWebRTCConnection):
+        logger.info(f"Connection closed for pc_id: {webrtc_connection.pc_id}")
+        pcs_map.pop(webrtc_connection.pc_id, None)
 
-        # Run example function with SmallWebRTC transport arguments.
-        background_tasks.add_task(run_bot, pipecat_connection)
+    # Run fresh bot instance for this session
+    background_tasks.add_task(run_bot, pipecat_connection)
 
     answer = pipecat_connection.get_answer()
     # Updating the peer connection inside the map

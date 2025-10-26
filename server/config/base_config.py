@@ -178,10 +178,22 @@ class STTConfiguration(BaseConfiguration):
     language: str = "en"
     chunk_length_ms: int = 100
 
+    # Parakeet streaming configuration (optimal defaults based on NVIDIA recommendations)
+    chunk_duration: float = 0.5  # Audio buffering duration (2-4s optimal for reduced hallucinations)
+    context_size: tuple = (256, 256)  # Attention context (128-256 tokens optimal)
+    beam_width: int = 8  # Beam search width (8-10 optimal for streaming)
+    depth: int = 1  # Model depth for streaming processing
+    temperature: float = 0.0  # Sampling temperature for transcription
+    sentence_pause_threshold: float = 1.2  # Threshold for sentence boundary detection
+    max_chunk_duration: float = 4.0  # Maximum duration for audio chunks
+    volume_threshold: float = 0.001  # Volume gating threshold
+    enable_vad: bool = False  # Enable internal VAD
+    streaming: bool = True  # Enable streaming mode for compatible engines
+
     @classmethod
     def from_env(cls) -> 'STTConfiguration':
         """Load STT configuration from environment variables."""
-        from .parsers import _parse_int
+        from .parsers import _parse_int, _parse_float, _parse_bool, _parse_list
 
         return cls(
             engine=cls._get_env("VOICE_AGENT_STT_ENGINE", "STT_ENGINE") or cls.engine,
@@ -191,18 +203,80 @@ class STTConfiguration(BaseConfiguration):
                 cls._get_env("VOICE_AGENT_STT_CHUNK_LENGTH_MS", "STT_CHUNK_LENGTH_MS"),
                 cls.chunk_length_ms
             ),
+            # Parakeet streaming parameters with optimal defaults
+            chunk_duration=_parse_float(
+                cls._get_env("VOICE_AGENT_STT_CHUNK_DURATION", "PARAKEET_CHUNK_DURATION"),
+                cls.chunk_duration
+            ),
+            context_size=tuple(
+                map(int, _parse_list(
+                    cls._get_env("VOICE_AGENT_STT_CONTEXT_SIZE", "PARAKEET_CONTEXT_SIZE"),
+                    [str(v) for v in cls.context_size]
+                ))
+            ) or cls.context_size,
+            beam_width=_parse_int(
+                cls._get_env("VOICE_AGENT_STT_BEAM_WIDTH", "PARAKEET_BEAM_WIDTH"),
+                cls.beam_width
+            ),
+            depth=_parse_int(
+                cls._get_env("VOICE_AGENT_STT_DEPTH", "PARAKEET_DEPTH"),
+                cls.depth
+            ),
+            temperature=_parse_float(
+                cls._get_env("VOICE_AGENT_STT_TEMPERATURE", "PARAKEET_TEMPERATURE"),
+                cls.temperature
+            ),
+            sentence_pause_threshold=_parse_float(
+                cls._get_env("VOICE_AGENT_STT_SENTENCE_PAUSE_THRESHOLD", "PARAKEET_SENTENCE_PAUSE_THRESHOLD"),
+                cls.sentence_pause_threshold
+            ),
+            max_chunk_duration=_parse_float(
+                cls._get_env("VOICE_AGENT_STT_MAX_CHUNK_DURATION", "PARAKEET_MAX_CHUNK_DURATION"),
+                cls.max_chunk_duration
+            ),
+            volume_threshold=_parse_float(
+                cls._get_env("VOICE_AGENT_STT_VOLUME_THRESHOLD", "PARAKEET_VOLUME_THRESHOLD"),
+                cls.volume_threshold
+            ),
+            enable_vad=_parse_bool(
+                cls._get_env("VOICE_AGENT_STT_ENABLE_VAD", "PARAKEET_ENABLE_VAD")
+            ) or cls.enable_vad,
+            streaming=_parse_bool(
+                cls._get_env("VOICE_AGENT_STT_STREAMING", "PARAKEET_STREAMING")
+            ) if cls._get_env("VOICE_AGENT_STT_STREAMING", "PARAKEET_STREAMING") is not None else cls.streaming,
         )
 
     def validate(self) -> List[str]:
         """Validate STT configuration."""
         warnings = []
 
-        valid_engines = ["parakeet_streaming", "parakeet_batch", "whisper_mlx"]
+        valid_engines = ["parakeet_isolated", "parakeet_streaming", "parakeet_batch", "whisper_mlx", "macos_native"]
         if self.engine not in valid_engines:
             warnings.append(f"engine='{self.engine}' not in {valid_engines}")
 
         if self.chunk_length_ms < 50 or self.chunk_length_ms > 1000:
             warnings.append(f"chunk_length_ms={self.chunk_length_ms} outside recommended range [50-1000]")
+
+        # Parakeet-specific validation
+        if self.engine.startswith("parakeet"):
+            if self.chunk_duration < 2.0 or self.chunk_duration > 4.0:
+                warnings.append(f"chunk_duration={self.chunk_duration}s outside optimal range [2.0-4.0] for reduced hallucinations")
+
+            if len(self.context_size) != 2:
+                warnings.append(f"context_size={self.context_size} must be a tuple of (left_context, right_context)")
+            else:
+                left_ctx, right_ctx = self.context_size
+                if left_ctx < 128 or left_ctx > 256 or right_ctx < 128 or right_ctx > 256:
+                    warnings.append(f"context_size={self.context_size} outside optimal range [128-256] for each dimension")
+
+            if self.beam_width < 8 or self.beam_width > 10:
+                warnings.append(f"beam_width={self.beam_width} outside optimal range [8-10] for streaming hallucination reduction")
+
+            if self.depth < 1 or self.depth > 5:
+                warnings.append(f"depth={self.depth} outside reasonable range [1-5]")
+
+            if self.temperature < 0.0 or self.temperature > 1.0:
+                warnings.append(f"temperature={self.temperature} outside recommended range [0.0-1.0]")
 
         return warnings
 

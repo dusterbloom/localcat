@@ -12,7 +12,7 @@ dependencies = [
     "opencv-python",
     "mlx-lm",
     "mlx-audio",
-    "pipecat-ai[deepgram,mlx-whisper,openai,rime,silero]==0.0.85",
+    "pipecat-ai[deepgram,mlx-whisper,openai,rime,silero]==0.0.91",
     "pipecat-ai-small-webrtc-prebuilt",
     "aiortc",
     "nltk",

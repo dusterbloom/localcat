@@ -121,7 +121,7 @@ class SpeakerEnrollmentRouter(ParallelPipeline):
             if should_route and not isinstance(frame, SystemFrame):
                 from pipecat.frames.frames import InputAudioRawFrame, OutputAudioRawFrame
                 if not isinstance(frame, (InputAudioRawFrame, OutputAudioRawFrame)):
-                    logger.debug(f"[EnrollmentRouter] Routing {frame.__class__.__name__} to CONVERSATION pipeline")
+                    logger.info(f"[EnrollmentRouter] Routing {frame.__class__.__name__} to CONVERSATION pipeline")
             return should_route
     
     async def update_state(

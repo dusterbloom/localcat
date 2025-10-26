@@ -16,6 +16,7 @@ from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
 from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.parallel_pipeline import ParallelPipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
@@ -26,6 +27,7 @@ from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, Ice
 from pipecat.transports.base_transport import TransportParams
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIProcessor, RTVIObserver
+from core.observers.latency_observer import LatencyObserver
 from pipecat.processors.transcript_processor import TranscriptProcessor
 from pipecat.processors.filters.stt_mute_filter import (
     STTMuteFilter,
@@ -38,6 +40,19 @@ from config import VoiceAgentConfig
 from core.factories.service_factory import ServiceFactory
 from core.memory.session_tracker import SessionTracker
 
+# Global ServiceFactory instance for shared services across all VoiceAgentFactory instances
+# This prevents multiple LLM service creation and eliminates 40+ second loading delays
+_global_service_factory = None
+
+
+def get_global_service_factory(config: VoiceAgentConfig) -> ServiceFactory:
+    """Get or create the global ServiceFactory instance."""
+    global _global_service_factory
+    if _global_service_factory is None:
+        _global_service_factory = ServiceFactory(config)
+        logger.info("🌐 Global ServiceFactory created for shared service caching")
+    return _global_service_factory
+
 
 class VoiceAgentFactory:
     """Factory for creating voice agent services with dependency injection."""
@@ -45,13 +60,15 @@ class VoiceAgentFactory:
     def __init__(self, config: VoiceAgentConfig):
         self.config = config
         self._services_cache: Dict[str, Any] = {}
-        # Delegate service creation to ServiceFactory
-        self._service_factory = ServiceFactory(config)
+        # Use global ServiceFactory to share services across all VoiceAgentFactory instances
+        # This prevents multiple LLM service creation and eliminates 40+ second loading delays
+        self._service_factory = get_global_service_factory(config)
 
         # CRITICAL: Global lock for MLX operations (STT + TTS share MLX runtime)
         # This prevents heap corruption from concurrent MLX access on macOS Sequoia
         self.mlx_lock = asyncio.Lock()
         logger.info("🔒 MLX global lock initialized (prevents concurrent Metal access)")
+        logger.info("🔄 VoiceAgentFactory using global ServiceFactory for service reuse")
 
     def create_transport(self, webrtc_connection: SmallWebRTCConnection) -> SmallWebRTCTransport:
         """Create WebRTC transport with VAD and turn detection."""
@@ -79,6 +96,12 @@ class VoiceAgentFactory:
 
     def create_llm_service(self) -> OpenAILLMService:
         """Create LLM service with streaming configuration."""
+        # Check if LLM service is already cached in this VoiceAgentFactory instance
+        if 'llm' in self._services_cache:
+            logger.debug("✅ LLM service reused from VoiceAgentFactory cache")
+            return self._services_cache['llm']
+
+        # Create new LLM service and cache it
         llm = self._service_factory.create_llm_service()
         self._services_cache['llm'] = llm
         return llm
@@ -396,6 +419,15 @@ class VoiceAgentFactory:
         # Create transcript processor for UI display
         transcript = TranscriptProcessor()
 
+        # Add event handler to log all conversation content
+        @transcript.event_handler("on_transcript_update")
+        async def log_intro_conversation(processor, frame):
+            """Log all conversation content to the log files."""
+            for message in frame.messages:
+                role = message.role.upper()
+                content = message.content
+                logger.info(f"📝 CONVERSATION [{role}]: {content}")
+
         # Core processing before router
         stages.extend([
             services['stt'],
@@ -443,6 +475,15 @@ class VoiceAgentFactory:
 
         # Output audio first, then capture assistant transcripts (per Pipecat docs)
         stages.append(transport.output())
+
+        # Add debug filter to see what's going to transcript.assistant()
+        async def _debug_transcript_assistant(frame) -> bool:
+            from pipecat.frames.frames import TTSTextFrame
+            if isinstance(frame, TTSTextFrame):
+                logger.info(f"🔍 [TRANSCRIPT.ASSISTANT INPUT] TTSTextFrame: '{frame.text[:100]}...'")
+            return True
+
+        stages.append(_FF(_debug_transcript_assistant))
         stages.append(transcript.assistant())
         
         pipeline = Pipeline(stages)
@@ -460,21 +501,53 @@ class VoiceAgentFactory:
             return self.create_intro_aware_pipeline(transport, services)
 
         # Standard pipeline (no enrollment UX)
+        # Start with a top-level source; ParallelPipeline only fans out frames
         stages = [transport.input()]
 
-        # Optional mic probe
+        # Add ParallelPipeline for concurrent processing (main + background Whisper)
+        # Fan-out over the incoming frames; branches must NOT create their own sources
+        main_branch = []
+        background_whisper_branch = []
+
+        # Optional mic probe in main branch
         mic_probe = services.get('mic_probe')
         if mic_probe:
-            stages.append(mic_probe)
+            main_branch.append(mic_probe)
 
         # Audio intelligence (if enabled) - runs async on UserStoppedSpeaking, non-blocking
         audio_intel = services.get('audio_intelligence')
         if audio_intel:
             logger.info("🎤 Audio Intelligence enabled - speaker recognition active")
-            stages.append(audio_intel)
+            main_branch.append(audio_intel)
+
+        # Create background Whisper processor for parallel STT
+        from core.stt.background_whisper import BackgroundWhisperProcessor
+        background_whisper = BackgroundWhisperProcessor(
+            model="openai/whisper-small",
+            language="en"
+        )
+        background_whisper_branch.extend([
+            # Receive the same upstream frames; do not start another source here
+            background_whisper
+        ])
+
+        # Add parallel STT processing (pass branches as positional args)
+        stages.append(ParallelPipeline(
+            main_branch,                 # Main processing branch
+            background_whisper_branch    # Background Whisper for redundancy/fallback
+        ))
 
         # Create transcript processor for UI display
         transcript = TranscriptProcessor()
+
+        # Add event handler to log all conversation content
+        @transcript.event_handler("on_transcript_update")
+        async def log_conversation(processor, frame):
+            """Log all conversation content to the log files."""
+            for message in frame.messages:
+                role = message.role.upper()
+                content = message.content
+                logger.info(f"📝 CONVERSATION [{role}]: {content}")
 
         # Main processing pipeline - start with STT
         stages.extend([
@@ -526,15 +599,24 @@ class VoiceAgentFactory:
         return pipeline
 
     def create_pipeline_task(self, pipeline: Pipeline, rtvi_processor: Optional[RTVIProcessor] = None) -> PipelineTask:
-        """Create pipeline task with appropriate parameters."""
+        """Create pipeline task with latency profiling parameters."""
+        # Configure for sub-second latency: 512 samples (32ms @ 16kHz)
         params = PipelineParams(
             enable_metrics=True,
             enable_usage_metrics=True,
+            audio_in_sample_rate=16000,  # 16kHz for 32ms chunks (512 samples)
+            audio_out_sample_rate=24000,  # 24kHz output for TTS
+            send_initial_empty_metrics=False,
+            report_only_initial_ttfb=True,
         )
 
         observers = []
         if rtvi_processor:
             observers.append(RTVIObserver(rtvi_processor))
+
+        # Add latency observer for sub-second monitoring
+        latency_observer = LatencyObserver()
+        observers.append(latency_observer)
 
         task = PipelineTask(
             pipeline,
@@ -638,7 +720,7 @@ class VoiceAgentFactory:
             'task': task
         }
 
-    def build_system_prompt(self, skip_memory: bool = False) -> str:
+    def build_system_prompt(self, skip_memory: bool = False, camera_active: bool = False) -> str:
         """
         Build dynamic system prompt based on configuration.
 
@@ -648,6 +730,7 @@ class VoiceAgentFactory:
 
         Args:
             skip_memory: If True, exclude memory section (for anonymous/ephemeral mode)
+            camera_active: If True, include vision-related prompts
 
         Returns:
             Formatted system prompt string

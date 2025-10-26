@@ -24,7 +24,8 @@ class AnonymousAwareContextAggregator:
         context_aggregator: Any,
         context: OpenAILLMContext,
         memory_processor: Optional[Any] = None,
-        factory: Optional[Any] = None
+        factory: Optional[Any] = None,
+        vision_injector: Optional[Any] = None
     ):
         """
         Initialize with context aggregator, memory processor, and factory.
@@ -34,15 +35,17 @@ class AnonymousAwareContextAggregator:
             context: OpenAI LLM context
             memory_processor: Optional memory processor for controlling injection
             factory: Optional factory for rebuilding system prompt
+            vision_injector: Optional vision context injector for camera state tracking
         """
         self._aggregator = context_aggregator
         self._context = context
         self._memory_processor = memory_processor
         self._factory = factory
+        self._vision_injector = vision_injector
         self._original_messages = None
         self._anonymous_mode = False
         self._context_guide_added = False
-        
+
         # Track if Context Guide was added
         messages = context.get_messages()
         for msg in messages:
@@ -93,36 +96,37 @@ class AnonymousAwareContextAggregator:
             # 2. Rebuild system prompt WITHOUT memory section
             if self._factory:
                 try:
-                    new_prompt = self._factory.build_system_prompt(skip_memory=True)
+                    camera_active = self._get_camera_state()
+                    new_prompt = self._factory.build_system_prompt(skip_memory=True, camera_active=camera_active)
                     self._update_system_prompt(new_prompt)
-                    logger.debug("[AnonymousContext] Updated system prompt for anonymous mode (memory section excluded)")
+                    logger.debug(f"[AnonymousContext] Updated system prompt for anonymous mode (memory excluded, camera_active={camera_active})")
                 except Exception as e:
                     logger.warning(f"[AnonymousContext] Failed to update system prompt: {e}")
             
             # Store current messages (except system messages)
             self._original_messages = self._context.get_messages().copy()
             
-            # Clear context to only essential system messages
-            messages = self._context.get_messages()
-            filtered_messages = []
+            # # Clear context to only essential system messages
+            # messages = self._context.get_messages()
+            # filtered_messages = []
             
-            for msg in messages:
-                content = msg.get("content", "")
-                # Keep only essential system messages; drop Context Guide and Session Context
-                if msg.get("role") == "system":
-                    if ("Context Guide:" in content) or (isinstance(content, str) and content.startswith("[Session Context]")):
-                        logger.debug("[AnonymousContext] Removing non-essential system message for anonymous mode")
-                    else:
-                        filtered_messages.append(msg)
-                # Skip all user/assistant messages (conversation history)
-                elif msg.get("role") in ["user", "assistant"]:
-                    logger.debug(f"[AnonymousContext] Removing {msg.get('role')} message: {content[:50]}...")
-                    continue
-                else:
-                    filtered_messages.append(msg)
+            # for msg in messages:
+            #     content = msg.get("content", "")
+            #     # Keep only essential system messages; drop Context Guide and Session Context
+            #     if msg.get("role") == "system":
+            #         if ("Context Guide:" in content) or (isinstance(content, str) and content.startswith("[Session Context]")):
+            #             logger.debug("[AnonymousContext] Removing non-essential system message for anonymous mode")
+            #         else:
+            #             filtered_messages.append(msg)
+            #     # Skip all user/assistant messages (conversation history)
+            #     elif msg.get("role") in ["user", "assistant"]:
+            #         logger.debug(f"[AnonymousContext] Removing {msg.get('role')} message: {content[:50]}...")
+            #         continue
+            #     else:
+            #         filtered_messages.append(msg)
             
             # Reset context with filtered messages
-            self._context._messages = filtered_messages
+            self._context._messages = self._original_messages
             
             # Add anonymous marker as system message
             self._context.add_message({
@@ -171,9 +175,10 @@ class AnonymousAwareContextAggregator:
             # 3. Rebuild system prompt WITH memory section (AFTER restoring messages)
             if self._factory:
                 try:
-                    new_prompt = self._factory.build_system_prompt(skip_memory=False)
+                    camera_active = self._get_camera_state()
+                    new_prompt = self._factory.build_system_prompt(skip_memory=False, camera_active=camera_active)
                     self._update_system_prompt(new_prompt)
-                    logger.debug("[AnonymousContext] Restored system prompt with memory section")
+                    logger.debug(f"[AnonymousContext] Restored system prompt with memory section (camera_active={camera_active})")
                 except Exception as e:
                     logger.warning(f"[AnonymousContext] Failed to restore system prompt: {e}")
     
@@ -181,6 +186,17 @@ class AnonymousAwareContextAggregator:
     def anonymous_mode(self) -> bool:
         """Check if currently in anonymous mode."""
         return self._anonymous_mode
+
+    def set_vision_injector(self, vision_injector: Any) -> None:
+        """Link vision injector for camera state tracking (called after pipeline creation)."""
+        self._vision_injector = vision_injector
+        logger.debug("[AnonymousContext] Vision injector linked for camera state tracking")
+
+    def _get_camera_state(self) -> bool:
+        """Get current camera state from vision injector."""
+        if self._vision_injector and hasattr(self._vision_injector, 'camera_active'):
+            return self._vision_injector.camera_active
+        return False
 
     def _update_system_prompt(self, new_prompt: str) -> None:
         """

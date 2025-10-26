@@ -145,48 +145,51 @@ class TestVisionContextInjector:
         """Test that old images are pruned when limit exceeded."""
         # Set max images to 2
         injector._max_images = 2
+        injector._injected_image_count = 4
 
-        # Simulate 4 images injected
-        injector._injected_image_indices = [
-            (0, 1.0),  # oldest
-            (1, 2.0),
-            (2, 3.0),
-            (3, 4.0),  # newest
-        ]
-
-        # Mock context with 4 messages
+        # Mock context with 4 image messages in OpenAI vision format
         mock_context.get_messages.return_value = [
-            {"role": "user", "content": "image1"},
-            {"role": "user", "content": "image2"},
-            {"role": "user", "content": "image3"},
-            {"role": "user", "content": "image4"},
+            {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/..."}}]},  # oldest
+            {"role": "user", "content": "some text"},
+            {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/..."}}]},
+            {"role": "assistant", "content": "response"},
+            {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/..."}}]},
+            {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/..."}}]},  # newest
         ]
 
         # Prune old images
         injector._prune_old_images()
 
-        # Should remove 2 oldest images (keep only 2 newest)
-        assert len(injector._injected_image_indices) == 2, \
-            "Should keep only max_images entries"
-
         # Should call set_messages with pruned list
         assert mock_context.set_messages.called, \
             "Should update context with pruned messages"
 
-        # Check that remaining indices are the newest ones
-        remaining_indices = [idx for idx, _ in injector._injected_image_indices]
-        assert remaining_indices == [2, 3], \
-            f"Should keep newest images, got: {remaining_indices}"
+        # Verify the pruned messages - should keep only last 2 images
+        pruned_messages = mock_context.set_messages.call_args[0][0]
+
+        # Count remaining image messages
+        image_count = 0
+        for msg in pruned_messages:
+            content = msg.get('content')
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get('type') == 'image_url':
+                        image_count += 1
+                        break
+
+        assert image_count == 2, f"Should keep only 2 images, got {image_count}"
 
     @pytest.mark.asyncio
     async def test_context_pruning_no_op_when_within_limit(self, injector, mock_context):
         """Test that pruning is skipped when within limit."""
         injector._max_images = 5
+        injector._injected_image_count = 2
 
-        # Only 2 images injected (under limit)
-        injector._injected_image_indices = [
-            (0, 1.0),
-            (1, 2.0),
+        # Mock context with 2 image messages (under limit)
+        mock_context.get_messages.return_value = [
+            {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/..."}}]},
+            {"role": "user", "content": "some text"},
+            {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/..."}}]},
         ]
 
         # Prune should be no-op

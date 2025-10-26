@@ -20,7 +20,8 @@ class VisionContextInjector(FrameProcessor):
     """
 
     def __init__(self, context, target_fps: float = 2.0, inject_on_text: bool = True,
-                 keyword_filter: bool = False, keywords: Optional[list] = None):
+                 keyword_filter: bool = False, keywords: Optional[list] = None,
+                 on_camera_state_change: Optional[callable] = None):
         """
         Args:
             context: OpenAILLMContext instance to inject images into
@@ -28,6 +29,7 @@ class VisionContextInjector(FrameProcessor):
             inject_on_text: Only inject images when user sends text (default True)
             keyword_filter: Only inject images when vision-related keywords detected (default False)
             keywords: List of keywords that trigger image injection (default: common vision words)
+            on_camera_state_change: Optional callback when camera state changes (receives bool)
         """
         super().__init__()
         self._context = context
@@ -37,6 +39,10 @@ class VisionContextInjector(FrameProcessor):
         self._last_image = None
         self._inject_on_text = inject_on_text
         self._keyword_filter = keyword_filter
+        self._on_camera_state_change = on_camera_state_change
+
+        # Camera state tracking (for runtime system prompt updates)
+        self._camera_active = False
 
         # Default vision-related keywords
         self._keywords = keywords or [
@@ -51,7 +57,7 @@ class VisionContextInjector(FrameProcessor):
 
         # Phase 2: Context pruning configuration
         self._max_images = int(os.getenv("VISION_MAX_IMAGES_IN_CONTEXT", "2"))
-        self._injected_image_indices = []  # Track (index, timestamp) of injected images
+        self._injected_image_count = 0  # Track total number of injected images
 
         # Phase 3: Deduplication configuration
         self._enable_deduplication = os.getenv("VISION_ENABLE_DEDUPLICATION", "true").lower() in ("true", "1", "yes")
@@ -60,7 +66,13 @@ class VisionContextInjector(FrameProcessor):
         logger.info(f"[VisionContextInjector] Initialized (fps={target_fps}, inject_on_text={inject_on_text}, "
                    f"keyword_filter={keyword_filter}, keywords={len(self._keywords)} words, "
                    f"image_size={self._target_size}px, quality={self._image_quality}, "
-                   f"max_images={self._max_images}, dedup={self._enable_deduplication})")
+                   f"max_images={self._max_images}, dedup={self._enable_deduplication}, "
+                   f"camera_state_callback={'enabled' if on_camera_state_change else 'disabled'})")
+
+    @property
+    def camera_active(self) -> bool:
+        """Check if camera is currently streaming frames."""
+        return self._camera_active
 
     def _resize_image(self, image_data: bytes, size: tuple, format: str) -> tuple[bytes, tuple, str]:
         """
@@ -116,21 +128,37 @@ class VisionContextInjector(FrameProcessor):
     def _prune_old_images(self):
         """
         Remove old image messages from context when limit exceeded.
-        Keeps only the N most recent images.
+        Keeps only the N most recent images by dynamically searching for image content.
         """
         try:
-            if len(self._injected_image_indices) <= self._max_images:
+            if self._injected_image_count <= self._max_images:
                 return  # Within limit
 
             # Get current messages
             messages = list(self._context.get_messages())
 
-            # Calculate how many images to remove
-            num_to_remove = len(self._injected_image_indices) - self._max_images
-            indices_to_remove = self._injected_image_indices[:num_to_remove]
+            # Find all image messages by searching for image_url content
+            image_indices = []
+            for idx, msg in enumerate(messages):
+                content = msg.get('content')
+                # Check if content is a list with image_url type (OpenAI vision format)
+                if isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict) and item.get('type') == 'image_url':
+                            image_indices.append(idx)
+                            break
+
+            # Calculate how many to remove
+            num_images_found = len(image_indices)
+            if num_images_found <= self._max_images:
+                logger.debug(f"[VisionContextInjector] Found {num_images_found} images, within limit of {self._max_images}")
+                return
+
+            num_to_remove = num_images_found - self._max_images
+            indices_to_remove = image_indices[:num_to_remove]  # Remove oldest (first in list)
 
             # Remove old image messages (in reverse order to preserve indices)
-            for idx, _ in sorted(indices_to_remove, reverse=True):
+            for idx in sorted(indices_to_remove, reverse=True):
                 if idx < len(messages):
                     messages.pop(idx)
                     logger.debug(f"[VisionContextInjector] Removed old image message at index {idx}")
@@ -138,11 +166,8 @@ class VisionContextInjector(FrameProcessor):
             # Update context
             self._context.set_messages(messages)
 
-            # Update tracking list
-            self._injected_image_indices = self._injected_image_indices[num_to_remove:]
-
             logger.info(f"[VisionContextInjector] Pruned {num_to_remove} old images from context "
-                       f"(keeping {len(self._injected_image_indices)} most recent)")
+                       f"(found {num_images_found}, keeping {self._max_images} most recent)")
 
         except Exception as e:
             logger.error(f"[VisionContextInjector] Image pruning failed: {e}")
@@ -178,6 +203,18 @@ class VisionContextInjector(FrameProcessor):
 
         # Handle video frames - store the latest frame
         if isinstance(frame, InputImageRawFrame):
+            # Detect camera activation (first frame received)
+            if not self._camera_active:
+                self._camera_active = True
+                logger.info("[VisionContextInjector] 📹 Camera activated - first frame received")
+
+                # Notify callback about camera state change
+                if self._on_camera_state_change:
+                    try:
+                        await self._on_camera_state_change(True)
+                    except Exception as e:
+                        logger.error(f"[VisionContextInjector] Camera state callback failed: {e}")
+
             current_time = asyncio.get_event_loop().time()
             if current_time - self._last_frame_time >= self._frame_interval:
                 self._last_frame_time = current_time
@@ -224,9 +261,6 @@ class VisionContextInjector(FrameProcessor):
                 else:
                     logger.info(f"[VisionContextInjector] Injecting image into context with text: '{text[:50]}...'")
                     try:
-                        # Get current message count before injection
-                        messages_before = len(list(self._context.get_messages()))
-
                         # Inject the image
                         self._context.add_image_frame_message(
                             format=self._last_image['format'],
@@ -235,13 +269,9 @@ class VisionContextInjector(FrameProcessor):
                             text=None  # Text is already in a separate frame
                         )
 
-                        # Track the injected image index
-                        messages_after = len(list(self._context.get_messages()))
-                        if messages_after > messages_before:
-                            # Image was added as a new message
-                            new_image_index = messages_after - 1
-                            self._injected_image_indices.append((new_image_index, asyncio.get_event_loop().time()))
-                            logger.debug(f"[VisionContextInjector] Tracked image at index {new_image_index}")
+                        # Increment the injected image counter
+                        self._injected_image_count += 1
+                        logger.debug(f"[VisionContextInjector] Image injected (total: {self._injected_image_count})")
 
                         logger.info(f"[VisionContextInjector] ✓ Image added to LLM context")
 

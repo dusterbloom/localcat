@@ -148,7 +148,41 @@ class ServiceFactory:
         """Create STT service based on configuration."""
         stt_config = self.config.get_component_config("stt")
 
-        if self.config.stt_engine == "parakeet_streaming":
+        if self.config.stt_engine == "parakeet_isolated":
+            # Process-isolated Parakeet STT - RECOMMENDED for Metal conflict avoidance
+            try:
+                from core.stt.parakeet_isolated import ParakeetIsolatedSTT
+                model_path = resolve_parakeet_model_path(
+                    stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
+                )
+                logger.debug(f"Initializing Parakeet isolated STT (process-isolated, Metal safe)")
+                stt = ParakeetIsolatedSTT(
+                    model_path=model_path,
+                    streaming=os.getenv("PARAKEET_STREAMING", "true").lower() in ("1", "true", "yes"),
+                    context_size=tuple(map(int, os.getenv("PARAKEET_CONTEXT_SIZE", "256,256").split(","))),
+                    depth=int(os.getenv("PARAKEET_DEPTH", "3"))
+                )
+                logger.info("✅ Parakeet isolated STT ready (Metal conflict free)")
+            except Exception as e:
+                logger.error(f"❌ Parakeet isolated STT failed: {e}", exc_info=True)
+                logger.warning("Falling back to in-process Parakeet streaming (may have Metal conflicts)")
+                try:
+                    from core.stt.parakeet_streaming import ParakeetStreamingSTT
+                    model_path = resolve_parakeet_model_path(
+                        stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
+                    )
+                    stt = ParakeetStreamingSTT(
+                        model_path=model_path,
+                        language=stt_config.get("language", "en"),
+                        chunk_duration=float(os.getenv("PARAKEET_CHUNK_DURATION", "1.0")),
+                        enable_vad=os.getenv("PARAKEET_ENABLE_VAD", "false").lower() in ("1", "true", "yes")
+                    )
+                    logger.info("✅ Parakeet streaming STT ready (fallback)")
+                except Exception as e2:
+                    logger.error(f"Parakeet streaming also failed: {e2}")
+                    logger.warning("Using Whisper MLX as final fallback")
+                    stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
+        elif self.config.stt_engine == "parakeet_streaming":
             try:
                 # Try Parakeet streaming first (ultra-low latency)
                 from core.stt.parakeet_streaming import ParakeetStreamingSTT
@@ -359,6 +393,7 @@ class ServiceFactory:
             base_url=llm_config["base_url"],
             max_tokens=llm_config["max_tokens"],
             stream=use_llm_streaming,
+            debug=True,  # Enable debug logging to see context/messages
             extra_body={
                 "think": False,
                 "stream": use_llm_streaming,
@@ -546,11 +581,13 @@ class ServiceFactory:
         # Store both context and aggregator for access in event handlers
         # Wrap with anonymous-aware functionality
         # Pass factory reference so anonymous mode can rebuild system prompt
+        # Vision injector will be linked later via set_vision_injector()
         anonymous_aggregator = AnonymousAwareContextAggregator(
             context_aggregator,
             context,
             memory_processor=None,  # Will be linked after memory creation
-            factory=factory_ref  # Pass factory for dynamic prompt rebuilding
+            factory=factory_ref,  # Pass factory for dynamic prompt rebuilding
+            vision_injector=None  # Will be linked after vision injector creation
         )
 
         self._services_cache['context'] = context
