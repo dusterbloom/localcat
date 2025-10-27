@@ -295,6 +295,7 @@ class VoiceAgentFactory:
                 logger.debug(f"🔍 [TTS INPUT] id={frame.id} text='{frame.text[:50]}...'")
             return True
 
+
         conversation_processors = [
             _FF(_cancel_tts_on_interruption),  # Barge-in handler
         ]

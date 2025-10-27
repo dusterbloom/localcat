@@ -50,6 +50,9 @@ class LatencyObserver(BaseObserver):
         self._first_transcription_measured = False  # Only log first transcription
 
         logger.info("Latency Observer initialized for sub-second monitoring")
+        # Debounce to avoid multiple rapid turn resets from duplicate frames
+        self._last_user_started_ts = 0.0
+        self._debounce_ms = 200.0
 
     def _reset_turn_state(self):
         """Reset timing state for a new conversation turn."""
@@ -76,6 +79,12 @@ class LatencyObserver(BaseObserver):
 
         # Monitor key latency points
         if isinstance(frame, UserStartedSpeakingFrame):
+            # Only consider inbound frames and debounce rapid duplicates
+            if direction != 'in':
+                return
+            if (current_time - self._last_user_started_ts) * 1000.0 < self._debounce_ms:
+                return
+            self._last_user_started_ts = current_time
             # Reset state for new turn when user starts speaking
             self._reset_turn_state()
             self._timings['user_started'] = current_time

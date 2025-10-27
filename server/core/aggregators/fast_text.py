@@ -9,6 +9,7 @@ from pipecat.frames.frames import (
     CancelFrame,
     EndFrame,
     Frame,
+    LLMFullResponseEndFrame,
     InterimTranscriptionFrame,
     InterruptionFrame,
     TextFrame
@@ -23,7 +24,7 @@ class FastTextAggregator(FrameProcessor):
     similar to LiveKit's Kokoro implementation.
     """
 
-    def __init__(self, min_tokens: int = 175, max_tokens: int = 250, max_time: float = 0.5):
+    def __init__(self, min_tokens: int = 175, max_tokens: int = 250, max_time: float = 0.5, sentence_delimiters: Optional[str] = None):
         super().__init__()
         self._min_tokens = min_tokens  # TARGET_MIN_TOKENS equivalent
         self._max_tokens = max_tokens  # TARGET_MAX_TOKENS equivalent
@@ -32,7 +33,10 @@ class FastTextAggregator(FrameProcessor):
         self._timer = None
         self._last_release_time = asyncio.get_event_loop().time()
         # Sentence ending patterns
-        self._sentence_endings = {'.', '!', '?', '。', '！', '？'}
+        if sentence_delimiters:
+            self._sentence_endings = set(sentence_delimiters)
+        else:
+            self._sentence_endings = {'.', '!', '?', '。', '！', '？'}
         self._clause_endings = {',', ';', ':', '，', '；', '：'}
 
     async def _release_text(self):
@@ -63,6 +67,16 @@ class FastTextAggregator(FrameProcessor):
 
         # Remove emojis and problematic characters for TTS
         text = sanitize_for_voice(text)
+
+        # Normalize ellipses and repeated dots to a single period
+        text = re.sub(r'…+', '.', text)
+        text = re.sub(r'\.{3,}', '.', text)
+
+        # Remove leading meta hints in parentheses, e.g., (Calculating)
+        text = re.sub(r'^\(([^)]+)\)\s*', '', text, flags=re.IGNORECASE)
+
+        # Join digits separated by spaces (e.g., '2  75' -> '275')
+        text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
 
         # Clean up extra whitespace but preserve sentence structure
         text = re.sub(r'\s+', ' ', text)  # Multiple spaces to single
@@ -166,7 +180,7 @@ class FastTextAggregator(FrameProcessor):
                     self._timer.cancel()
                 self._timer = asyncio.create_task(self._delayed_release())
 
-        elif isinstance(frame, EndFrame):
+        elif isinstance(frame, (EndFrame, LLMFullResponseEndFrame)):
             if self._aggregation.strip():
                 await self._release_text()
             await self.push_frame(frame)

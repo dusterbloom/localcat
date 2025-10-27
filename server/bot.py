@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import os
 import re
+import signal
 import sys
 import time
 import threading
@@ -51,6 +52,19 @@ from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, Ice
 async def get_initial_greeting() -> str:
     """Simple greeting for now - HotMem will provide memory context."""
     return "Hello! How can I help you today?"
+
+# Signal handling for graceful shutdown in dev mode
+shutdown_event = asyncio.Event()
+
+def signal_handler(sig, frame):
+    """Handle SIGINT/SIGTERM gracefully during development."""
+    signal_name = 'SIGINT' if sig == signal.SIGINT else 'SIGTERM'
+    logger.info(f"🛑 Received {signal_name}, initiating graceful shutdown...")
+    shutdown_event.set()
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 app = FastAPI()
 app.add_middleware(

@@ -198,8 +198,9 @@ def setup_logging_for_bot():
     success = configure_logging()
     if success:
         log_system_info()
-        # Enable httpx logging for OpenAI SDK HTTP requests
-        _setup_httpx_logging()
+        # Enable httpx logging for OpenAI SDK HTTP requests only when requested
+        if os.getenv("LOG_HTTPX", "false").lower() in ("true", "1", "yes"):
+            _setup_httpx_logging()
     return success
 
 
