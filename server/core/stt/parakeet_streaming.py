@@ -79,6 +79,12 @@ class ParakeetStreamingSTT(STTService):
         self.depth = depth
         self.volume_threshold = volume_threshold
 
+        # Warn if internal VAD enabled — external Silero VAD is already gating frames
+        # Running double VAD can cause premature cutoffs or missed speech in noisy rooms.
+        if self.enable_vad:
+            logger.warning("[Parakeet STT] Internal VAD enabled while pipeline typically uses external Silero VAD."
+                           " Consider disabling PARakeet internal VAD to avoid conflicting gating.")
+
         # Model and processing state
         self._model = None
         self._processor = None

@@ -24,6 +24,7 @@ from pipecat.services.tts_service import TTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
 
 from tools.text_formatter import chunk_for_kokoro_ultra_low_latency
+import os
 from tools.audio_processor import AudioProcessor, create_clean_audio_frame
 
 # Force single-threaded execution to prevent Metal framework conflicts
@@ -268,8 +269,22 @@ class ProfessionalKokoroTTSService(TTSService):
             yield TTSStoppedFrame()
             return
 
-        # Use ultra-low latency chunking for optimal performance
-        sentences = chunk_for_kokoro_ultra_low_latency(text, max_chars=25)
+        # Sentence-first chunking for natural prosody (disables 25-char micro-chunks)
+        # Env: TTS_CHUNK_SIZE_CHARS optionally caps sentence grouping (default to 150)
+        try:
+            max_chars = int(os.getenv("TTS_CHUNK_SIZE_CHARS", "150"))
+        except Exception:
+            max_chars = 150
+        # Light sanitization to keep pronunciations and pacing natural
+        from tools.text_formatter import sanitize_for_kokoro
+        clean_text = sanitize_for_kokoro(text)
+
+        from tools.text_formatter import split_text_for_kokoro_streaming
+        sentences = split_text_for_kokoro_streaming(
+            clean_text,
+            min_length=max(30, max_chars // 2),
+            max_length=max_chars,
+        )
 
         if not sentences:
             logger.debug(f"🔇 Skipping TTS for empty text: '{text}'")

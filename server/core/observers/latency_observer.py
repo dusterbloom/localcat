@@ -17,6 +17,7 @@ from pipecat.frames.frames import (
     TTSStoppedFrame,
     StartInterruptionFrame,
     UserStartedSpeakingFrame,
+    UserStoppedSpeakingFrame,
 )
 
 
@@ -24,11 +25,14 @@ class LatencyObserver(BaseObserver):
     """
     Custom observer for tracking voice AI latency metrics.
 
-    Monitors frame processing times to ensure sub-second end-to-end latency:
-    - STT: <150ms (Whisper transcription)
-    - LLM: <250ms first token
-    - TTS: <200ms first audio
-    - Total: <800ms end-to-end
+    Monitors frame processing times for optimization:
+    - STT: Logged by DirectMLXWhisperSTT (~500-800ms actual processing)
+    - LLM: <250ms first token (Time To First Token - TTFT)
+    - TTS: First audio latency
+    - Response: <500ms (LLM + TTS, excludes STT which runs in parallel with user speech)
+
+    Note: Frame timing can be unreliable due to streaming and frame ordering.
+    STT processing time is accurately logged by the STT service itself.
     """
 
     def __init__(self):
@@ -37,7 +41,26 @@ class LatencyObserver(BaseObserver):
         self._session_start = time.time()
         self._frame_counts: Dict[str, int] = {}
 
+        # Turn-based state tracking to prevent pollution across conversation turns
+        self._current_turn_id = 0
+        self._first_llm_token_measured = False  # Only measure first LLM token (TTFT)
+        self._first_tts_audio_measured = False  # Only measure first TTS audio
+        self._first_tts_started_measured = False  # Only log first TTS started
+        self._first_tts_stopped_measured = False  # Only log first TTS stopped
+        self._first_transcription_measured = False  # Only log first transcription
+
         logger.info("Latency Observer initialized for sub-second monitoring")
+
+    def _reset_turn_state(self):
+        """Reset timing state for a new conversation turn."""
+        self._current_turn_id += 1
+        self._timings.clear()
+        self._first_llm_token_measured = False
+        self._first_tts_audio_measured = False
+        self._first_tts_started_measured = False
+        self._first_tts_stopped_measured = False
+        self._first_transcription_measured = False
+        logger.debug(f"🔄 Turn {self._current_turn_id}: State reset for new conversation turn")
 
     async def on_process_frame(self, data: FrameProcessed):
         """Track frame processing timing."""
@@ -53,53 +76,77 @@ class LatencyObserver(BaseObserver):
 
         # Monitor key latency points
         if isinstance(frame, UserStartedSpeakingFrame):
+            # Reset state for new turn when user starts speaking
+            self._reset_turn_state()
             self._timings['user_started'] = current_time
-            logger.debug("User started speaking")
+            logger.debug(f"👤 User started speaking (Turn {self._current_turn_id})")
+
+        elif isinstance(frame, UserStoppedSpeakingFrame):
+            # Mark when user finished speaking - this is the STT processing start point
+            self._timings['user_stopped'] = current_time
+            if 'user_started' in self._timings:
+                speech_duration = (current_time - self._timings['user_started']) * 1000
+                logger.debug(f"🗣️  User speech duration: {speech_duration:.0f}ms")
 
         elif isinstance(frame, TranscriptionFrame):
-            if 'user_started' in self._timings:
-                stt_latency = (current_time - self._timings['user_started']) * 1000
+            # Mark STT complete - actual processing time logged by Whisper itself
+            if not self._first_transcription_measured:
                 self._timings['stt_complete'] = current_time
-                logger.info(f"STT latency: {stt_latency:.1f}ms (target: <150ms)")
-
-                if stt_latency > 150:
-                    logger.warning(f"STT latency {stt_latency:.1f}ms exceeds target")
+                self._first_transcription_measured = True
+                # Note: Actual Whisper processing time is logged by DirectMLXWhisperSTT
+                # Frame timing is unreliable due to streaming and frame ordering
 
         elif isinstance(frame, LLMTextFrame):
-            if 'stt_complete' in self._timings:
+            # CRITICAL FIX: Only measure FIRST LLM token (Time To First Token - TTFT)
+            # Streaming sends many LLMTextFrames; measuring all creates inflated latencies
+            if 'stt_complete' in self._timings and not self._first_llm_token_measured:
                 llm_latency = (current_time - self._timings['stt_complete']) * 1000
-                self._timings['llm_complete'] = current_time
-                logger.info(f"LLM latency: {llm_latency:.1f}ms (target: <250ms)")
+                self._timings['llm_first_token'] = current_time
+                self._first_llm_token_measured = True
+                logger.info(f"🧠 LLM TTFT (Time To First Token): {llm_latency:.1f}ms (target: <250ms)")
 
                 if llm_latency > 250:
-                    logger.warning(f"LLM latency {llm_latency:.1f}ms exceeds target")
+                    logger.warning(f"⚠️  LLM TTFT {llm_latency:.1f}ms exceeds target")
+                elif llm_latency < 150:
+                    logger.info(f"⚡ Excellent LLM TTFT: {llm_latency:.1f}ms")
 
         elif isinstance(frame, TTSStartedFrame):
-            if 'llm_complete' in self._timings:
-                tts_start_latency = (current_time - self._timings['llm_complete']) * 1000
+            if 'llm_first_token' in self._timings and not self._first_tts_started_measured:
+                tts_start_latency = (current_time - self._timings['llm_first_token']) * 1000
                 self._timings['tts_started'] = current_time
-                logger.info(f"TTS start latency: {tts_start_latency:.1f}ms")
+                self._first_tts_started_measured = True
+                logger.info(f"🔊 TTS started: {tts_start_latency:.1f}ms after first LLM token")
 
         elif isinstance(frame, TTSAudioRawFrame):
-            if 'tts_started' in self._timings and 'user_started' in self._timings:
-                # First TTS audio chunk
-                if 'first_tts_audio' not in self._timings:
-                    self._timings['first_tts_audio'] = current_time
-                    end_to_end_latency = (current_time - self._timings['user_started']) * 1000
-                    logger.info(f"End-to-end latency: {end_to_end_latency:.1f}ms (target: <800ms)")
+            # Measure first TTS audio chunk for response latency
+            if 'stt_complete' in self._timings and not self._first_tts_audio_measured:
+                self._timings['first_tts_audio'] = current_time
+                self._first_tts_audio_measured = True
 
-                    if end_to_end_latency > 800:
-                        logger.warning(f"End-to-end latency {end_to_end_latency:.1f}ms exceeds target")
-                    elif end_to_end_latency < 500:
-                        logger.info(f"Excellent latency: {end_to_end_latency:.1f}ms")
+                # Response latency: transcription → first audio (LLM + TTS only, excludes STT)
+                # STT time is logged separately by DirectMLXWhisperSTT
+                response_latency = (current_time - self._timings['stt_complete']) * 1000
+
+                # Log detailed breakdown if LLM timing is available
+                if 'llm_first_token' in self._timings:
+                    llm_ms = (self._timings['llm_first_token'] - self._timings['stt_complete']) * 1000
+                    tts_ms = (current_time - self._timings['llm_first_token']) * 1000
+                    logger.info(f"🎯 Response latency: {response_latency:.1f}ms = LLM({llm_ms:.0f}ms) + TTS({tts_ms:.0f}ms) [target: <500ms]")
+
+                    if response_latency > 500:
+                        logger.warning(f"⚠️  Response latency {response_latency:.1f}ms exceeds target")
+                else:
+                    logger.info(f"🎯 Response latency: {response_latency:.1f}ms (target: <500ms)")
 
         elif isinstance(frame, TTSStoppedFrame):
-            if 'tts_started' in self._timings:
+            if 'tts_started' in self._timings and not self._first_tts_stopped_measured:
                 tts_total_latency = (current_time - self._timings['tts_started']) * 1000
-                logger.info(f"TTS total latency: {tts_total_latency:.1f}ms (target: <200ms)")
+                self._first_tts_stopped_measured = True
+                logger.info(f"🔊 TTS completed: {tts_total_latency:.1f}ms total duration")
+            # Turn complete - could reset here if needed for strict turn boundaries
 
         elif isinstance(frame, StartInterruptionFrame):
-            logger.info("Interruption detected - monitoring barge-in performance")
+            logger.info("🚨 Interruption detected - user barge-in")
 
     def get_metrics_report(self) -> Dict[str, Any]:
         """Generate latency metrics report."""

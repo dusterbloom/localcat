@@ -23,7 +23,10 @@ from pipecat.frames.frames import (
 from pipecat.services.tts_service import TTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
 
-from tools.text_formatter import split_text_for_kokoro_streaming
+from tools.text_formatter import (
+    split_text_for_kokoro_streaming,
+    chunk_for_kokoro_ultra_low_latency,
+)
 from tools.audio_utils import convert_to_pcm16
 from core.utils.mlx_lock import MLX_GLOBAL_LOCK
 from core.tts.kokoro_config import (
@@ -246,11 +249,21 @@ class MLXKokoroTTSService(TTSService):
             yield TTSStoppedFrame()
             return
 
-        # Split text into optimal chunks for Kokoro
+        # Sentence-first chunking for natural prosody (disables 25-char micro-chunks)
+        # Env: TTS_CHUNK_SIZE_CHARS optionally caps sentence grouping (default to CHUNK_MAX_LENGTH)
+        try:
+            max_chars = int(os.getenv("TTS_CHUNK_SIZE_CHARS", str(CHUNK_MAX_LENGTH)))
+        except Exception:
+            max_chars = CHUNK_MAX_LENGTH
+
+        # Apply Kokoro-specific sanitization before chunking
+        from tools.text_formatter import sanitize_for_kokoro
+        clean_text = sanitize_for_kokoro(text)
+
         sentences = split_text_for_kokoro_streaming(
-            text,
-            min_length=CHUNK_MIN_LENGTH,
-            max_length=CHUNK_MAX_LENGTH
+            clean_text,
+            min_length=max(30, min(CHUNK_MIN_LENGTH, max_chars // 2)),
+            max_length=max_chars,
         )
 
         if not sentences:

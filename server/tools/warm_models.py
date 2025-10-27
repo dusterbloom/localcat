@@ -41,7 +41,7 @@ def warm_parakeet_stt():
 
 def warm_whisper_mlx_stt():
     from pipecat.services.whisper.stt import WhisperSTTServiceMLX, MLXModel
-    WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
+    WhisperSTTServiceMLX(model=MLXModel.TINY)
     _log_ok("Whisper-MLX STT model")
 
 

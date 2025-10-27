@@ -138,7 +138,7 @@ def sanitize_for_kokoro(text: str, max_sentence_length: int = 110) -> str:
     return cleaned
 
 
-def chunk_for_kokoro_ultra_low_latency(text: str, max_chars: int = 25) -> List[str]:
+def chunk_for_kokoro_ultra_low_latency(text: str, max_chars: int = 25, *, min_chars: int = 12) -> List[str]:
     """
     Optimal text chunking for Kokoro TTS - Ultra Low Latency
     Target: <800ms voice-to-voice latency
@@ -155,6 +155,10 @@ def chunk_for_kokoro_ultra_low_latency(text: str, max_chars: int = 25) -> List[s
     Returns:
         List of chunks optimized for streaming TTS
     """
+    # Defensive bounds
+    max_chars = max(8, int(max_chars))
+    min_chars = max(1, min(int(min_chars), max_chars))
+
     chunks = []
 
     # Split on sentence boundaries first
@@ -189,7 +193,33 @@ def chunk_for_kokoro_ultra_low_latency(text: str, max_chars: int = 25) -> List[s
                     if current_chunk:
                         chunks.append(current_chunk)
 
-    return [chunk for chunk in chunks if chunk.strip()]
+    chunks = [chunk for chunk in chunks if chunk.strip()]
+
+    # Post-pass: coalesce micro-chunks to preserve natural prosody
+    # Merge consecutive small chunks until they reach ~60% of max_chars
+    if not chunks:
+        return chunks
+
+    merged: List[str] = []
+    buffer = ""
+    threshold = max(1, int(0.6 * max_chars))
+
+    for c in chunks:
+        if not buffer:
+            buffer = c
+            continue
+        if len(buffer) < min_chars or len(buffer) < threshold:
+            candidate = f"{buffer} {c}".strip()
+            if len(candidate) <= max_chars:
+                buffer = candidate
+                continue
+        merged.append(buffer)
+        buffer = c
+
+    if buffer:
+        merged.append(buffer)
+
+    return merged
 
 
 def split_text_for_kokoro_streaming(text: str, min_length: int = 50, max_length: int = 120) -> List[str]:

@@ -1,0 +1,395 @@
+# LocalCat Voice Agent Configuration
+# Single source of truth - consolidated from dual .env files
+# Generated: 2025-09-26
+
+#########################
+# Core Agent Settings
+#########################
+USER_ID=peppi
+AGENT_ID=locat
+
+
+#########################
+# Performance & Debug
+#########################
+TARGET_LATENCY_MS=800
+ENABLE_PERFORMANCE_LOGGING=false
+LOG_LEVEL=INFO 
+
+#########################
+# Offline mode
+#########################
+HF_HUB_OFFLINE=0
+TRANSFORMERS_OFFLINE=1
+TORCH_HOME=/Users/peppi/.cache/torch
+WEBRTC_USE_STUN=false
+
+#########################
+# Voice recognition and enrollment
+#########################
+VOICE_AGENT_ENABLE_INTRO_PIPELINE=false
+ENABLE_EPHEMERAL_CHOICE=true                                    
+ENROLLMENT_FIXED_PHRASE="A quick brown fox jumped over a lazy dog."    
+SPEAKER_AUTO_ENROLL_UTTERANCES=3         
+ENROLLMENT_REQUIRE_FIXED_PHRASE=false                           
+BEEP_ON_ENROLL_COMPLETE=true      
+AUDIO_INTEL_SKIP_FOR_RETURNING=false
+VOICE_AGENT_RETURNING_GREETING=welcome_back
+MEMORY_CONVO_INDEX=true 
+SANITIZE_SPEAKER_NAMES_ON_LOAD=true
+SIGN_ME_UP_TERMS="sign me up|register me|enroll me|get started|create profile"
+SIGN_IN_TERMS="sign in|log in|i'm back|it's me|recognize me"
+ANONYMOUS_TERMS="anonymous|private|don't store|do not store|skip|no"
+
+#########################
+# Speech-to-Text (STT)
+#########################
+# MIC_PROBE_AVAILABLE controls Python import, not runtime behavior
+# Use VOICE_AGENT_MIC_PROBE_ENABLED to disable MicProbe logging
+VOICE_AGENT_MIC_PROBE_ENABLED=false
+STT_ENGINE=whisper_mlx_direct
+VOICE_AGENT_STT_ENGINE=whisper_mlx_direct
+VOICE_AGENT_STT_CHUNK_DURATION=0.032 # whisper // for parakeet 1.0
+VOICE_AGENT_STT_STREAMING=true # Enable streaming for Whisper-MLX
+STT_MODEL=mlx-community/whisper-small.en-mlx-q4 
+
+# Whisper settings
+WHISPER_NO_SPEECH_THRESHOLD=0.8
+WHISPER_LOGPROB_THRESHOLD=-0.25
+WHISPER_HALLUCINATION_SILENCE_THRESHOLD=0.5
+WHISPER_VOLUME_THRESHOLD=0.015
+
+# Parakeet settings
+PARAKEET_FILTER_HALLUCINATIONS=false
+PARAKEET_INTERIM_MIN_CHARS=2
+PARAKEET_FINAL_MIN_CHARS=3
+
+#########################
+# Voice Activity Detection (VAD)
+#########################
+VAD_CONFIDENCE=0.6         # ↑ from 0.3 (requires higher confidence)
+VAD_MIN_VOLUME=0.5         # ↑ from 0.3 (ignore quiet sounds)  
+VAD_START_SECS=0.03
+VAD_STOP_SECS=0.15
+
+# Smart turn detection
+VAD_SMART_TURN_MODEL_PATH=pipecat-ai/smart-turn-v2
+VAD_SMART_TURN_STOP_SECS=0.1
+VAD_SMART_TURN_PRE_SPEECH_MS=500.0
+VAD_SMART_TURN_MAX_DURATION_SECS=16.0
+
+
+
+#########################
+# Text-to-Speech (TTS)
+#########################
+
+# VOICE_AGENT_TTS_SIDECAR_URL=http://127.0.0.1:8770  # DISABLED: sidecar overrides TTS engine choice
+# Use Siri Streaming TTS (native macOS voices)
+# Production bundle: kokoro_pytorch with fixed espeak initialization
+# Now properly configures EspeakWrapper before KPipeline creation
+VOICE_AGENT_TTS_ENGINE=kokoro_professional  # Fixed espeak-ng paths for bundle
+VOICE_AGENT_DEBUG_MODE=true
+# Siri TTS Configuration (used when TTS_ENGNE=siri_streaming)
+# SIRI_TTS_LANGUAGE=en-US
+# SIRI_TTS_VOICE_ID=com.apple.voice.premium.en-US.Zoe  # Premium quality female voice
+SIRI_TTS_RATE=0.50  # Natural speaking pace
+SIRI_TTS_PITCH=1.0
+SIRI_TTS_USE_SYSTEM_VOICE=true
+
+# Kokoro TTS Configuration (used when TTS_ENGINE=kokoro_*)
+VOICE_AGENT_TTS_VOICE=af_heart
+VOICE_AGENT_TTS_SPEED=1.0
+VOICE_AGENT_TTS_SAMPLE_RATE=24000
+VOICE_AGENT_TTS_FADE_DURATION_MS=50.0
+
+# Ultra-low latency settings (40-80ms TTFB)
+TTS_PREWARM=true
+TTS_BUFFER_MS=40
+TTS_MIN_TOKENS=50
+TTS_MAX_TOKENS=150
+TTS_MODEL=mlx-community/Kokoro-82M-bf16
+
+# Audio quality
+TTS_TARGET_PEAK_DB=-3.0
+TTS_ENABLE_QUALITY_LOGGING=false
+
+#########################
+# Video Processing (Session: Vision)
+#########################
+VIDEO_INPUT_ENABLED=true
+VIDEO_TARGET_FPS=0.5
+VIDEO_OUT_ENABLED=false
+VISION_MODEL_ENABLED=true
+
+# Vision optimization - only inject images for vision-related queries
+VISION_KEYWORD_FILTER=true
+VISION_KEYWORDS=see,look,show,what,describe,image,picture,video,color,object,room,view,watch,observe                                                       
+
+VISION_IMAGE_SIZE=256                        
+VISION_IMAGE_QUALITY=75
+VISION_MAX_IMAGES_IN_CONTEXT=1
+VISION_ENABLE_DEDUPLICATION=true
+
+#########################
+# Language Model (LLM)
+#########################
+
+# ====================
+# DIRECT MLX-LM (Recommended for Ultra-Low Latency)
+# ====================
+# Eliminates LM Studio HTTP overhead for 5-6x faster TTFT
+# Performance: ~544ms TTFT (vs ~3000-3400ms with LM Studio)
+LLM_USE_DIRECT_MLX=true                         # Enable Direct MLX-LM (set false for LM Studio)
+LLM_MODEL=mlx-community/Qwen3-VL-4B-Instruct-4bit  # MLX-compatible model (required for direct mode)
+LLM_TEMPERATURE=0.7
+LLM_PREWARM=false                               # Prewarm disabled for Direct MLX (not needed)
+
+# ====================
+# LM STUDIO HTTP (Legacy/Fallback)
+# ====================
+# Only used when LLM_USE_DIRECT_MLX=false
+LLM_BASE_URL=http://127.0.0.1:1234/v1
+LLM_API_KEY=not-needed
+# LLM_MODEL=minicpm-v-4_5  # Use this for LM Studio mode
+LLM_EMBEDDING_MODEL=nomic-embed-text:latest
+LLM_USE_STREAMING=true 
+
+# Turn management - OPTIMIZED FOR SUB-SECOND LATENCY
+LLM_AGGREGATION_TIMEOUT=0.08  # Reduced for faster response (was 0.2)
+LLM_TURN_EMULATED_VAD_TIMEOUT=0.4  # REDUCED for <100ms barge-in detection (was 0.6)
+LLM_ENABLE_EMULATED_VAD_INTERRUPTION=true  # ENABLED for immediate barge-in (was false)
+
+# ============================================================================
+# LLM Context Management (prevent degradation in long chats)
+# ============================================================================
+# Maximum tokens for LLM context (reserve room for response)
+LLM_CONTEXT_MAX_TOKENS=1500  # Reduced from 3000 for faster processing
+
+# Prune at this threshold (0.60 = prune at 60% capacity - more aggressive)
+LLM_CONTEXT_PRUNE_THRESHOLD=0.60  # Reduced from 0.70 for lower latency
+
+# Always keep at least this many recent turns for coherence
+LLM_CONTEXT_MIN_TURNS=3  # Reduced from 4 for minimal context overhead
+
+# Memory system context window (turn pairs to keep)
+MEMORY_CONTEXT_SLIDING_WINDOW=true
+MEMORY_CONTEXT_MAX_TURN_PAIRS=4
+
+#########################
+# Memory System
+#########################
+MEMORY_ENABLED=true
+MEMORY_HOTPATH_ENABLED=true
+HOTMEM_USE_SOTA_CLASSIFIER=false
+MEMORY_BULLETS_MAX=3
+MEMORY_INTERIM_MIN_WORDS=6
+MEMORY_ENABLE_HANDSHAKE=true
+MEMORY_SOURCES=convo,summary,graph,semantic
+MEMORY_CONVO_INDEX=true
+
+# Retrieval budget settings (IMPROVED for better context)
+MEMORY_MAX_BULLETS=5                    # Increased from implicit 2 → 5 bullets
+MEMORY_TOKEN_BUDGET=600                 # Increased from 300 → 600 tokens
+
+# Source weights for composite scoring
+MEMORY_WEIGHT_GRAPH=0.3                 # Graph fact importance
+MEMORY_WEIGHT_CONVO=0.5                 # Conversation history importance (BOOSTED)
+MEMORY_WEIGHT_SUMMARY=0.2               # Summary importance
+MEMORY_WEIGHT_PROSODY=0.15              # Prosody confidence (reduced from 0.2)
+
+# Injection mode: "bullets" (legacy) or "headers"
+MEMORY_INJECTION_MODE=bullets           # CHANGED: bullets mode provides more context
+
+# Score threshold for header auto-expand (0.0-1.0)
+# Candidates below this score expand to full text
+MEMORY_HEADER_EXPAND_THRESHOLD=0.65
+
+# Enable component logging for debugging (true/false)
+MEMORY_LOG_COMPONENTS=true              # ENABLED for debugging
+
+#########################
+# Summarizer Prosody Bias
+#########################
+SUMMARY_PROSODY_ENABLED=true
+
+# Coreference
+MEMORY_COREFERENCE_ENABLED=true
+MEMORY_COREFERENCE_TIMEOUT_MS=50
+MEMORY_COREFERENCE_MIN_LENGTH=10
+
+# Storage paths - using user-writable location for production
+MEMORY_SQLITE_PATH=~/Library/Application Support/LocalCat/data/memory.db
+MEMORY_LMDB_PATH=~/Library/Application Support/LocalCat/data/graph.lmdb
+
+# Semantic retrieval (LEANN)
+# Enable semantic memory
+MEMORY_SEMANTIC_ENABLED=true
+# MEMORY_SEMANTIC_DIR=data/semantic_index
+MEMORY_SEMANTIC_DIR=~/Library/Application Support/LocalCat/data/semantic_index
+MEMORY_SEMANTIC_EMBED_MODEL=sentence-transformers/all-MiniLM-
+L6-v2
+MEMORY_SEMANTIC_SIMILARITY_THRESHOLD=0.85
+MEMORY_SEMANTIC_MAX_VECTORS=10000
+
+# Adjust weights
+MEMORY_WEIGHT_SEMANTIC=0.15
+MEMORY_WEIGHT_CONVO=0.45      # Reduce slightly
+MEMORY_WEIGHT_GRAPH=0.3
+MEMORY_WEIGHT_SUMMARY=0.1
+
+# Extraction settings
+MEMORY_DECOMPOSE_CLAUSES=false
+MEMORY_EXTRA_CONFIDENCE=false
+MEMORY_CONFIDENCE_THRESHOLD=0.6
+MEMORY_BYPASS_CONFIDENCE_FOR_BASIC=true
+MEMORY_CONFIDENCE_FLOOR_BASIC=0.3
+
+# YAML extractor judge (distilled, precision booster)
+YAML_GRAPH_JUDGE=on
+# YAML_GRAPH_JUDGE_MODEL=models/graph_judge.json # dev
+YAML_GRAPH_JUDGE_MODEL=~/Library/Application Support/LocalCat/data/graph_judge.json
+YAML_GRAPH_JUDGE_GRAY_BAND=0.10
+# YAML_GRAPH_JUDGE_GRAYZONE_LOG=data/judge_grayzone.jsonl #dev
+# YAML_GRAPH_JUDGE_SCHEMA=models/graph_judge_schema.json #dev
+YAML_GRAPH_JUDGE_GRAYZONE_LOG=~/Library/Application Support/LocalCat/data/judge_grayzone.jsonl
+YAML_GRAPH_JUDGE_SCHEMA=~/Library/Application Support/LocalCat/data/graph_judge_schema.json
+
+# LLM Judge (idle-time labeling) – use LM Studio (OpenAI-compatible)
+LLM_JUDGE_BASE_URL=http://127.0.0.1:1234/v1
+LLM_JUDGE_API_KEY=not-needed
+LLM_JUDGE_MODEL=llama-3.2-3b-instruct
+
+# DSPy 
+ENABLE_DSPY_EXTRACTION=true
+DSPY_MODEL="llama-3.2-3b-instruct"
+DSPY_BASE_URL="http://127.0.0.1:1234/v1"
+
+# Injection formatting
+MEMORY_INJECT_ROLE=system
+MEMORY_INJECT_HEADER="Memory context to be used only if needed:"
+
+# Logging
+MEMORY_LOG_FILE=.logs/hotmem.log
+MEMORY_CONSOLE_DEBUG=true
+MEMORY_LOG_LEVEL=WARNING
+MEMORY_TRACE_FRAMES=false
+
+#########################
+# Session Management
+#########################
+SESSION_USE_DATABASE=true
+# SESSION_DB_PATH=data/sessions.db # DEV
+SESSION_DB_PATH=~/Library/Application Support/LocalCat/data/sessions.db
+SESSION_PERSISTENCE=true
+
+#########################
+# Summarization (DISABLED)
+#########################
+MEMORY_SUMMARIZER_ENABLED=true
+
+# Settings if re-enabling summarizer
+MEMORY_SUMMARIZER_MODEL=google/gemma-3n-e4b
+MEMORY_SUMMARIZER_BASE_URL=http://127.0.0.1:1234/v1
+MEMORY_SUMMARIZER_API_KEY=
+MEMORY_SUMMARIZER_MAX_TOKENS=120
+MEMORY_SUMMARIZER_WINDOW_MODE=turn_pairs
+MEMORY_SUMMARIZER_TURN_PAIRS=10
+MEMORY_SUMMARIZER_INTERVAL_SECS=300
+
+#########################
+# Parakeet STT Settings
+#########################
+PARAKEET_TEMPERATURE=0.0
+PARAKEET_SENTENCE_PAUSE_THRESHOLD=1.0
+PARAKEET_MAX_CHUNK_DURATION=2.0
+PARAKEET_CONTEXT_SIZE=256,256
+PARAKEET_DEPTH=3
+PARAKEET_VOLUME_THRESHOLD=0.01
+PARAKEET_ENABLE_VAD=false
+
+VOICE_AGENT_LOG_LEVEL=DEBUG
+# Legacy/Deprecated (kept for reference)
+# VOICE_AGENT_* prefixes deprecated - use domain-specific prefixes above
+# HOTMEM_* prefixes deprecated - use MEMORY_* prefix
+# KOKORO_* individual settings deprecated - use TTS_* prefix
+# SUMMARIZER_ENABLED deprecated - use MEMORY_SUMMARIZER_ENABLED
+
+# === Audio Intelligence (Session 1: Speaker Recognition) ===
+AUDIO_INTELLIGENCE_ENABLED=true
+AUDIO_INTEL_USE_MPS=true  # Use Apple Silicon GPU
+SPEAKER_PROFILE_DIR=~/Library/Application Support/LocalCat/data/speaker_profiles
+SPEAKER_SIMILARITY_THRESHOLD=0.55  # ← LOWERED FURTHER: Very forgiving recognition
+SPEAKER_MIN_UTTERANCE_SEC=1.0
+SPEAKER_AUTO_ENROLL_UTTERANCES=3
+SPEAKER_CONSISTENCY_THRESHOLD=0.50  # ← LOWERED FURTHER: Very forgiving consistency
+
+# Session 2: Emotion Detection (TEMPORARILY DISABLED - API bug)
+AUDIO_INTEL_ENABLE_EMOTION=false
+AUDIO_INTEL_ENABLE_PROSODY=true
+
+# Session 3: TRUE Confidence from Audio Intelligence
+CONFIDENCE_STRATEGY=prosody_aware
+
+# Privacy-First Speaker Recognition
+AUDIO_INTEL_PRIVACY_MODE=auto_enroll  # ephemeral | consent_pending | auto_enroll
+AUDIO_INTEL_REQUIRE_CONSENT=false  # Set true to ask for name before enrolling
+AUDIO_INTEL_CONSENT_TIMEOUT_SEC=300  # 5 minutes
+
+# === Enrollment UX (Intro Pipeline) ===
+# Improved user experience during speaker enrollment
+AUDIO_INTEL_INTRO_PIPELINE=true           # Enable intro/enrollment pipeline
+AUDIO_INTEL_SKIP_FOR_RETURNING=true      # ← CHANGED FOR TESTING: Allow intro even with profiles
+AUDIO_INTEL_FORCE_INTRO=true              # ← CHANGED FOR TESTING: Force intro flow
+AUDIO_INTEL_INCLUDE_PRIVACY=false         # Include privacy explanation in intro
+
+# Custom intro messages (optional - uses defaults if not set)
+# AUDIO_INTEL_INTRO_MESSAGE="Hi! I'm LocalCat. Let me learn your voice..."
+# AUDIO_INTEL_PROGRESS_TEMPLATE="Learning your voice... {current} of {total}"
+# AUDIO_INTEL_COMPLETION_TEMPLATE="Perfect! I'll remember you{name}. How can I help?"
+# AUDIO_INTEL_WELCOME_BACK_TEMPLATE="Welcome back{name}! What can I help you with?"
+
+
+SPACY_MODEL_EN=en_core_web_trf
+SPACY_MODEL_ES=es_core_news_md
+SPACY_MODEL_DE=de_core_news_md
+SPACY_MODEL_FR=fr_core_news_md
+SPACY_MODEL_IT=it_core_news_lg
+SPACY_MODEL_ZH=zh_core_web_trf # (or zh_core_web_sm)
+YAML_DENSITY_CAPS=off
+
+#########################
+# A/B Testing Configuration
+#########################
+# Enable/disable extraction methods for A/B testing
+ENABLE_YAML_JUDGE=true
+ENABLE_HYBRID=true
+ENABLE_SLM=true
+ENABLE_DSPY=false  # Requires API
+
+# Hybrid SpaCy+LLM settings
+HOTMEM_LLM_ASSISTED=true
+HOTMEM_LLM_ASSISTED_MODEL=huihui_ai/qwen2.5-abliterate:3b 
+HOTMEM_LLM_ASSISTED_BASE_URL=http://127.0.0.1:11434/v1
+HOTMEM_LLM_ASSISTED_TIMEOUT_MS=500
+HOTMEM_COMPLEXITY_THRESHOLD=0.6
+
+# SLM refinement settings (LM Studio OpenAI-compatible)
+SLM_REFINEMENT_ENABLED=true
+SLM_FORCE=true
+SLM_PROVIDER=openai
+SLM_BASE_URL=http://127.0.0.1:1234/v1
+SLM_API_KEY=not-needed
+SLM_PRIMARY_MODEL=lfm2-350m-extract
+SLM_SECONDARY_MODEL=qwen2.5-coder-0.5b-instruct
+SLM_MODE=fallback
+SLM_MAX_REFINEMENT_MS=20000
+SLM_TEMP=0.1
+SLM_MAX_TOKENS=120
+SLM_STRICT_JSON=true
+SLM_RESPONSE_JSON_SCHEMA=true
+SLM_PREWARM_ON_INIT=true
+
+# YAML extractor paths
+YAML_INDEX_PATH=server/archive/2024_12_consolidation/assets/ASI1_index_v0_9.yaml
+NEXT_PUBLIC_ENABLE_CLIENT_TTS=false

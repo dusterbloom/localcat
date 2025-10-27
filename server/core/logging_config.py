@@ -74,8 +74,8 @@ class LoggingConfig:
             # Remove ALL existing loguru handlers
             logger.remove()
 
-            # ALWAYS use TRACE level to capture everything
-            actual_level = "TRACE"
+            # ALWAYS use level to capture what is set in .env in LOG_LEVEL=INFO/DEBUG/TRACE/WARNING
+            actual_level = level
 
             # Add file handler with maximum verbosity
             logger.add(
@@ -117,7 +117,7 @@ class LoggingConfig:
             debug_log_path = file_path.parent / "debug.log"
             logger.add(
                 str(debug_log_path),
-                level="TRACE",
+                level=level,
                 format=(
                     "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
                     "{level: <8} | "
@@ -149,8 +149,8 @@ class LoggingConfig:
             print(f"FAILED TO CONFIGURE VERBOSE LOGGING: {e}")
             print("Falling back to maximum verbosity basic logging...")
             logger.remove()
-            logger.add(sys.stderr, level="TRACE", backtrace=True, diagnose=True)
-            logger.add(str(self.server_log_file), level="TRACE", backtrace=True, diagnose=True)
+            logger.add(sys.stderr, level=level, backtrace=True, diagnose=True)
+            logger.add(str(self.server_log_file), level=level, backtrace=True, diagnose=True)
             return False
 
     def reconfigure_logging(self):
