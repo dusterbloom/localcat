@@ -252,6 +252,10 @@ class KokoroIsolatedTTS(TTSService):
 
                 chunk_start_time = time.time()
 
+                # Mirror the exact text chunk to transcript/UI
+                from pipecat.frames.frames import TTSTextFrame
+                yield TTSTextFrame(text=sentence)
+
                 # Send generation command to worker
                 self._send_command({
                     "cmd": "generate",

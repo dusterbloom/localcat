@@ -245,6 +245,10 @@ class TTSMLXUltraLowLatency(TTSService):
 
                 logger.debug(f"Processing chunk {chunk_idx + 1}/{len(chunks)}: '{chunk_text}'")
 
+                # Mirror the exact text chunk to transcript/UI
+                from pipecat.frames.frames import TTSTextFrame
+                yield TTSTextFrame(text=chunk_text)
+
                 # Send generation command for this chunk
                 command = json.dumps({
                     "cmd": "generate",

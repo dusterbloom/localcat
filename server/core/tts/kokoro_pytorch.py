@@ -318,6 +318,10 @@ class KokoroPyTorchTTSService(TTSService):
 
                 chunk_start_time = time.time()
 
+                # Mirror the exact text chunk to transcript/UI
+                from pipecat.frames.frames import TTSTextFrame
+                yield TTSTextFrame(text=sentence)
+
                 # Generate audio
                 result = await asyncio.get_event_loop().run_in_executor(
                     self._executor,
