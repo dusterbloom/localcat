@@ -1593,7 +1593,7 @@ class Retrieval:
         wpro = 0.0
         if candidate.source == "convo":
             # Get prosody weight from environment
-            prosody_weight = float(os.getenv("MEMORY_WEIGHT_PROSODY", "0.0"))
+            prosody_weight = float(os.getenv("MEMORY_WEIGHT_PROSODY", "0.15"))
             
             if prosody_weight > 0.0:
                 wpro = self._calculate_prosody_component(candidate)
@@ -1719,7 +1719,7 @@ class Retrieval:
         recency = components.get("wrec", 0.0) / self.weights.get("wrec", 1.0)  # Normalize back to [0,1]
         usage = components.get("wuse", 0.0) / self.weights.get("wuse", 1.0)  # Normalize back to [0,1]
         prosody = components.get("wpro", 0.0)
-        prosody_weight = float(os.getenv("MEMORY_WEIGHT_PROSODY", "0.0"))
+        prosody_weight = float(os.getenv("MEMORY_WEIGHT_PROSODY", "0.15"))
         if prosody_weight > 0:
             prosody = prosody / prosody_weight  # Normalize back to [0,1]
         

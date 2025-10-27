@@ -106,6 +106,93 @@ HF_HUB_OFFLINE=1 python bot.py
    - Or use any WebRTC-compatible voice client
    - Connect to `http://localhost:7860`
 
+## 📦 Model Download and Options
+
+You have two ways to run LLMs for development:
+
+- HTTP (LM Studio/Ollama): reuse existing downloads, simplest to start
+- Direct MLX (mlx-lm): fastest TTFT, needs MLX-compatible weights
+
+### HTTP via LM Studio or Ollama
+
+- Pros: Reuses LM Studio/Ollama model cache; no extra downloads
+- Cons: Adds HTTP overhead vs Direct MLX
+
+Set env to use HTTP:
+
+```bash
+LLM_USE_DIRECT_MLX=false
+LLM_BASE_URL=http://127.0.0.1:1234/v1   # LM Studio default
+VOICE_AGENT_LLM_MODEL=gemma3n:e2b       # or any model served by LM Studio
+```
+
+> Tip: Open LM Studio and enable the OpenAI-compatible server. Pick any model already downloaded.
+
+### Direct MLX (mlx-lm)
+
+- Pros: Ultra-fast TTFT (no HTTP), fully local
+- Cons: Requires MLX-ready weights (not the same as LM Studio’s gguf cache)
+
+Set env to use Direct MLX:
+
+```bash
+LLM_USE_DIRECT_MLX=true
+VOICE_AGENT_LLM_MODEL=mlx-community/gemma3n:e2b   # MLX-ready HF model
+
+# Optional: shared cache to avoid re-downloading per project
+export HF_HOME="$HOME/AI-Models/shared/huggingface"
+```
+
+Warm once (downloads into HF cache), then you can run offline:
+
+```bash
+python -m tools.warm_mlx_lm --model mlx-community/gemma3n:e2b
+HF_HUB_OFFLINE=1 python bot.py
+```
+
+You can prefetch multiple models:
+
+```bash
+python -m tools.warm_mlx_lm --file path/to/models.txt   # one model id per line
+```
+
+### Local directory (no network)
+
+If you already have MLX weights in a local folder, point the model to that path:
+
+```bash
+LLM_USE_DIRECT_MLX=true
+VOICE_AGENT_LLM_MODEL=/Users/you/AI-Models/local-mlx/gemma3n-e2b
+HF_HUB_OFFLINE=1
+```
+
+### Can I run more than one MLX LLM (e.g., one-time agents)?
+
+Yes. Options:
+- Sequential in one process: use the Direct MLX service’s `set_model()` to hot-swap between models when idle.
+- Parallel in separate processes: launch multiple Python processes, each with its own Direct MLX model. This avoids GPU/Metal memory contention.
+
+Example (one-off agent) using mlx-lm directly:
+
+```bash
+python - <<'PY'
+import sys, mlx_lm
+model_id = sys.argv[1] if len(sys.argv)>1 else 'mlx-community/gemma3n:e2b'
+m, t = mlx_lm.load(model_id)
+prompt = 'You are a concise assistant. Say hello in one sentence.'
+for tok in mlx_lm.stream_generate(m, t, prompt=prompt, max_tokens=64):
+    print(tok.text, end='', flush=True)
+print()
+PY
+```
+
+Or prewarm multiple and run them in parallel as separate processes (recommended for stability):
+
+```bash
+python -m tools.warm_mlx_lm --model mlx-community/gemma3n:e2b --model mlx-community/Qwen3-0.6B-8bit
+# then launch two processes of your app with different LLM_MODEL values
+```
+
 ## ⚙️ Configuration
 
 ### Essential Environment Variables
