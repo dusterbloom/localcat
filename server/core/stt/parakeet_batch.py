@@ -24,24 +24,6 @@ from pipecat.services.stt_service import STTService
 
 from core.utils.mlx_lock import MLX_GLOBAL_LOCK
 
-try:
-    from parakeet_mlx import from_pretrained
-    PARAKEET_AVAILABLE = True
-except ImportError:
-    logger.warning("parakeet_mlx not available. Install with: pip install parakeet-mlx")
-    try:
-        # Fallback to old mlx_audio
-        from mlx_audio.stt.utils import load_model
-        PARAKEET_AVAILABLE = True
-        PARAKEET_OLD_FORMAT = True
-        logger.warning("Using legacy mlx_audio format - batch mode only")
-    except ImportError:
-        logger.warning("Neither parakeet_mlx nor mlx_audio available")
-        PARAKEET_AVAILABLE = False
-        PARAKEET_OLD_FORMAT = False
-else:
-    PARAKEET_OLD_FORMAT = False
-
 
 class ParakeetBatchSTT(STTService):
     """
@@ -73,9 +55,6 @@ class ParakeetBatchSTT(STTService):
     ):
         super().__init__(**kwargs)
 
-        if not PARAKEET_AVAILABLE:
-            raise ImportError("parakeet_mlx is required but not installed")
-
         self._model_path = model_path
         self._language = language
         self._sample_rate = 16000  # Parakeet expects 16kHz
@@ -106,13 +85,19 @@ class ParakeetBatchSTT(STTService):
             logger.info(f"🔒 Acquiring MLX lock for Parakeet batch initialization...")
             with MLX_GLOBAL_LOCK:
                 logger.info(f"Loading Parakeet model: {self._model_path}")
-
-                if PARAKEET_OLD_FORMAT:
-                    # Legacy mlx_audio format
-                    self._model = load_model(self._model_path)
-                else:
-                    # New parakeet_mlx format
-                    self._model = from_pretrained(self._model_path)
+                # Lazy import to avoid crashing at module import time
+                try:
+                    from parakeet_mlx import from_pretrained as _from_pretrained
+                    self._model = _from_pretrained(self._model_path)
+                except Exception:
+                    # Fallback to legacy mlx_audio loader
+                    try:
+                        from mlx_audio.stt.utils import load_model as _load_model
+                        logger.warning("Using legacy mlx_audio format - batch mode only")
+                        self._model = _load_model(self._model_path)
+                    except Exception as _e:
+                        logger.warning("Neither parakeet_mlx nor mlx_audio available")
+                        raise ImportError("No Parakeet backend available") from _e
 
                 logger.info("✅ Parakeet batch model loaded successfully")
                 logger.debug("Keeping MLX model in memory (shares Metal heap with Kokoro MLX TTS)")

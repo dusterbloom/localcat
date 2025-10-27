@@ -88,6 +88,14 @@ class DirectMLXWhisperSTT(SegmentedSTTService):
             "start recording",
             "i'm going to start recording",
             "im going to start recording",
+            # Broader activity phrases frequently mis-fired on silence/background
+            "i'm going to be doing a video",
+            "im going to be doing a video",
+            "going to be doing a video",
+            "i am going to be doing a video",
+            "i'm going to be doing",
+            "im going to be doing",
+            "going to start",
         }
         if suppress_from_env.strip():
             extra = {s.strip().lower() for s in suppress_from_env.split(",") if s.strip()}
@@ -96,6 +104,17 @@ class DirectMLXWhisperSTT(SegmentedSTTService):
 
         # Track VAD state; only transcribe when actively speaking
         self._vad_active = False
+        # Accept both WHISPER_MIN_SEGMENT_SEC and legacy WHISPER_MIN_SEGMENT_DURATION
+        try:
+            min_seg = _os.getenv("WHISPER_MIN_SEGMENT_SEC") or _os.getenv("WHISPER_MIN_SEGMENT_DURATION")
+            self._min_segment_sec = float(min_seg) if min_seg is not None else 0.3
+        except Exception:
+            self._min_segment_sec = 0.3
+        # Max audio duration override
+        try:
+            self._max_chunk_sec = float(_os.getenv("WHISPER_MAX_AUDIO_DURATION", "10.0"))
+        except Exception:
+            self._max_chunk_sec = 10.0
 
         # Import mlx_whisper
         try:
@@ -145,17 +164,17 @@ class DirectMLXWhisperSTT(SegmentedSTTService):
             start_time = time.time()
             logger.debug(f"🎤 DirectMLXWhisperSTT.run_stt called with {len(audio)} bytes")
 
-            # Min segment duration check: reject audio chunks < 0.3 seconds
+            # Min segment duration check (tunable): reject very short chunks
             # Prevents hallucinations on noise/background audio
             duration_seconds = len(audio) / (16000 * 2)  # 16kHz, 2 bytes per sample
-            if duration_seconds < 0.3:
+            if duration_seconds < self._min_segment_sec:
                 logger.debug(f"⏭️  Skipping chunk: {duration_seconds:.2f}s < 0.3s minimum")
                 return
 
             # Max audio chunk size limiting: cap at 10 seconds
             # Prevents extreme latency from processing 30-60 second utterances
-            MAX_CHUNK_SECONDS = 10
-            max_bytes = MAX_CHUNK_SECONDS * 16000 * 2
+            MAX_CHUNK_SECONDS = max(1.0, self._max_chunk_sec)
+            max_bytes = int(MAX_CHUNK_SECONDS * 16000 * 2)
 
             if len(audio) > max_bytes:
                 duration = len(audio) / (16000 * 2)
@@ -208,9 +227,17 @@ class DirectMLXWhisperSTT(SegmentedSTTService):
                 if text:
                     # Normalize and suppress known UI-action hallucinations
                     norm = text.strip().lower()
+                    # Broad keyword suppression for common misfires on silence/noise
                     if norm in self._suppress_phrases and (not self._vad_active or rms < self._volume_threshold * 1.5):
                         logger.info(f"🧯 Whisper hallucination suppressed: '{text}' (rms={rms:.4f})")
                         return
+                    # Heuristic suppression: short utterances about starting/recording videos
+                    if ("video" in norm or "record" in norm) and (
+                        norm.startswith("i'm going to") or norm.startswith("im going to") or "going to" in norm
+                    ):
+                        if (not self._vad_active and duration_seconds < max(0.8, self._min_segment_sec * 2)) or rms < self._volume_threshold * 1.2:
+                            logger.info(f"🧯 Whisper heuristic-suppressed: '{text}' (dur={duration_seconds:.2f}s, rms={rms:.4f}, vad={self._vad_active})")
+                            return
                     logger.info(f"🎯 Direct Whisper: '{text}' ({elapsed_ms:.1f}ms)")
                     yield TranscriptionFrame(text=text, user_id="", timestamp="")
                 else:

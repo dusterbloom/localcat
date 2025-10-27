@@ -36,6 +36,7 @@ from .utils.fallback_chain import FallbackChainManager, ChainExhaustedError
 from .utils.model_resolver import resolve_parakeet_model_path
 from .utils.service_validator import TTSServiceValidator
 from .builders.stt_builder import STTServiceBuilder
+from .builders.llm_builder import LLMServiceBuilder
 
 # Import intent service for smart processing
 try:
@@ -56,6 +57,7 @@ from core.tts.kokoro_professional import ProfessionalKokoroTTSService
 from core.tts.kokoro_mlx import MLXKokoroTTSService
 from core.tts.kokoro_pytorch import KokoroPyTorchTTSService
 from core.tts.siri_streaming import SiriStreamingTTSService
+from .builders.tts_builder import TTSServiceBuilder
 
 # Import optional components
 try:
@@ -228,137 +230,9 @@ class ServiceFactory:
                 logger.debug(f"Using cached TTS service for use_boundaries={use_boundaries} (post-lock)")
                 return self._services_cache[cache_key]
 
-            tts_config = self.config.get_component_config("tts")
-
-            if self.config.tts_engine == "kokoro_professional":
-                try:
-                    logger.debug("Using Professional Kokoro TTS (default optimized)")
-                    tts = ProfessionalKokoroTTSService(
-                        voice=tts_config["voice"],
-                        speed=tts_config["speed"],
-                        sample_rate=tts_config["sample_rate"],
-                        fade_duration_ms=tts_config["fade_duration_ms"],
-                        target_peak_db=tts_config["target_peak_db"],
-                        enable_quality_logging=tts_config["enable_quality_logging"]
-                    )
-                    logger.info("✅ Professional Kokoro TTS ready")
-                except Exception as e:
-                    logger.error(f"❌ Professional Kokoro TTS failed: {e}")
-                    # Try Siri, then MLX
-                    try:
-                        tts = self._try_create_siri_tts(tts_config, use_boundaries)
-                        logger.info("✅ Siri Streaming TTS ready (fallback)")
-                    except Exception as e2:
-                        logger.warning(f"Siri TTS fallback failed: {e2}; using MLX Kokoro as last resort")
-                        tts = MLXKokoroTTSService(
-                            voice=tts_config["voice"],
-                            speed=tts_config["speed"],
-                            sample_rate=tts_config["sample_rate"]
-                        )
-                        logger.info("✅ MLX Kokoro TTS ready (last resort)")
-            elif self.config.tts_engine == "kokoro_mlx":
-                try:
-                    logger.debug("Using MLX Kokoro TTS (in-process, minirepo-aligned)")
-                    tts = MLXKokoroTTSService(
-                        voice=tts_config["voice"],
-                        speed=tts_config["speed"],
-                        sample_rate=tts_config["sample_rate"]
-                    )
-                    logger.info("✅ MLX Kokoro TTS ready (in-process)")
-                except Exception as e:
-                    logger.error(f"❌ MLX Kokoro TTS failed: {e}")
-                    # Try Siri, then Professional as last resort
-                    try:
-                        tts = self._try_create_siri_tts(tts_config, use_boundaries)
-                        logger.info("✅ Siri Streaming TTS ready (fallback)")
-                    except Exception as e2:
-                        logger.warning(f"Siri TTS fallback failed: {e2}; using Professional Kokoro as last resort")
-                        tts = ProfessionalKokoroTTSService(
-                            voice=tts_config["voice"],
-                            speed=tts_config["speed"],
-                            sample_rate=tts_config["sample_rate"],
-                            fade_duration_ms=tts_config["fade_duration_ms"],
-                            target_peak_db=tts_config["target_peak_db"],
-                            enable_quality_logging=tts_config["enable_quality_logging"]
-                        )
-                        logger.info("✅ Professional Kokoro TTS ready (last resort)")
-            elif self.config.tts_engine == "kokoro_pytorch":
-                try:
-                    logger.debug("Using Kokoro PyTorch TTS (official hexgrad package)")
-                    tts = self._create_kokoro_pytorch_with_retry(tts_config)
-                    logger.info("✅ Kokoro PyTorch TTS ready")
-                except Exception as e:
-                    logger.error(f"❌ Kokoro PyTorch TTS failed: {e}")
-                    # Try Siri, then MLX
-                    try:
-                        tts = self._try_create_siri_tts(tts_config, use_boundaries)
-                        logger.info("✅ Siri Streaming TTS ready (fallback)")
-                    except Exception as e2:
-                        logger.warning(f"Siri TTS fallback failed: {e2}; using MLX Kokoro as last resort")
-                        tts = MLXKokoroTTSService(
-                            voice=tts_config["voice"],
-                            speed=tts_config["speed"],
-                            sample_rate=tts_config["sample_rate"]
-                        )
-                        logger.info("✅ MLX Kokoro TTS ready (last resort)")
-            elif self.config.tts_engine == "siri_streaming":
-                logger.debug("Using Siri Streaming TTS (native macOS)")
-                # Determine binary path (dev vs production)
-                from pathlib import Path
-                # Note: os already imported at module level
-
-                # Try multiple possible locations for the siri-tts binary
-                binary_candidates = []
-
-                # FIRST: Check TAURI_RESOURCE_DIR (Tauri bundle production mode)
-                if "TAURI_RESOURCE_DIR" in os.environ:
-                    tauri_resource_dir = Path(os.environ["TAURI_RESOURCE_DIR"])
-                    binary_candidates.append(tauri_resource_dir / "sidecar" / "siri-tts" / "siri-tts")
-
-                # Fallback paths for development and alternative production layouts
-                binary_candidates.extend([
-                    # Production (Tauri bundle): Resources/siri-tts/siri-tts
-                    Path(__file__).parent.parent.parent / "siri-tts" / "siri-tts",
-                    # Development: app/src-tauri/sidecar/siri-tts/siri-tts
-                    Path(__file__).parent.parent.parent.parent / "app" / "src-tauri" / "sidecar" / "siri-tts" / "siri-tts",
-                    # Alternative production path: _up_/siri-tts/siri-tts
-                    Path(__file__).parent.parent.parent / "_up_" / "siri-tts" / "siri-tts",
-                ])
-
-                binary_path = None
-                for candidate in binary_candidates:
-                    if candidate.exists():
-                        binary_path = candidate
-                        logger.debug(f"Found Siri TTS binary at: {binary_path}")
-                        break
-
-                if not binary_path:
-                    logger.error(f"Siri TTS binary not found in any of: {[str(p) for p in binary_candidates]}")
-                    raise FileNotFoundError(f"siri-tts binary not found. Searched: {binary_candidates}")
-
-                tts = SiriStreamingTTSService(
-                    binary_path=str(binary_path),
-                    language=os.getenv("SIRI_TTS_LANGUAGE", "en-US"),
-                    voice_id=os.getenv("SIRI_TTS_VOICE_ID"),  # Optional override
-                    use_system_voice=os.getenv("SIRI_TTS_USE_SYSTEM_VOICE", "false").lower() in ("1", "true", "yes"),
-                    rate=float(os.getenv("SIRI_TTS_RATE", "0.52")),
-                    pitch=float(os.getenv("SIRI_TTS_PITCH", "1.0")),
-                    sample_rate=tts_config["sample_rate"],
-                    no_boundaries=(not use_boundaries),
-                )
-                logger.info("✅ Siri Streaming TTS ready")
-            else:
-                logger.warning(f"Unknown TTS engine: {self.config.tts_engine}, trying Siri then MLX Kokoro")
-                try:
-                    tts = self._try_create_siri_tts(tts_config, use_boundaries)
-                    logger.info("✅ Siri Streaming TTS ready (fallback)")
-                except Exception:
-                    tts = MLXKokoroTTSService(
-                        voice=tts_config["voice"],
-                        speed=tts_config["speed"],
-                        sample_rate=tts_config["sample_rate"]
-                    )
-                    logger.info("✅ MLX Kokoro TTS ready (last resort)")
+            tts = TTSServiceBuilder(self.config, siri_creator=self._try_create_siri_tts).build(
+                use_boundaries=use_boundaries
+            )
 
             if cache_enabled:
                 self._services_cache[cache_key] = tts
@@ -414,60 +288,12 @@ class ServiceFactory:
                 logger.debug("Using cached LLM service (post-lock)")
                 return self._services_cache['llm']
 
-            logger.debug("Creating new LLM service")
+            logger.debug("Creating new LLM service via builder")
+            llm = LLMServiceBuilder(self.config).build()
+
+            # Prewarm HTTP-based models to avoid cold start; Direct MLX doesn't need it
             llm_config = self.config.get_component_config("llm")
-        use_llm_streaming = os.getenv("LLM_USE_STREAMING", "true").lower() == "true"
-
-        # Check if Direct MLX-LM mode is enabled
-        use_direct_mlx = os.getenv("LLM_USE_DIRECT_MLX", "false").lower() in ("true", "1", "yes")
-
-        if use_direct_mlx:
-            # Use Direct MLX-LM for ultra-low latency (544ms TTFT vs 3000ms HTTP)
-            from core.llm.direct_mlx_llm import DirectMLXLLMService
-
-            logger.info("🚀 Using Direct MLX-LM (zero HTTP overhead, target TTFT ~500-600ms)")
-            llm = DirectMLXLLMService(
-                model=llm_config["model"],
-                max_tokens=llm_config.get("max_tokens", 256),
-                temperature=llm_config.get("temperature", 0.7),
-            )
-            logger.info(f"✅ Direct MLX-LM service created and cached (model: {llm_config.get('model', 'unknown')}, expected TTFT: ~500-600ms)")
-        else:
-            # Use HTTP-based OpenAI-compatible LLM (LM Studio, etc.)
-            llm = OpenAILLMService(
-                api_key=llm_config["api_key"],
-                model=llm_config["model"],
-                base_url=llm_config["base_url"],
-                max_tokens=llm_config["max_tokens"],
-                stream=use_llm_streaming,
-                debug=False ,  # Enable debug logging to see context/messages
-                extra_body={
-                    "think": False,
-                    "stream": use_llm_streaming,
-                    "options": {
-                        "num_predict": 768,
-                        "temperature": llm_config["temperature"],
-                        "top_k": 40,
-                        "top_p": 0.9,
-                        "repeat_penalty": 1.1,
-                        "num_ctx": 4096,
-                        "num_batch": 64,
-                        "use_mlock": True,
-                        "f16_kv": True,
-                        "keep_alive": "15m"
-                    }
-                },
-            )
-
-            if use_llm_streaming:
-                logger.debug("LLM streaming enabled for lower latency")
-            else:
-                logger.debug("LLM streaming disabled, using batch mode")
-
-            logger.info(f"✅ LLM service created and cached (model: {llm_config.get('model', 'unknown')})")
-
-            # Prewarm the LLM model to prevent 42+ second cold start on first inference
-            if os.getenv("LLM_PREWARM", "true").lower() in ("true", "1", "yes"):
+            if os.getenv("LLM_PREWARM", "true").lower() in ("true", "1", "yes") and not os.getenv("LLM_USE_DIRECT_MLX", "false").lower() in ("true", "1", "yes"):
                 _prewarm_llm_service(llm, llm_config)
 
             self._services_cache['llm'] = llm
@@ -708,11 +534,18 @@ class ServiceFactory:
                 return default
 
         # Favor slightly larger spans to reduce too-frequent TTS calls
-        min_tokens = _get_int("FAST_TEXT_MIN_TOKENS", 175)
-        max_tokens = _get_int("FAST_TEXT_MAX_TOKENS", 250)
+        # Allow LLM_* overrides for sentence-aware aggregation
+        min_tokens = _get_int("LLM_MIN_TOKENS_FOR_TTS", _get_int("FAST_TEXT_MIN_TOKENS", 175))
+        max_tokens = _get_int("LLM_MAX_TOKENS", _get_int("FAST_TEXT_MAX_TOKENS", 250))
         max_time = _get_float("FAST_TEXT_MAX_TIME", 0.5)
+        sentence_delims = os.getenv("LLM_SENTENCE_DELIMITERS")
 
-        aggregator = FastTextAggregator(min_tokens=min_tokens, max_tokens=max_tokens, max_time=max_time)
+        aggregator = FastTextAggregator(
+            min_tokens=min_tokens,
+            max_tokens=max_tokens,
+            max_time=max_time,
+            sentence_delimiters=sentence_delims
+        )
         self._services_cache['text_aggregator'] = aggregator
         return aggregator
 
