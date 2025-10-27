@@ -63,6 +63,9 @@ server/models/hf_cache/**
 **/*.onnx
 **/*.tflite
 
+### Vendor dependencies
+vendor/
+
 ### Logs anywhere
 **/*.log
 
