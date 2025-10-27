@@ -1,0 +1,52 @@
+from typing import Any, Dict
+from loguru import logger
+
+from config import VoiceAgentConfig
+from pipecat.services.openai.llm import OpenAILLMService
+
+
+class LLMServiceBuilder:
+    def __init__(self, config: VoiceAgentConfig):
+        self.config = config
+
+    def build(self) -> OpenAILLMService:
+        llm_config: Dict[str, Any] = self.config.get_component_config("llm")
+        use_llm_streaming = (str(llm_config.get("use_streaming", True)).lower() == "true")
+        use_direct_mlx = str(
+            __import__("os").environ.get("LLM_USE_DIRECT_MLX", "false")
+        ).lower() in ("true", "1", "yes")
+
+        if use_direct_mlx:
+            from core.llm.direct_mlx_llm import DirectMLXLLMService
+            logger.info("🚀 Using Direct MLX-LM (zero HTTP overhead)")
+            return DirectMLXLLMService(
+                model=llm_config["model"],
+                max_tokens=llm_config.get("max_tokens", 256),
+                temperature=llm_config.get("temperature", 0.7),
+            )
+
+        return OpenAILLMService(
+            api_key=llm_config["api_key"],
+            model=llm_config["model"],
+            base_url=llm_config["base_url"],
+            max_tokens=llm_config["max_tokens"],
+            stream=use_llm_streaming,
+            debug=False,
+            extra_body={
+                "think": False,
+                "stream": use_llm_streaming,
+                "options": {
+                    "num_predict": 768,
+                    "temperature": llm_config["temperature"],
+                    "top_k": 40,
+                    "top_p": 0.9,
+                    "repeat_penalty": 1.1,
+                    "num_ctx": 4096,
+                    "num_batch": 64,
+                    "use_mlock": True,
+                    "f16_kv": True,
+                    "keep_alive": "15m",
+                },
+            },
+        )
+
