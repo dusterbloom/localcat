@@ -26,6 +26,12 @@ set -e  # Exit on error
 
 echo "🏗️  Building LocalCat production app..."
 
+# Build profiles
+#   BUILD_PROFILE=light → minimal offline: MLX Whisper (small) + Kokoro MLX + Siri fallback, no Parakeet, no heavy extras
+#   BUILD_PROFILE=full  → offline-first: include Parakeet, Kokoro variants, venv, and optional models
+BUILD_PROFILE=${BUILD_PROFILE:-full}
+echo "  Build profile: $BUILD_PROFILE"
+
 # Step 1: Build the Tauri .app bundle
 # Note: Client build happens automatically via beforeBuildCommand in tauri.conf.json
 echo "📦 Step 1/5: Building Tauri .app bundle..."
@@ -57,6 +63,14 @@ echo "  Pre-building sidecars required by resources..."
 ) || { echo "  ❌ Pre-build of macos-stt failed"; exit 1; }
 
 cd src-tauri
+
+# For light profile, temporarily hide ../server/.venv so tauri doesn't bundle it via resources
+RESTORE_VENV=0
+if [ "$BUILD_PROFILE" = "light" ] && [ -d "../server/.venv" ]; then
+  echo "  Hiding ../server/.venv for light build"
+  mv ../server/.venv ../server/.venv.__hidden__
+  RESTORE_VENV=1
+fi
 
 # Ensure a default PNG icon exists for Tauri v2 toolchain
 if [ ! -f "icons/icon.png" ]; then
@@ -167,6 +181,11 @@ fi
 
 echo "  ✅ .app bundle created successfully"
 
+# Restore hidden venv if moved
+if [ $RESTORE_VENV -eq 1 ]; then
+  mv ../server/.venv.__hidden__ ../server/.venv || true
+fi
+
 # Step 3: Copy server files to the .app bundle
 echo "📂 Step 3/6: Copying server files and sidecars to bundle..."
 
@@ -226,12 +245,13 @@ chmod +x "$STT_SIDECAR_DST_BIN/macos-stt" 2>/dev/null || true
 echo "  ✅ macos-stt available for direct binary: $STT_SIDECAR_DST_BIN/macos-stt"
 
 LIGHTWEIGHT=${LIGHTWEIGHT:-0}
+# Light profile implies skipping .venv copy
+if [ "$BUILD_PROFILE" = "light" ]; then
+  LIGHTWEIGHT=1
+fi
 
 # Copy virtual environment unless LIGHTWEIGHT=1
-if [ "$LIGHTWEIGHT" = "1" ]; then
-  echo "  ⚠️  LIGHTWEIGHT=1 → Skipping .venv copy to minimize bundle size."
-  echo "     First-run will require internet to set up dependencies."
-else
+if [ "$LIGHTWEIGHT" != "1" ]; then
   echo "  Checking Python venv..."
   if [ -d "../server/.venv" ]; then
     if [ -d "$TAURI_SERVER_DIR/.venv" ]; then
@@ -343,9 +363,8 @@ find "$TAURI_SERVER_DIR" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>
 find "$TAURI_SERVER_DIR" -name "*.pyc" -delete 2>/dev/null || true
 echo "  ✅ Removed __pycache__ and *.pyc from bundle"
 
-# Platform-intelligent model bundling
-if [ "$LIGHTWEIGHT" != "1" ]; then
-  echo "  Copying required models (platform-intelligent bundling)..."
+# Platform-intelligent model bundling (profile-aware)
+echo "  Copying required models (profile-aware bundling)..."
 
   # Detect build target platform
   BUILD_TARGET="macos"  # Default for this script
@@ -357,20 +376,21 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
 
   echo "    Target platform: $BUILD_TARGET"
 
-  # Always copy HuggingFace cache for STT models (Parakeet, Smart-turn)
-  echo "    Copying HuggingFace cache (STT models)..."
+  echo "    Preparing HuggingFace cache root..."
   mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub"
 
-  # Copy Parakeet STT model (~2.3GB - required for all platforms)
-  if [ -d "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3" ]; then
-    # Use rsync for reliable copy with extended attributes and proper error checking (-L follows symlinks)
-    if rsync -aL --exclude='.cache' "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/" \
-      "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/"; then
-      echo "      ✅ Parakeet STT (~2.3GB)"
-    else
-      echo "      ❌ Failed to copy Parakeet STT model"
-      exit 1
+  if [ "$BUILD_PROFILE" = "full" ]; then
+    # Copy Parakeet STT model (~2.3GB)
+    if [ -d "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3" ]; then
+      if rsync -aL --exclude='.cache' "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/" \
+        "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/"; then
+        echo "      ✅ Parakeet STT (~2.3GB)"
+      else
+        echo "      ❌ Failed to copy Parakeet STT model"; exit 1
+      fi
     fi
+  else
+    echo "    Skipping Parakeet STT (light profile)"
   fi
 
   # Copy Smart-turn model (~362MB - required for all platforms)
@@ -384,15 +404,76 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
     fi
   fi
 
-  # Copy SpeechBrain speaker recognition model (~85MB - CRITICAL for voice enrollment)
-  if [ -d "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb" ]; then
-    if rsync -aL --exclude='.cache' "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/" \
-      "$TAURI_SERVER_DIR/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/"; then
-      echo "      ✅ SpeechBrain ECAPA-TDNN speaker recognition (~85MB)"
-    else
-      echo "      ❌ Failed to copy SpeechBrain model"
-      exit 1
+  # Copy SpeechBrain speaker recognition only for full profile
+  if [ "$BUILD_PROFILE" = "full" ]; then
+    if [ -d "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb" ]; then
+      if rsync -aL --exclude='.cache' "../server/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/" \
+        "$TAURI_SERVER_DIR/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb/"; then
+        echo "      ✅ SpeechBrain ECAPA-TDNN speaker recognition (~85MB)"
+      else
+        echo "      ❌ Failed to copy SpeechBrain model"; exit 1
+      fi
     fi
+  else
+    echo "    Skipping SpeechBrain speaker recognition (light profile)"
+  fi
+
+  # Copy Whisper‑MLX model used by whisper_mlx_direct (prefer small.en-mlx-q4 for light)
+  echo "    Searching for Whisper‑MLX (prefer whisper-small.en-mlx-q4)..."
+  FOUND_WHISPER=false
+  WHISPER_DIRS=(
+    "../server/models/hf_cache/hub/models--mlx-community--whisper-small.en-mlx-q4"
+    "../server/models/hf_cache/hub/models--mlx-community--whisper-large-v3-turbo-q4"
+    "$HOME/AI-Models/shared/huggingface/hub/models--mlx-community--whisper-small.en-mlx-q4"
+    "$HOME/AI-Models/shared/huggingface/hub/models--mlx-community--whisper-large-v3-turbo-q4"
+    "$HOME/.cache/huggingface/hub/models--mlx-community--whisper-small.en-mlx-q4"
+    "$HOME/.cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo-q4"
+  )
+
+  for MODEL_DIR in "${WHISPER_DIRS[@]}"; do
+    if [ -d "$MODEL_DIR" ]; then
+      echo "      🔍 Found Whisper cache dir: $MODEL_DIR"
+      # If snapshots/ exists, use the first snapshot folder
+      if [ -d "$MODEL_DIR/snapshots" ]; then
+        LATEST_SNAPSHOT=$(find "$MODEL_DIR/snapshots" -maxdepth 1 -type d ! -path "$MODEL_DIR/snapshots" | head -1)
+        if [ -n "$LATEST_SNAPSHOT" ] && [ -d "$LATEST_SNAPSHOT" ]; then
+          MODEL_DIR="$LATEST_SNAPSHOT"
+          echo "      📍 Using snapshot: $MODEL_DIR"
+        fi
+      fi
+
+      CFG="$MODEL_DIR/config.json"
+      W_SFT="$MODEL_DIR/weights.safetensors"
+      W_NPZ="$MODEL_DIR/weights.npz"
+      if [ -f "$CFG" ] && { [ -f "$W_SFT" ] || [ -f "$W_NPZ" ]; }; then
+        echo "      ✅ Required Whisper files present, copying..."
+        DEST_NAME=$(basename "$MODEL_DIR")
+        mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME"
+        if rsync -avL --exclude='cache' --exclude='*.lock' --exclude='refs' --exclude='.git' \
+          "$MODEL_DIR/" "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME/"; then
+          # Verify
+          if [ -f "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME/config.json" ] && \
+             { [ -f "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME/weights.safetensors" ] || \
+               [ -f "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME/weights.npz" ]; }; then
+            SIZE=$(du -sh "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME" | cut -f1)
+            echo "      ✅ Whisper‑MLX copied successfully ($SIZE)"
+            FOUND_WHISPER=true
+            break
+          else
+            echo "      ❌ Whisper copy verification failed"
+            rm -rf "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME"
+          fi
+        else
+          echo "      ❌ rsync failed copying Whisper‑MLX"
+        fi
+      else
+        echo "      ⚠️  Missing Whisper files in: $MODEL_DIR"
+      fi
+    fi
+  done
+
+  if [ "$FOUND_WHISPER" = false ]; then
+    echo "      ⚠️  Whisper‑MLX not found in caches; fallback will require network on first run."
   fi
 
   # Copy emotion recognition model if present (optional feature)
@@ -407,187 +488,20 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
 
   # Platform-specific TTS models
   if [ "$BUILD_TARGET" = "macos" ]; then
-    echo "    Copying Kokoro MLX TTS models for macOS..."
-
-    # Copy Kokoro PyTorch model from HF cache (required for kokoro_pytorch engine)
-    echo "      🔍 Searching for Kokoro PyTorch model..."
-
-    # Try multiple cache locations
-    FOUND_MODEL=false
-    MODEL_DIRS=(
-      "../server/models/hf_cache/hub/models--hexgrad--Kokoro-82M"
-      "$HOME/AI-Models/shared/huggingface/hub/models--hexgrad--Kokoro-82M"
-      "$HOME/.cache/huggingface/hub/models--hexgrad--Kokoro-82M"
-    )
-
-    for MODEL_DIR in "${MODEL_DIRS[@]}"; do
-      if [ -d "$MODEL_DIR" ]; then
-        echo "      🔍 Found model directory: $MODEL_DIR"
-
-        # Check if this is a snapshot directory structure
-        if [ -d "$MODEL_DIR/snapshots" ]; then
-          echo "      📁 Detected snapshot structure, finding latest snapshot..."
-          LATEST_SNAPSHOT=$(find "$MODEL_DIR/snapshots" -maxdepth 1 -type d ! -path "$MODEL_DIR/snapshots" | head -1)
-          if [ -n "$LATEST_SNAPSHOT" ] && [ -d "$LATEST_SNAPSHOT" ]; then
-            MODEL_DIR="$LATEST_SNAPSHOT"
-            echo "      📍 Using snapshot: $MODEL_DIR"
-          else
-            echo "      ⚠️  No snapshots found, skipping..."
-            continue
-          fi
-        fi
-
-        # Verify required files exist before copying
-        REQUIRED_FILES=("config.json" "kokoro-v1_0.pth")
-        ALL_FILES_PRESENT=true
-
-        for FILE in "${REQUIRED_FILES[@]}"; do
-          if [ ! -f "$MODEL_DIR/$FILE" ]; then
-            echo "      ❌ Missing required file: $FILE"
-            ALL_FILES_PRESENT=false
-          fi
-        done
-
-        if [ "$ALL_FILES_PRESENT" = true ]; then
-          echo "      ✅ All required files present, copying..."
-
-          # Create destination directory
-          mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub/models--hexgrad--Kokoro-82M"
-
-          # Use rsync with verification (-L follows symlinks to copy actual blob files)
-          if rsync -avL --exclude='cache' --exclude='*.lock' --exclude='refs' --exclude='.git' \
-            "$MODEL_DIR/" "$TAURI_SERVER_DIR/models/hf_cache/hub/models--hexgrad--Kokoro-82M/"; then
-
-            # Verify copied files
-            COPIED_FILES=true
-            for FILE in "${REQUIRED_FILES[@]}"; do
-              if [ ! -f "$TAURI_SERVER_DIR/models/hf_cache/hub/models--hexgrad--Kokoro-82M/$FILE" ]; then
-                echo "      ❌ Failed to copy: $FILE"
-                COPIED_FILES=false
-              fi
-            done
-
-            if [ "$COPIED_FILES" = true ]; then
-              # Get actual model size
-              MODEL_SIZE=$(du -sh "$TAURI_SERVER_DIR/models/hf_cache/hub/models--hexgrad--Kokoro-82M" | cut -f1)
-              echo "      ✅ Kokoro PyTorch copied successfully ($MODEL_SIZE) - hexgrad version"
-              FOUND_MODEL=true
-              break
-            else
-              echo "      ❌ File verification failed after copy"
-              rm -rf "$TAURI_SERVER_DIR/models/hf_cache/hub/models--hexgrad--Kokoro-82M"
-            fi
-          else
-            echo "      ❌ rsync copy failed"
-          fi
-        else
-          echo "      ⚠️  Skipping incomplete model directory"
-        fi
-      fi
-    done
-
-    if [ "$FOUND_MODEL" = false ]; then
-      echo "      ❌ Kokoro PyTorch model not found in any cache"
-      echo "         Required for kokoro_pytorch engine - run server once to download"
-      echo "         Searched locations:"
-      for MODEL_DIR in "${MODEL_DIRS[@]}"; do
-        echo "           - $MODEL_DIR"
-      done
+    echo "    Copying Kokoro ONNX TTS models for macOS (kokoro_professional)..."
+    mkdir -p "$TAURI_SERVER_DIR/models/kokoro"
+    if [ -f "../server/models/kokoro/kokoro-v1.0.onnx" ]; then
+      cp -f "../server/models/kokoro/kokoro-v1.0.onnx" "$TAURI_SERVER_DIR/models/kokoro/" && \
+      echo "      ✅ Kokoro ONNX (~337MB)"
+    else
+      echo "      ⚠️  kokoro-v1.0.onnx not found; run server once to download"
     fi
-
-    # Copy Kokoro MLX model from HF cache (required for in-process TTS)
-    echo "      🔍 Searching for Kokoro MLX model..."
-    FOUND_MLX_MODEL=false
-    MLX_MODEL_DIRS=(
-      "../server/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16"
-      "$HOME/AI-Models/shared/huggingface/hub/models--mlx-community--Kokoro-82M-bf16"
-      "$HOME/.cache/huggingface/hub/models--mlx-community--Kokoro-82M-bf16"
-    )
-
-    for MODEL_DIR in "${MLX_MODEL_DIRS[@]}"; do
-      if [ -d "$MODEL_DIR" ]; then
-        echo "      🔍 Found MLX model directory: $MODEL_DIR"
-
-        # Check if this is a snapshot directory structure
-        if [ -d "$MODEL_DIR/snapshots" ]; then
-          echo "      📁 Detected MLX snapshot structure, finding latest snapshot..."
-          LATEST_SNAPSHOT=$(find "$MODEL_DIR/snapshots" -maxdepth 1 -type d ! -path "$MODEL_DIR/snapshots" | head -1)
-          if [ -n "$LATEST_SNAPSHOT" ] && [ -d "$LATEST_SNAPSHOT" ]; then
-            MODEL_DIR="$LATEST_SNAPSHOT"
-            echo "      📍 Using MLX snapshot: $MODEL_DIR"
-          else
-            echo "      ⚠️  No MLX snapshots found, skipping..."
-            continue
-          fi
-        fi
-
-        # Verify required files exist before copying
-        MLX_REQUIRED_FILES=("config.json" "kokoro-v1_0.safetensors")
-        ALL_MLX_FILES_PRESENT=true
-
-        for FILE in "${MLX_REQUIRED_FILES[@]}"; do
-          if [ ! -f "$MODEL_DIR/$FILE" ]; then
-            echo "      ❌ Missing required MLX file: $FILE"
-            ALL_MLX_FILES_PRESENT=false
-          fi
-        done
-
-        if [ "$ALL_MLX_FILES_PRESENT" = true ]; then
-          echo "      ✅ All required MLX files present, copying..."
-
-          # Create destination directory
-          mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16"
-
-          # Use rsync with verification (-L follows symlinks to copy actual blob files)
-          if rsync -avL --exclude='cache' --exclude='*.lock' --exclude='refs' --exclude='.git' \
-            "$MODEL_DIR/" "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16/"; then
-
-            # Verify copied files
-            COPIED_MLX_FILES=true
-            for FILE in "${MLX_REQUIRED_FILES[@]}"; do
-              if [ ! -f "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16/$FILE" ]; then
-                echo "      ❌ Failed to copy MLX file: $FILE"
-                COPIED_MLX_FILES=false
-              fi
-            done
-
-            if [ "$COPIED_MLX_FILES" = true ]; then
-              # Get actual model size
-              MODEL_SIZE=$(du -sh "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16" | cut -f1)
-              echo "      ✅ Kokoro MLX copied successfully ($MODEL_SIZE)"
-              FOUND_MLX_MODEL=true
-              break
-            else
-              echo "      ❌ MLX file verification failed after copy"
-              rm -rf "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--Kokoro-82M-bf16"
-            fi
-          else
-            echo "      ❌ MLX rsync copy failed"
-          fi
-        else
-          echo "      ⚠️  Skipping incomplete MLX model directory"
-        fi
-      fi
-    done
-
-    if [ "$FOUND_MLX_MODEL" = false ]; then
-      echo "      ⚠️  Kokoro MLX model not found in any cache"
-      echo "         Run server once to download: cd ../server && python bot.py"
-      echo "         Searched locations:"
-      for MODEL_DIR in "${MLX_MODEL_DIRS[@]}"; do
-        echo "           - $MODEL_DIR"
-      done
+    if [ -f "../server/models/kokoro/voices-v1.0.bin" ]; then
+      cp -f "../server/models/kokoro/voices-v1.0.bin" "$TAURI_SERVER_DIR/models/kokoro/" && \
+      echo "      ✅ voices-v1.0.bin"
+    else
+      echo "      ⚠️  voices-v1.0.bin not found"
     fi
-
-    # Also copy prince-canuma variant if present (alternative model)
-    if [ -d "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M" ]; then
-      if rsync -a --exclude='cache' --exclude='*.lock' "../server/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/" \
-        "$TAURI_SERVER_DIR/models/hf_cache/hub/models--prince-canuma--Kokoro-82M/"; then
-        echo "      ✅ Kokoro Alternative (~312MB) - prince-canuma variant"
-      fi
-    fi
-
-    echo "      Note: Bundling all Kokoro variants for max compatibility"
   else
     echo "    Copying Kokoro TTS (required for $BUILD_TARGET - no Siri available)..."
 
@@ -615,7 +529,9 @@ fi
 
 # Step 3.5: .env is already bundled via tauri.conf.json resources
 # No need to copy it post-build (signed .app is read-only anyway)
-echo "  ✅ .env bundled via tauri.conf.json (preserving STT=parakeet_batch, TTS=siri_streaming, LLM config)"
+echo "  ✅ .env bundled via tauri.conf.json (preserving engine selections from .env)"
+
+# Using Pipecat LocalSmartTurnAnalyzerV3 (bundled) — no external SmartTurn ONNX bundled
 
 # Quick verification summary
 if [ -x "$TAURI_SERVER_DIR/.venv/bin/python3" ]; then

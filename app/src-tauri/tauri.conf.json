@@ -32,14 +32,12 @@
       "../../server/bot.py",
       "../../server/requirements.txt",
       "../../server/.env",
-      "../../server/.venv/**/*",
       "../../server/config/**/*",
       "../../server/core/**/*",
       "../../server/components/**/*",
       "../../server/sidecars/**/*",
       "../../server/tools/**/*",
-      "../../server/utils/**/*",
-      "../../server/models/hf_cache/**/*"
+      "../../server/utils/**/*"
     ]
   }
 }

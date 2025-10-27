@@ -9,7 +9,8 @@ and can be tested independently.
 import os
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+import threading
+from typing import Dict, Any, Optional, List, Callable
 from loguru import logger
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -31,6 +32,10 @@ from core.memory.hotpath_processor import HotPathMemoryProcessor
 from core.memory.session_tracker import SessionTracker
 from core.memory import HotMemService
 from core.memory.anonymous_context import AnonymousAwareContextAggregator
+from .utils.fallback_chain import FallbackChainManager, ChainExhaustedError
+from .utils.model_resolver import resolve_parakeet_model_path
+from .utils.service_validator import TTSServiceValidator
+from .builders.stt_builder import STTServiceBuilder
 
 # Import intent service for smart processing
 try:
@@ -120,32 +125,7 @@ def _prewarm_llm_service(llm_service: OpenAILLMService, llm_config: Dict[str, An
             logger.debug("LLM prewarm skipped (no event loop available)")
 
 
-def resolve_parakeet_model_path(model_id_or_path: str) -> str:
-    """
-    Resolve Parakeet model path for production (Tauri bundle) vs development.
-
-    In production with HF_HUB_OFFLINE=1, HuggingFace can't resolve repo IDs
-    to cached models. This function detects production mode and returns the
-    absolute path to the bundled model.
-
-    Args:
-        model_id_or_path: HuggingFace model ID or local path
-
-    Returns:
-        Absolute path if in production, otherwise returns input unchanged
-    """
-    default_model_id = "mlx-community/parakeet-tdt-0.6b-v3"
-
-    # Only resolve if we're in Tauri bundle and using default model
-    if "TAURI_RESOURCE_DIR" in os.environ and model_id_or_path == default_model_id:
-        hf_home = Path(os.environ.get("HF_HOME", ""))
-        if hf_home.exists():
-            bundled_model = hf_home / "hub" / "models--mlx-community--parakeet-tdt-0.6b-v3"
-            if bundled_model.exists():
-                logger.debug(f"Resolved Parakeet model to bundled path: {bundled_model}")
-                return str(bundled_model)
-
-    return model_id_or_path
+## moved to utils/model_resolver.py
 
 
 class ServiceFactory:
@@ -160,6 +140,10 @@ class ServiceFactory:
         """
         self.config = config
         self._services_cache: Dict[str, Any] = {}
+        # Concurrency-safe creation locks to avoid double-initialization
+        self._stt_lock = threading.Lock()
+        self._tts_lock = threading.Lock()
+        self._llm_lock = threading.Lock()
 
     def create_transport(self, webrtc_connection: SmallWebRTCConnection) -> SmallWebRTCTransport:
         """Create WebRTC transport with VAD and turn detection."""
@@ -207,143 +191,21 @@ class ServiceFactory:
 
     def create_stt_service(self) -> Any:
         """Create STT service based on configuration."""
-        stt_config = self.config.get_component_config("stt")
+        cache_enabled = os.getenv("SERVICE_FACTORY_CACHE_STT", "true").lower() in ("true", "1", "yes")
+        if cache_enabled and 'stt' in self._services_cache:
+            logger.debug("Using cached STT service")
+            return self._services_cache['stt']
 
-        if self.config.stt_engine == "parakeet_isolated":
-            # Process-isolated Parakeet STT - RECOMMENDED for Metal conflict avoidance
-            try:
-                from core.stt.parakeet_isolated import ParakeetIsolatedSTT
-                model_path = resolve_parakeet_model_path(
-                    stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
-                )
-                logger.debug(f"Initializing Parakeet isolated STT (process-isolated, Metal safe)")
-                stt = ParakeetIsolatedSTT(
-                    model_path=model_path,
-                    streaming=os.getenv("PARAKEET_STREAMING", "true").lower() in ("1", "true", "yes"),
-                    context_size=tuple(map(int, os.getenv("PARAKEET_CONTEXT_SIZE", "256,256").split(","))),
-                    depth=int(os.getenv("PARAKEET_DEPTH", "3"))
-                )
-                logger.info("✅ Parakeet isolated STT ready (Metal conflict free)")
-            except Exception as e:
-                logger.error(f"❌ Parakeet isolated STT failed: {e}", exc_info=True)
-                logger.warning("Falling back to in-process Parakeet streaming (may have Metal conflicts)")
-                try:
-                    from core.stt.parakeet_streaming import ParakeetStreamingSTT
-                    model_path = resolve_parakeet_model_path(
-                        stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
-                    )
-                    stt = ParakeetStreamingSTT(
-                        model_path=model_path,
-                        language=stt_config.get("language", "en"),
-                        chunk_duration=float(os.getenv("PARAKEET_CHUNK_DURATION", "1.0")),
-                        enable_vad=os.getenv("PARAKEET_ENABLE_VAD", "false").lower() in ("1", "true", "yes")
-                    )
-                    logger.info("✅ Parakeet streaming STT ready (fallback)")
-                except Exception as e2:
-                    logger.error(f"Parakeet streaming also failed: {e2}")
-                    logger.warning("Using Whisper MLX as final fallback")
-                    stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
-        elif self.config.stt_engine == "parakeet_streaming":
-            try:
-                # Try Parakeet streaming first (ultra-low latency)
-                from core.stt.parakeet_streaming import ParakeetStreamingSTT
-                model_path = resolve_parakeet_model_path(
-                    stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
-                )
-                logger.debug(f"Initializing Parakeet streaming STT with model: {model_path}")
-                stt = ParakeetStreamingSTT(
-                    model_path=model_path,
-                    language=stt_config.get("language", "en"),
-                    chunk_duration=float(os.getenv("PARAKEET_CHUNK_DURATION", "1.0")),
-                    enable_vad=os.getenv("PARAKEET_ENABLE_VAD", "false").lower() in ("1", "true", "yes"),
-                    temperature=float(os.getenv("PARAKEET_TEMPERATURE", "0.0")),
-                    sentence_pause_threshold=float(os.getenv("PARAKEET_SENTENCE_PAUSE_THRESHOLD", "1.2")),
-                    max_chunk_duration=float(os.getenv("PARAKEET_MAX_CHUNK_DURATION", "4.0")),
-                    context_size=tuple(map(int, os.getenv("PARAKEET_CONTEXT_SIZE", "256,256").split(","))),
-                    depth=int(os.getenv("PARAKEET_DEPTH", "3")),
-                    volume_threshold=float(os.getenv("PARAKEET_VOLUME_THRESHOLD", "0.001"))
-                )
-                logger.info("✅ Parakeet streaming STT ready")
-            except Exception as e:
-                logger.warning(f"Parakeet streaming failed: {e}")
-                try:
-                    # Fallback to Parakeet batch mode (higher accuracy)
-                    from core.stt.parakeet_batch import ParakeetBatchSTT
-                    logger.debug("Falling back to Parakeet batch STT")
-                    model_path = resolve_parakeet_model_path(
-                        stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
-                    )
-                    stt = ParakeetBatchSTT(
-                        model_path=model_path,
-                        language=stt_config.get("language", "en"),
-                        temperature=float(os.getenv("PARAKEET_TEMPERATURE", "0.0"))
-                    )
-                    logger.info("✅ Parakeet batch STT ready (fallback)")
-                except Exception as e2:
-                    logger.error(f"Parakeet batch also failed: {e2}")
-                    # Final fallback to Whisper MLX
-                    logger.warning("Using Whisper MLX as final fallback")
-                    stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
-        elif self.config.stt_engine == "parakeet_batch":
-            # Explicit batch mode for quality comparison
-            try:
-                from core.stt.parakeet_batch import ParakeetBatchSTT
-                logger.debug("Using Parakeet batch STT (explicit)")
+        with self._stt_lock:
+            if cache_enabled and 'stt' in self._services_cache:
+                logger.debug("Using cached STT service (post-lock)")
+                return self._services_cache['stt']
 
-                model_path = resolve_parakeet_model_path(
-                    stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
-                )
-                stt = ParakeetBatchSTT(
-                    model_path=model_path,
-                    language=stt_config.get("language", "en"),
-                    temperature=float(os.getenv("PARAKEET_TEMPERATURE", "0.0"))
-                )
-                logger.info("✅ Parakeet batch STT ready")
-            except Exception as e:
-                logger.error(f"❌ Parakeet batch STT failed: {e}", exc_info=True)
-                logger.warning("Falling back to Whisper MLX batch mode")
-                stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
-        elif self.config.stt_engine == "parakeet":
-            # Support legacy "parakeet" name for backward compatibility
-            try:
-                from core.stt.parakeet_streaming import ParakeetStreamingSTT
-                logger.debug("Using Parakeet streaming STT (legacy name)")
-                model_path = resolve_parakeet_model_path(
-                    stt_config.get("model", "mlx-community/parakeet-tdt-0.6b-v3")
-                )
-                stt = ParakeetStreamingSTT(
-                    model_path=model_path,
-                    language=stt_config.get("language", "en"),
-                    chunk_duration=float(os.getenv("PARAKEET_CHUNK_DURATION", "1.0")),
-                    enable_vad=os.getenv("PARAKEET_ENABLE_VAD", "false").lower() in ("1", "true", "yes")
-                )
-                logger.info("✅ Parakeet streaming STT ready")
-            except Exception as e:
-                logger.error(f"❌ Parakeet STT failed: {e}", exc_info=True)
-                logger.warning("Falling back to Whisper MLX batch mode")
-                stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
-        elif self.config.stt_engine == "macos_native":
-            try:
-                from core.stt.macos_native import MacOSNativeSTT
-                logger.debug("Using macOS native Speech framework STT")
-                stt = MacOSNativeSTT(
-                    language=stt_config.get("language", "en-US"),
-                    sample_rate=int(os.getenv("STT_SAMPLE_RATE", "16000")),
-                    on_device=os.getenv("MACOS_STT_ON_DEVICE", "true").lower() in ("1", "true", "yes"),
-                )
-                logger.info("✅ macOS native STT ready")
-            except Exception as e:
-                logger.error(f"❌ macOS native STT failed: {e}")
-                logger.warning("Falling back to Whisper MLX batch mode")
-                stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
-        elif self.config.stt_engine == "whisper_mlx":
-            logger.debug("Using Whisper MLX batch mode")
-            stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
-        else:
-            logger.warning(f"Unknown STT engine: {self.config.stt_engine}, using Whisper MLX fallback")
-            stt = WhisperSTTServiceMLX(model=MLXModel.MEDIUM)
+            # Delegate to builder (preserves behavior)
+            stt = STTServiceBuilder(self.config).build()
 
-        self._services_cache['stt'] = stt
+        if cache_enabled:
+            self._services_cache['stt'] = stt
         return stt
 
     def create_tts_service(self, use_boundaries: bool = True) -> Any:
@@ -354,90 +216,191 @@ class ServiceFactory:
             use_boundaries: Enable sentence boundary detection (default True).
                            Set False for intro messages to play as one unit.
         """
-        tts_config = self.config.get_component_config("tts")
+        # Per-boundary caching (enabled by default)
+        cache_enabled = os.getenv("SERVICE_FACTORY_CACHE_TTS", "true").lower() in ("true", "1", "yes")
+        cache_key = f"tts_{bool(use_boundaries)}"
+        if cache_enabled and cache_key in self._services_cache:
+            logger.debug(f"Using cached TTS service for use_boundaries={use_boundaries}")
+            return self._services_cache[cache_key]
 
-        if self.config.tts_engine == "kokoro_professional":
-            logger.debug("Using Professional Kokoro TTS (default optimized)")
-            tts = ProfessionalKokoroTTSService(
-                voice=tts_config["voice"],
-                speed=tts_config["speed"],
-                sample_rate=tts_config["sample_rate"],
-                fade_duration_ms=tts_config["fade_duration_ms"],
-                target_peak_db=tts_config["target_peak_db"],
-                enable_quality_logging=tts_config["enable_quality_logging"]
-            )
-            logger.info("✅ Professional Kokoro TTS ready")
-        elif self.config.tts_engine == "kokoro_mlx":
-            logger.debug("Using MLX Kokoro TTS (in-process, minirepo-aligned)")
-            # Use the fixed MLXKokoroTTSService with KokoroPipeline and threading.Lock
-            # This matches the working minirepo implementation
-            tts = MLXKokoroTTSService(
-                voice=tts_config["voice"],
-                speed=tts_config["speed"],
-                sample_rate=tts_config["sample_rate"]
-            )
-            logger.info("✅ MLX Kokoro TTS ready (in-process)")
-        elif self.config.tts_engine == "kokoro_pytorch":
-            logger.debug("Using Kokoro PyTorch TTS (official hexgrad package)")
-            tts = self._create_kokoro_pytorch_with_retry(tts_config)
-            logger.info("✅ Kokoro PyTorch TTS ready")
-        elif self.config.tts_engine == "siri_streaming":
-            logger.debug("Using Siri Streaming TTS (native macOS)")
-            # Determine binary path (dev vs production)
-            from pathlib import Path
-            # Note: os already imported at module level
+        with self._tts_lock:
+            if cache_enabled and cache_key in self._services_cache:
+                logger.debug(f"Using cached TTS service for use_boundaries={use_boundaries} (post-lock)")
+                return self._services_cache[cache_key]
 
-            # Try multiple possible locations for the siri-tts binary
-            binary_candidates = []
+            tts_config = self.config.get_component_config("tts")
 
-            # FIRST: Check TAURI_RESOURCE_DIR (Tauri bundle production mode)
-            if "TAURI_RESOURCE_DIR" in os.environ:
-                tauri_resource_dir = Path(os.environ["TAURI_RESOURCE_DIR"])
-                binary_candidates.append(tauri_resource_dir / "sidecar" / "siri-tts" / "siri-tts")
+            if self.config.tts_engine == "kokoro_professional":
+                try:
+                    logger.debug("Using Professional Kokoro TTS (default optimized)")
+                    tts = ProfessionalKokoroTTSService(
+                        voice=tts_config["voice"],
+                        speed=tts_config["speed"],
+                        sample_rate=tts_config["sample_rate"],
+                        fade_duration_ms=tts_config["fade_duration_ms"],
+                        target_peak_db=tts_config["target_peak_db"],
+                        enable_quality_logging=tts_config["enable_quality_logging"]
+                    )
+                    logger.info("✅ Professional Kokoro TTS ready")
+                except Exception as e:
+                    logger.error(f"❌ Professional Kokoro TTS failed: {e}")
+                    # Try Siri, then MLX
+                    try:
+                        tts = self._try_create_siri_tts(tts_config, use_boundaries)
+                        logger.info("✅ Siri Streaming TTS ready (fallback)")
+                    except Exception as e2:
+                        logger.warning(f"Siri TTS fallback failed: {e2}; using MLX Kokoro as last resort")
+                        tts = MLXKokoroTTSService(
+                            voice=tts_config["voice"],
+                            speed=tts_config["speed"],
+                            sample_rate=tts_config["sample_rate"]
+                        )
+                        logger.info("✅ MLX Kokoro TTS ready (last resort)")
+            elif self.config.tts_engine == "kokoro_mlx":
+                try:
+                    logger.debug("Using MLX Kokoro TTS (in-process, minirepo-aligned)")
+                    tts = MLXKokoroTTSService(
+                        voice=tts_config["voice"],
+                        speed=tts_config["speed"],
+                        sample_rate=tts_config["sample_rate"]
+                    )
+                    logger.info("✅ MLX Kokoro TTS ready (in-process)")
+                except Exception as e:
+                    logger.error(f"❌ MLX Kokoro TTS failed: {e}")
+                    # Try Siri, then Professional as last resort
+                    try:
+                        tts = self._try_create_siri_tts(tts_config, use_boundaries)
+                        logger.info("✅ Siri Streaming TTS ready (fallback)")
+                    except Exception as e2:
+                        logger.warning(f"Siri TTS fallback failed: {e2}; using Professional Kokoro as last resort")
+                        tts = ProfessionalKokoroTTSService(
+                            voice=tts_config["voice"],
+                            speed=tts_config["speed"],
+                            sample_rate=tts_config["sample_rate"],
+                            fade_duration_ms=tts_config["fade_duration_ms"],
+                            target_peak_db=tts_config["target_peak_db"],
+                            enable_quality_logging=tts_config["enable_quality_logging"]
+                        )
+                        logger.info("✅ Professional Kokoro TTS ready (last resort)")
+            elif self.config.tts_engine == "kokoro_pytorch":
+                try:
+                    logger.debug("Using Kokoro PyTorch TTS (official hexgrad package)")
+                    tts = self._create_kokoro_pytorch_with_retry(tts_config)
+                    logger.info("✅ Kokoro PyTorch TTS ready")
+                except Exception as e:
+                    logger.error(f"❌ Kokoro PyTorch TTS failed: {e}")
+                    # Try Siri, then MLX
+                    try:
+                        tts = self._try_create_siri_tts(tts_config, use_boundaries)
+                        logger.info("✅ Siri Streaming TTS ready (fallback)")
+                    except Exception as e2:
+                        logger.warning(f"Siri TTS fallback failed: {e2}; using MLX Kokoro as last resort")
+                        tts = MLXKokoroTTSService(
+                            voice=tts_config["voice"],
+                            speed=tts_config["speed"],
+                            sample_rate=tts_config["sample_rate"]
+                        )
+                        logger.info("✅ MLX Kokoro TTS ready (last resort)")
+            elif self.config.tts_engine == "siri_streaming":
+                logger.debug("Using Siri Streaming TTS (native macOS)")
+                # Determine binary path (dev vs production)
+                from pathlib import Path
+                # Note: os already imported at module level
 
-            # Fallback paths for development and alternative production layouts
-            binary_candidates.extend([
-                # Production (Tauri bundle): Resources/siri-tts/siri-tts
-                Path(__file__).parent.parent.parent / "siri-tts" / "siri-tts",
-                # Development: app/src-tauri/sidecar/siri-tts/siri-tts
-                Path(__file__).parent.parent.parent.parent / "app" / "src-tauri" / "sidecar" / "siri-tts" / "siri-tts",
-                # Alternative production path: _up_/siri-tts/siri-tts
-                Path(__file__).parent.parent.parent / "_up_" / "siri-tts" / "siri-tts",
-            ])
+                # Try multiple possible locations for the siri-tts binary
+                binary_candidates = []
 
-            binary_path = None
-            for candidate in binary_candidates:
+                # FIRST: Check TAURI_RESOURCE_DIR (Tauri bundle production mode)
+                if "TAURI_RESOURCE_DIR" in os.environ:
+                    tauri_resource_dir = Path(os.environ["TAURI_RESOURCE_DIR"])
+                    binary_candidates.append(tauri_resource_dir / "sidecar" / "siri-tts" / "siri-tts")
+
+                # Fallback paths for development and alternative production layouts
+                binary_candidates.extend([
+                    # Production (Tauri bundle): Resources/siri-tts/siri-tts
+                    Path(__file__).parent.parent.parent / "siri-tts" / "siri-tts",
+                    # Development: app/src-tauri/sidecar/siri-tts/siri-tts
+                    Path(__file__).parent.parent.parent.parent / "app" / "src-tauri" / "sidecar" / "siri-tts" / "siri-tts",
+                    # Alternative production path: _up_/siri-tts/siri-tts
+                    Path(__file__).parent.parent.parent / "_up_" / "siri-tts" / "siri-tts",
+                ])
+
+                binary_path = None
+                for candidate in binary_candidates:
+                    if candidate.exists():
+                        binary_path = candidate
+                        logger.debug(f"Found Siri TTS binary at: {binary_path}")
+                        break
+
+                if not binary_path:
+                    logger.error(f"Siri TTS binary not found in any of: {[str(p) for p in binary_candidates]}")
+                    raise FileNotFoundError(f"siri-tts binary not found. Searched: {binary_candidates}")
+
+                tts = SiriStreamingTTSService(
+                    binary_path=str(binary_path),
+                    language=os.getenv("SIRI_TTS_LANGUAGE", "en-US"),
+                    voice_id=os.getenv("SIRI_TTS_VOICE_ID"),  # Optional override
+                    use_system_voice=os.getenv("SIRI_TTS_USE_SYSTEM_VOICE", "false").lower() in ("1", "true", "yes"),
+                    rate=float(os.getenv("SIRI_TTS_RATE", "0.52")),
+                    pitch=float(os.getenv("SIRI_TTS_PITCH", "1.0")),
+                    sample_rate=tts_config["sample_rate"],
+                    no_boundaries=(not use_boundaries),
+                )
+                logger.info("✅ Siri Streaming TTS ready")
+            else:
+                logger.warning(f"Unknown TTS engine: {self.config.tts_engine}, trying Siri then MLX Kokoro")
+                try:
+                    tts = self._try_create_siri_tts(tts_config, use_boundaries)
+                    logger.info("✅ Siri Streaming TTS ready (fallback)")
+                except Exception:
+                    tts = MLXKokoroTTSService(
+                        voice=tts_config["voice"],
+                        speed=tts_config["speed"],
+                        sample_rate=tts_config["sample_rate"]
+                    )
+                    logger.info("✅ MLX Kokoro TTS ready (last resort)")
+
+            if cache_enabled:
+                self._services_cache[cache_key] = tts
+            return tts
+
+    def _try_create_siri_tts(self, tts_config: Dict[str, Any], use_boundaries: bool) -> SiriStreamingTTSService:
+        """Attempt to create Siri Streaming TTS if the sidecar is available."""
+        # Try multiple possible locations for the siri-tts binary
+        binary_candidates = []
+        if "TAURI_RESOURCE_DIR" in os.environ:
+            tauri_resource_dir = Path(os.environ["TAURI_RESOURCE_DIR"])
+            binary_candidates.append(tauri_resource_dir / "sidecar" / "siri-tts" / "siri-tts")
+
+        binary_candidates.extend([
+            Path(__file__).parent.parent.parent / "siri-tts" / "siri-tts",
+            Path(__file__).parent.parent.parent.parent / "app" / "src-tauri" / "sidecar" / "siri-tts" / "siri-tts",
+            Path(__file__).parent.parent.parent / "_up_" / "siri-tts" / "siri-tts",
+        ])
+
+        binary_path = None
+        for candidate in binary_candidates:
+            try:
                 if candidate.exists():
                     binary_path = candidate
                     logger.debug(f"Found Siri TTS binary at: {binary_path}")
                     break
+            except Exception:
+                continue
 
-            if not binary_path:
-                logger.error(f"Siri TTS binary not found in any of: {[str(p) for p in binary_candidates]}")
-                raise FileNotFoundError(f"siri-tts binary not found. Searched: {binary_candidates}")
+        if not binary_path:
+            raise FileNotFoundError(f"siri-tts binary not found. Searched: {binary_candidates}")
 
-            tts = SiriStreamingTTSService(
-                binary_path=str(binary_path),
-                language=os.getenv("SIRI_TTS_LANGUAGE", "en-US"),
-                voice_id=os.getenv("SIRI_TTS_VOICE_ID"),  # Optional override
-                use_system_voice=os.getenv("SIRI_TTS_USE_SYSTEM_VOICE", "false").lower() in ("1", "true", "yes"),
-                rate=float(os.getenv("SIRI_TTS_RATE", "0.52")),
-                pitch=float(os.getenv("SIRI_TTS_PITCH", "1.0")),
-                sample_rate=tts_config["sample_rate"],
-                no_boundaries=(not use_boundaries),
-            )
-            logger.info("✅ Siri Streaming TTS ready")
-        else:
-            logger.warning(f"Unknown TTS engine: {self.config.tts_engine}, falling back to MLX Kokoro")
-            tts = MLXKokoroTTSService(
-                voice=tts_config["voice"],
-                speed=tts_config["speed"],
-                sample_rate=tts_config["sample_rate"]
-            )
-            logger.info("✅ MLX Kokoro TTS ready (fallback)")
-
-        self._services_cache['tts'] = tts
-        return tts
+        return SiriStreamingTTSService(
+            binary_path=str(binary_path),
+            language=os.getenv("SIRI_TTS_LANGUAGE", "en-US"),
+            voice_id=os.getenv("SIRI_TTS_VOICE_ID"),
+            use_system_voice=os.getenv("SIRI_TTS_USE_SYSTEM_VOICE", "false").lower() in ("1", "true", "yes"),
+            rate=float(os.getenv("SIRI_TTS_RATE", "0.52")),
+            pitch=float(os.getenv("SIRI_TTS_PITCH", "1.0")),
+            sample_rate=tts_config["sample_rate"],
+            no_boundaries=(not use_boundaries),
+        )
 
     def create_llm_service(self) -> OpenAILLMService:
         """Create LLM service with streaming configuration."""
@@ -446,48 +409,69 @@ class ServiceFactory:
             logger.debug("Using cached LLM service")
             return self._services_cache['llm']
 
-        logger.debug("Creating new LLM service")
-        llm_config = self.config.get_component_config("llm")
+        with self._llm_lock:
+            if 'llm' in self._services_cache:
+                logger.debug("Using cached LLM service (post-lock)")
+                return self._services_cache['llm']
+
+            logger.debug("Creating new LLM service")
+            llm_config = self.config.get_component_config("llm")
         use_llm_streaming = os.getenv("LLM_USE_STREAMING", "true").lower() == "true"
 
-        llm = OpenAILLMService(
-            api_key=llm_config["api_key"],
-            model=llm_config["model"],
-            base_url=llm_config["base_url"],
-            max_tokens=llm_config["max_tokens"],
-            stream=use_llm_streaming,
-            debug=False ,  # Enable debug logging to see context/messages
-            extra_body={
-                "think": False,
-                "stream": use_llm_streaming,
-                "options": {
-                    "num_predict": 768,
-                    "temperature": llm_config["temperature"],
-                    "top_k": 40,
-                    "top_p": 0.9,
-                    "repeat_penalty": 1.1,
-                    "num_ctx": 4096,
-                    "num_batch": 64,
-                    "use_mlock": True,
-                    "f16_kv": True,
-                    "keep_alive": "15m"
-                }
-            },
-        )
+        # Check if Direct MLX-LM mode is enabled
+        use_direct_mlx = os.getenv("LLM_USE_DIRECT_MLX", "false").lower() in ("true", "1", "yes")
 
-        if use_llm_streaming:
-            logger.debug("LLM streaming enabled for lower latency")
+        if use_direct_mlx:
+            # Use Direct MLX-LM for ultra-low latency (544ms TTFT vs 3000ms HTTP)
+            from core.llm.direct_mlx_llm import DirectMLXLLMService
+
+            logger.info("🚀 Using Direct MLX-LM (zero HTTP overhead, target TTFT ~500-600ms)")
+            llm = DirectMLXLLMService(
+                model=llm_config["model"],
+                max_tokens=llm_config.get("max_tokens", 256),
+                temperature=llm_config.get("temperature", 0.7),
+            )
+            logger.info(f"✅ Direct MLX-LM service created and cached (model: {llm_config.get('model', 'unknown')}, expected TTFT: ~500-600ms)")
         else:
-            logger.debug("LLM streaming disabled, using batch mode")
+            # Use HTTP-based OpenAI-compatible LLM (LM Studio, etc.)
+            llm = OpenAILLMService(
+                api_key=llm_config["api_key"],
+                model=llm_config["model"],
+                base_url=llm_config["base_url"],
+                max_tokens=llm_config["max_tokens"],
+                stream=use_llm_streaming,
+                debug=False ,  # Enable debug logging to see context/messages
+                extra_body={
+                    "think": False,
+                    "stream": use_llm_streaming,
+                    "options": {
+                        "num_predict": 768,
+                        "temperature": llm_config["temperature"],
+                        "top_k": 40,
+                        "top_p": 0.9,
+                        "repeat_penalty": 1.1,
+                        "num_ctx": 4096,
+                        "num_batch": 64,
+                        "use_mlock": True,
+                        "f16_kv": True,
+                        "keep_alive": "15m"
+                    }
+                },
+            )
 
-        self._services_cache['llm'] = llm
-        logger.info(f"✅ LLM service created and cached (model: {llm_config.get('model', 'unknown')})")
+            if use_llm_streaming:
+                logger.debug("LLM streaming enabled for lower latency")
+            else:
+                logger.debug("LLM streaming disabled, using batch mode")
 
-        # Prewarm the LLM model to prevent 42+ second cold start on first inference
-        if os.getenv("LLM_PREWARM", "true").lower() in ("true", "1", "yes"):
-            _prewarm_llm_service(llm, llm_config)
+            logger.info(f"✅ LLM service created and cached (model: {llm_config.get('model', 'unknown')})")
 
-        return llm
+            # Prewarm the LLM model to prevent 42+ second cold start on first inference
+            if os.getenv("LLM_PREWARM", "true").lower() in ("true", "1", "yes"):
+                _prewarm_llm_service(llm, llm_config)
+
+            self._services_cache['llm'] = llm
+            return llm
 
     def create_memory_processor(self, context_aggregator: Any, session_tracker: SessionTracker) -> HotPathMemoryProcessor:
         """Create HotMem memory processor."""
@@ -709,7 +693,26 @@ class ServiceFactory:
     def create_text_aggregator(self) -> Any:
         """Create fast text aggregator for fluid speech."""
         from core.aggregators import FastTextAggregator
-        aggregator = FastTextAggregator(min_tokens=175, max_tokens=250, max_time=0.5)
+        # Align with benchmark findings: slightly smaller, steadier chunks
+        # Allow environment overrides for rapid tuning
+        def _get_int(name: str, default: int) -> int:
+            try:
+                return int(os.getenv(name, str(default)))
+            except Exception:
+                return default
+
+        def _get_float(name: str, default: float) -> float:
+            try:
+                return float(os.getenv(name, str(default)))
+            except Exception:
+                return default
+
+        # Favor slightly larger spans to reduce too-frequent TTS calls
+        min_tokens = _get_int("FAST_TEXT_MIN_TOKENS", 175)
+        max_tokens = _get_int("FAST_TEXT_MAX_TOKENS", 250)
+        max_time = _get_float("FAST_TEXT_MAX_TIME", 0.5)
+
+        aggregator = FastTextAggregator(min_tokens=min_tokens, max_tokens=max_tokens, max_time=max_time)
         self._services_cache['text_aggregator'] = aggregator
         return aggregator
 
@@ -754,6 +757,7 @@ class ServiceFactory:
         retry_delay = float(os.getenv("KOKORO_PYTORCH_RETRY_DELAY", "2.0"))
 
         last_exception = None
+        validator = TTSServiceValidator()
 
         for attempt in range(max_retries + 1):
             try:
@@ -771,7 +775,7 @@ class ServiceFactory:
                 )
 
                 # Verify the service is actually functional
-                if self._verify_tts_service(tts):
+                if validator.is_functional(tts):
                     return tts
                 else:
                     logger.warning(f"⚠️ Kokoro PyTorch TTS created but verification failed (attempt {attempt + 1})")
@@ -824,39 +828,7 @@ class ServiceFactory:
         else:
             raise Exception("Kokoro PyTorch TTS initialization failed with unknown error")
 
-    def _verify_tts_service(self, tts_service: Any) -> bool:
-        """
-        Verify that a TTS service is properly initialized and functional.
-
-        This is a quick verification that doesn't require actual audio generation
-        but checks critical service state.
-        """
-        try:
-            # Check if the service has required attributes
-            if not hasattr(tts_service, '_pipeline'):
-                logger.error("❌ TTS service missing _pipeline attribute")
-                return False
-
-            if not hasattr(tts_service, '_voice'):
-                logger.error("❌ TTS service missing _voice attribute")
-                return False
-
-            # Check if pipeline is properly initialized
-            if tts_service._pipeline is None:
-                logger.error("❌ TTS service pipeline is None")
-                return False
-
-            # Try to access a pipeline attribute to verify it's functional
-            if hasattr(tts_service._pipeline, 'lang_code'):
-                logger.debug(f"✅ TTS service pipeline functional (lang_code: {tts_service._pipeline.lang_code})")
-            else:
-                logger.debug("✅ TTS service pipeline appears functional")
-
-            return True
-
-        except Exception as e:
-            logger.error(f"❌ TTS service verification failed: {e}")
-            return False
+    ## moved to utils/service_validator.py
 
     def clear_cache(self):
         """Clear the services cache."""

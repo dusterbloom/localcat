@@ -504,38 +504,31 @@ class VoiceAgentFactory:
         # Start with a top-level source; ParallelPipeline only fans out frames
         stages = [transport.input()]
 
-        # Add ParallelPipeline for concurrent processing (main + background Whisper)
-        # Fan-out over the incoming frames; branches must NOT create their own sources
-        main_branch = []
-        background_whisper_branch = []
+        # Add RTVI processor right after transport input (per Pipecat docs)
+        # This allows OutputTransportMessageUrgentFrame to flow downstream to transport.output()
+        if services.get('rtvi'):
+            stages.append(services['rtvi'])
+            logger.debug("📡 RTVI processor added after transport.input()")
 
-        # Optional mic probe in main branch
+        # Optional parallel processors (non-blocking, event-driven)
+        # These processors handle async events and must not block the main STT→LLM→TTS flow
+        parallel_branch = []
+
+        # Mic probe for diagnostics (if enabled)
         mic_probe = services.get('mic_probe')
         if mic_probe:
-            main_branch.append(mic_probe)
+            parallel_branch.append(mic_probe)
 
-        # Audio intelligence (if enabled) - runs async on UserStoppedSpeaking, non-blocking
+        # Audio intelligence for speaker recognition (if enabled)
         audio_intel = services.get('audio_intelligence')
         if audio_intel:
             logger.info("🎤 Audio Intelligence enabled - speaker recognition active")
-            main_branch.append(audio_intel)
+            parallel_branch.append(audio_intel)
 
-        # Create background Whisper processor for parallel STT
-        from core.stt.background_whisper import BackgroundWhisperProcessor
-        background_whisper = BackgroundWhisperProcessor(
-            model="openai/whisper-small",
-            language="en"
-        )
-        background_whisper_branch.extend([
-            # Receive the same upstream frames; do not start another source here
-            background_whisper
-        ])
-
-        # Add parallel STT processing (pass branches as positional args)
-        stages.append(ParallelPipeline(
-            main_branch,                 # Main processing branch
-            background_whisper_branch    # Background Whisper for redundancy/fallback
-        ))
+        # Add ParallelPipeline if we have any side-processors
+        # Single-branch ParallelPipeline ensures these processors don't block main flow
+        if parallel_branch:
+            stages.append(ParallelPipeline(parallel_branch))
 
         # Create transcript processor for UI display
         transcript = TranscriptProcessor()
@@ -549,11 +542,9 @@ class VoiceAgentFactory:
                 content = message.content
                 logger.info(f"📝 CONVERSATION [{role}]: {content}")
 
-        # Main processing pipeline - start with STT
         stages.extend([
             services['stt'],
             transcript.user(),  # Capture user transcriptions for UI
-            services['rtvi'],
         ])
 
         # Vision context injector (if video enabled) - MUST be after STT to see TranscriptionFrames
@@ -590,8 +581,6 @@ class VoiceAgentFactory:
             # Output audio then capture assistant transcripts (per Pipecat docs)
             transport.output(),
             transcript.assistant(),
-            services['rtvi'],        # Forward transcript events to client UI
-
         ])
 
         pipeline = Pipeline(stages)
