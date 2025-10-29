@@ -16,8 +16,10 @@ import json
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict, Any
 from collections import defaultdict
+from pathlib import Path
 from loguru import logger
 from .memory_constants import WEIGHT_MIN_ACTIVE, WEIGHT_MIN_WEAK, MAX_CONF_CAP
+from .database_path import get_database_path, get_lmdb_path
 
 
 @dataclass
@@ -26,13 +28,22 @@ class Paths:
     lmdb_dir: str = None
 
     def __post_init__(self):
-        # Only set defaults if not explicitly provided (including ":memory:")
+        # Use centralized database path resolver (CRITICAL: prevents split-brain)
         if self.sqlite_path is None:
-            self.sqlite_path = os.getenv("HOTMEM_SQLITE", "memory.db")
-
-        # Expand ~ and env vars for production bundles (Tauri)
-        if isinstance(self.sqlite_path, str) and self.sqlite_path != ":memory":
+            # Use centralized resolver - single source of truth
+            resolved_path = get_database_path()
+            self.sqlite_path = str(resolved_path)
+            logger.info(f"[MemoryStore] Using centralized path resolver: {self.sqlite_path}")
+        elif self.sqlite_path == ":memory:":
+            # In-memory database for testing
+            logger.info("[MemoryStore] Using in-memory database (testing mode)")
+        else:
+            # Explicit path provided - expand and validate
             self.sqlite_path = os.path.expanduser(os.path.expandvars(self.sqlite_path))
+            logger.warning(
+                f"[MemoryStore] Using explicit sqlite_path: {self.sqlite_path}. "
+                f"Consider using MEMORY_DB_PATH env var instead."
+            )
 
         # Ensure parent directory exists for file-based SQLite
         if isinstance(self.sqlite_path, str) and self.sqlite_path not in (None, ":memory:"):
@@ -40,19 +51,24 @@ class Paths:
                 parent = os.path.dirname(self.sqlite_path)
                 if parent and not os.path.isdir(parent):
                     os.makedirs(parent, exist_ok=True)
+                    logger.info(f"[MemoryStore] Created database directory: {parent}")
             except Exception as e:
                 logger.error(f"Failed to ensure SQLite parent directory '{self.sqlite_path}': {e}")
                 raise
 
-        # For LMDB, None means disabled; otherwise expand and ensure directory
+        # Use centralized LMDB path resolver
         if self.lmdb_dir is None:
-            env_lmdb = os.getenv("HOTMEM_LMDB_DIR")
-            if env_lmdb:
-                self.lmdb_dir = env_lmdb
-            # else keep it as None to disable LMDB
-
-        if self.lmdb_dir:
+            resolved_lmdb = get_lmdb_path()
+            if resolved_lmdb:
+                self.lmdb_dir = str(resolved_lmdb)
+                logger.info(f"[MemoryStore] Using centralized LMDB path: {self.lmdb_dir}")
+        elif self.lmdb_dir:
+            # Explicit LMDB path provided
             self.lmdb_dir = os.path.expanduser(os.path.expandvars(self.lmdb_dir))
+            logger.warning(
+                f"[MemoryStore] Using explicit lmdb_dir: {self.lmdb_dir}. "
+                f"Consider using centralized resolver."
+            )
 
         logger.debug(f"Paths initialized: sqlite_path={self.sqlite_path!r}, lmdb_dir={self.lmdb_dir!r}")
 
@@ -417,14 +433,21 @@ class MemoryStore:
                     )
                     # Also index in Enhanced FTS content table (if present)
                     try:
+                        # Slot tagging (lightweight): detect slot for this conversation text
+                        try:
+                            from .slot_router import SlotRouter
+                            slot_id, _ = SlotRouter.detect_slot(text or "")
+                        except Exception:
+                            slot_id = None
+
                         terms = (text or "").lower().split()
                         term_freq = (len([t for t in terms if t]) / max(len(terms), 1)) if terms else 0.0
                         doc_length = len(text or "")
                         cur.execute(
                             "INSERT OR REPLACE INTO chunks_content "
-                            "(text, eid, ts, session_id, turn_id, term_frequency, document_length, entity_boost) "
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                            (text, 'conversation', int(ts), sid, int(turn_num), float(term_freq), int(doc_length), 1.0)
+                            "(text, eid, ts, session_id, turn_id, term_frequency, document_length, entity_boost, slot) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (text, 'conversation', int(ts), sid, int(turn_num), float(term_freq), int(doc_length), 1.0, slot_id)
                         )
                     except Exception:
                         # Table may not exist yet (first run); it's safe to ignore
@@ -439,12 +462,22 @@ class MemoryStore:
                     )
 
                 self.sql.commit()
-                
+
+                # Log successful database writes with counts
+                logger.info(
+                    f"[MemoryStore] Database write complete: "
+                    f"{len(self._turns)} turns, "
+                    f"{len(self._edges)} edges, "
+                    f"{len(self._mentions)} mentions, "
+                    f"{len(self._edge_sources)} edge_sources, "
+                    f"{len(self._aliases)} aliases"
+                )
+
         except Exception as e:
             logger.error(f"Flush failed: {e}")
             # Don't lose data on error - will retry next flush
             return
-        
+
         # Clear queues only on success
         self._aliases.clear()
         self._edges.clear()
@@ -466,16 +499,57 @@ class MemoryStore:
         return v.decode() if v else None
     
     def neighbors(self, s: str, r: str) -> List[Tuple[str, float, int, int, int, int]]:
-        with self.lenv.begin() as txn:
-            raw = txn.get(f"adj:{s}|{r}".encode(), db=self.db_adj)
-        if not raw:
+        """
+        Get neighbors for (src, relation) edge lookup.
+
+        Uses LMDB for O(1) lookup when available, falls back to SQLite otherwise.
+
+        Args:
+            s: Source entity
+            r: Relation type
+
+        Returns:
+            List of (dst, weight, timestamp, pos_count, neg_count, status) tuples
+        """
+        # Fast path: Use LMDB adjacency index if available
+        if self.lenv is not None:
+            with self.lenv.begin() as txn:
+                raw = txn.get(f"adj:{s}|{r}".encode(), db=self.db_adj)
+            if not raw:
+                return []
+            arr = msgpack.loads(raw)
+            out = []
+            for i in range(0, len(arr), 6):
+                dst, w, ts, pos, neg, status = arr[i:i+6]
+                out.append((dst, float(w), int(ts), int(pos), int(neg), int(status)))
+            return out
+
+        # Fallback path: Query SQLite when LMDB disabled
+        # This is slower but prevents crashes when LMDB not configured
+        logger.debug(f"[MemoryStore] LMDB disabled, using SQLite fallback for neighbors({s}, {r})")
+
+        try:
+            cur = self.sql.cursor()
+            results = cur.execute("""
+                SELECT dst, weight, updated_at, pos, neg, status
+                FROM edge
+                WHERE src = ? AND rel = ? AND status >= 0
+                ORDER BY weight DESC
+            """, (s, r)).fetchall()
+
+            # Convert to same format as LMDB returns
+            out = []
+            for dst, weight, ts, pos, neg, status in results:
+                out.append((str(dst), float(weight), int(ts), int(pos), int(neg), int(status)))
+
+            if out:
+                logger.debug(f"[MemoryStore] SQLite fallback found {len(out)} neighbors for ({s}, {r})")
+
+            return out
+
+        except Exception as e:
+            logger.error(f"[MemoryStore] SQLite fallback failed for neighbors({s}, {r}): {e}")
             return []
-        arr = msgpack.loads(raw)
-        out = []
-        for i in range(0, len(arr), 6):
-            dst, w, ts, pos, neg, status = arr[i:i+6]
-            out.append((dst, float(w), int(ts), int(pos), int(neg), int(status)))
-        return out
     
     # ---------- Edge lifecycle ops (hot-path safe) ----------
     @staticmethod
@@ -1065,3 +1139,14 @@ class MemoryStore:
             logger.warning(f"Scoped FTS search failed for query '{query[:50]}': {e}")
             # Fallback to global search
             return self.search_fts(query, limit)
+
+    def get_database_path(self) -> Path:
+        """
+        Get the actual database path being used by this store.
+
+        Used for validation to prevent split-brain scenarios.
+
+        Returns:
+            Path object pointing to the SQLite database file
+        """
+        return Path(self.paths.sqlite_path).resolve()

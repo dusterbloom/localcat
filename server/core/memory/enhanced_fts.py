@@ -69,9 +69,15 @@ class EnhancedFTS:
                     turn_id INTEGER,
                     term_frequency REAL DEFAULT 1.0,
                     document_length INTEGER,
-                    entity_boost REAL DEFAULT 1.0
+                    entity_boost REAL DEFAULT 1.0,
+                    slot TEXT
                 )
             """)
+            # Backwards-compatible schema upgrade: add 'slot' column if missing
+            try:
+                cur.execute("ALTER TABLE chunks_content ADD COLUMN slot TEXT")
+            except Exception:
+                pass  # Column already exists
             
             # Create enhanced FTS table with better tokenization
             cur.execute("""
@@ -192,7 +198,7 @@ class EnhancedFTS:
         tf_component = (term_freq * (k1 + 1)) / (term_freq + k1 * (1 - b + b * doc_length / avg_doc_length))
         return idf * tf_component
     
-    def enhanced_search(self, query: str, limit: int = 10, session_ids: List[str] = None, eids: List[str] = None) -> List[Tuple[float, str, str, int, Optional[int]]]:
+    def enhanced_search(self, query: str, limit: int = 10, session_ids: List[str] = None, eids: List[str] = None, slot_id: str | None = None) -> List[Tuple[float, str, str, int, Optional[int]]]:
         """
         SOTA FTS search with BM25 ranking and multi-factor scoring (WITH CACHING)
 
@@ -229,10 +235,11 @@ class EnhancedFTS:
                     FROM chunks_fts_enhanced 
                     JOIN chunks_content c ON chunks_fts_enhanced.rowid = c.rowid
                     WHERE chunks_fts_enhanced MATCH ? AND c.session_id IN ({placeholders})
+                    {"AND c.slot = ?" if slot_id else ""}
                     ORDER BY bm25_score DESC, c.ts DESC
                     LIMIT ?
                 """
-                params = [expanded_query] + session_ids + [limit * 2]
+                params = [expanded_query] + session_ids + (([slot_id] if slot_id else [])) + [limit * 2]
             elif eids:
                 placeholders = ','.join('?' * len(eids))
                 sql = f"""
@@ -241,10 +248,11 @@ class EnhancedFTS:
                     FROM chunks_fts_enhanced 
                     JOIN chunks_content c ON chunks_fts_enhanced.rowid = c.rowid
                     WHERE chunks_fts_enhanced MATCH ? AND c.eid IN ({placeholders})
+                    {"AND c.slot = ?" if slot_id else ""}
                     ORDER BY bm25_score DESC, c.ts DESC
                     LIMIT ?
                 """
-                params = [expanded_query] + eids + [limit * 2]
+                params = [expanded_query] + eids + (([slot_id] if slot_id else [])) + [limit * 2]
             else:
                 sql = """
                     SELECT c.text AS text, c.eid, c.ts, c.turn_id, c.term_frequency, c.document_length, c.entity_boost,
@@ -252,10 +260,13 @@ class EnhancedFTS:
                     FROM chunks_fts_enhanced 
                     JOIN chunks_content c ON chunks_fts_enhanced.rowid = c.rowid
                     WHERE chunks_fts_enhanced MATCH ?
+                    {cond}
                     ORDER BY bm25_score DESC, c.ts DESC
                     LIMIT ?
                 """
-                params = [expanded_query, limit * 2]
+                cond = "AND c.slot = ?" if slot_id else ""
+                sql = sql.format(cond=cond)
+                params = [expanded_query] + (([slot_id] if slot_id else [])) + [limit * 2]
             
             results = cur.execute(sql, params).fetchall()
             

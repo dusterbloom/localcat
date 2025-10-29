@@ -134,6 +134,13 @@ class HotPathMemoryProcessor(BaseProcessor):
         except Exception as exc:
             logger.warning(f"Could not rebuild HotMemory from store (starting fresh): {exc}")
 
+        # Backfill Enhanced FTS slot tags for existing rows once per startup
+        try:
+            from .enhanced_fts import EnhancedFTS
+            EnhancedFTS(self.store).reindex_existing_data()
+        except Exception as exc:
+            logger.debug(f"[HotMem] Enhanced FTS reindex skipped: {exc}")
+
         self.session_id = self._generate_session_id(self.config.user_id)
         self.hot.agent_eid = f"agent:{self.config.agent_id}"
         self.hot.current_user_id = self.config.user_id
