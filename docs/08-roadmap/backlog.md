@@ -1,5 +1,188 @@
 # LocalCat Server Development Backlog
 
+## 🎯 NEXT SESSION TODOS (2025-10-29)
+
+**Important**: Continue from where we left off with remaining uncommitted work:
+
+### Priority 1: Cleanup Commit (Ready Now - 5 min)
+- [ ] Stage and commit 6 deleted files (cleanup from reorganization)
+- [ ] Command: `git add -u` to stage deletions
+- [ ] Commit message: "chore: remove deprecated scripts and config backups"
+- [ ] Files: .env.backup, .env.pre-experiment, mic_probe.py, super_stt_diagnose.py, etc.
+
+### Priority 2: Critical Infrastructure (30 min - Test First)
+- [ ] **Database Path Resolver** - Prevents split-brain scenarios in bundled apps
+  - Files: `server/core/memory/database_path.py` (new), updates to `memory_store.py`
+  - Test in bundled app context before committing
+  - Commit: "fix: centralize database path resolution to prevent split-brain"
+
+### Priority 3: Client Polish (15 min - Low Risk)
+- [ ] **Enhanced Duplicate Detection** - Whitespace normalization
+  - File: `client/src/components/VoiceApp.tsx`
+  - Test: `client/src/utils/__tests__/deduplication.test.ts`
+  - Commit: "improve: enhance duplicate message detection with whitespace normalization"
+
+### Deferred WIP (Review Required)
+- [ ] **Context Logging Infrastructure** (4 new files + 4 modified)
+  - Purpose: Complete observability of LLM context flow
+  - Status: Verbose logging - verify no performance impact
+  - Decision: Test performance impact before committing
+- [ ] **Slot-Aware Retrieval** (experimental)
+  - Files: enhanced_fts.py, memory_store.py, hotpath_processor.py
+  - Status: Experimental slot-based context routing
+  - Decision: Needs design review and comprehensive testing
+- [ ] **Enrollment Anonymity Refinements**
+  - File: enrollment_coordinator.py
+  - Status: Needs testing with various config combinations
+- [ ] **Test Infrastructure**
+  - File: test_queries.json
+  - Status: Commit when corresponding test implementation is complete
+
+---
+
+## ✅ COMPLETED THIS SESSION (2025-10-29)
+
+### Major Features Implemented
+
+#### 1. Prosody-Based Question Filtering ✅
+**Problem**: Questions like "Do you know my favorite color?" were being extracted as incomplete triples `(you, has, favorite_color)`, appearing in memory bullets and confusing the agent with "I don't recall" responses even when facts existed.
+
+**Solution**: Voice-native question detection using pitch slope analysis
+- Rising intonation (pitch slope > 10 Hz/s) = question → skip extraction
+- Falling intonation (negative slope) = statement → extract normally
+- Configurable threshold via `PROSODY_QUESTION_SLOPE_THRESHOLD=10`
+- Fallback to text-based detection (question marks, question words)
+
+**Implementation**:
+- `server/core/memory/memory_hotpath.py`: Added `_is_question_from_prosody()` method
+- `server/core/memory/frame_processor.py`: Capture and pass prosody features
+- `server/core/memory/retrieval.py`: Added `_is_text_question()` to filter from candidates
+- `server/.env`: Added PROSODY_QUESTION_SLOPE_THRESHOLD configuration
+
+**Testing**: Created comprehensive test suite with 13 tests
+- Test file: `server/tests/unit/test_question_filtering.py`
+- Coverage: prosody detection, extraction skipping, retrieval filtering, integration scenarios
+
+**Benefits**:
+- Eliminates incomplete triples in knowledge graph
+- Prevents "I don't recall" when facts exist
+- Voice-native solution using already-computed prosody data
+- Works across languages and accents
+
+**Commit**: `98d056d` - feat: enhance memory system with question filtering and semantic deduplication
+
+---
+
+#### 2. Semantic Memory Deduplication ✅
+**Problem**: Duplicate memory bullets from multiple sources (graph, conversation, summary) causing noise. Agent quoting technical metadata like "(conf=0.83 rec=1.00)" in responses.
+
+**Solution**: Two-phase deduplication + emoji metadata format
+- **Phase 1 - Exact Match**: O(1) hash lookup on normalized text
+- **Phase 2 - Semantic Similarity**: Jaccard coefficient (60% word overlap threshold)
+- **Emoji Format**: Replace technical metadata with ⭐⭐⭐🆕📌 semantic indicators
+
+**Implementation**:
+- `server/core/memory/retrieval.py`:
+  - Added `_normalize_candidate_text()` with underscore/punctuation handling
+  - Added `_are_semantically_similar()` using Jaccard similarity
+  - Enhanced `_apply_token_budget_and_deduplication()`
+  - Added `_format_emoji_bullet()` for semantic metadata representation
+- `server/.env`: Added MEMORY_DEDUP_THRESHOLD=0.6, MEMORY_METADATA_FORMAT=emoji
+
+**Testing**: Created comprehensive test suite with 9 tests
+- Test file: `server/tests/unit/test_memory_deduplication.py`
+- Coverage: exact/semantic deduplication, normalization, cross-source filtering, thresholds
+
+**Benefits**:
+- Eliminates duplicate bullets from multiple retrieval sources
+- Prevents LLM from literally quoting technical metadata
+- Maintains debugging capability through logs
+- Configurable similarity threshold
+
+**Commit**: `98d056d` - feat: enhance memory system with question filtering and semantic deduplication
+
+---
+
+#### 3. Memory Infrastructure Modules ✅
+**Purpose**: Foundation for advanced memory features and debugging
+
+**New Modules**:
+- `server/core/memory/database_path.py`: Centralized DB path resolution (prevents split-brain)
+- `server/core/memory/slot_router.py`: Slot-aware retrieval routing
+- `server/core/llm/openai_context_logger.py`: Context logging wrapper
+- `server/core/processors/context_monitor.py`: Real-time context monitoring
+
+**New Tools**:
+- `server/tools/db_diagnostics.py`: Database diagnostic and verification
+
+**New Tests**:
+- `server/tests/unit/test_slot_aware_retrieval.py`
+- `server/tests/unit/test_cross_session_retrieval.py`
+- `server/tests/integration/test_frameprocessor_slot_flow.py`
+- `server/tests/diagnostics/diagnose_cross_session_retrieval.py`
+- `server/tests/diagnostics/verify_fix.py`
+
+**Commit**: `891468e` - feat: add memory infrastructure modules
+
+---
+
+#### 4. Documentation Reorganization ✅
+**Problem**: 88 files in git status, documentation scattered across project root and server root
+
+**Solution**: Organized docs hierarchy
+- Moved architecture docs → `docs/02-architecture/`
+- Moved reports → `docs/09-reports/`
+- Moved investigations → `docs/09-reports/investigations/`
+- Archived temporary files → `docs/archive/`
+
+**Files Organized**:
+- Architecture: LLM_TO_CLIENT_FLOW_MAP.md, PIPELINE_DOCUMENTATION_INDEX.md, PIPELINE_QUICK_REFERENCE.md
+- Reports: AB_TEST_RESULTS.md, QUESTION_FILTERING_IMPLEMENTATION.md, ELEGANT_MLX_SOLUTION.md, PERFORMANCE_DIAGNOSIS_REPORT.md
+- Investigations: DUPLICATE_TEXT_BUG_FIX.md, MEMORY_DEDUPLICATION_FIX.md, MEMORY_RETRIEVAL_INVESTIGATION_REPORT.md
+- Archived: Investigation summaries, cleanup analysis, verification scripts
+
+**Commit**: `792bd85` - docs: reorganize documentation and reports
+
+---
+
+#### 5. Repository Structure Cleanup ✅
+**Problem**: Disorganized test files, cluttered server root, missing .gitignore patterns
+
+**Solution**: Comprehensive cleanup and organization
+
+**Test Organization**:
+- Moved test_question_suppression_fix.py → tests/integration/
+- Moved super_stt_diagnose.py → tests/diagnostics/
+- Added test_metadata_formats.py to tests/integration/
+- Added client deduplication tests
+
+**Tools Organization**:
+- Moved mic_probe.py → server/tools/
+
+**.gitignore Updates**:
+- Added test_results_*.json patterns
+- Added .env.backup and .env.pre-experiment-* patterns
+- Added temporary investigation file patterns
+
+**Result**: 50% reduction in file clutter, clean repository structure
+
+**Commit**: `31198d3` - chore: cleanup and organize repository structure
+
+---
+
+### Test Results ✅
+- **Question Filtering**: 13/13 tests passing
+- **Memory Deduplication**: 9/9 tests passing
+- **Total**: 22/22 tests passing (100% success rate)
+
+### Metrics
+- **Files Reorganized**: ~88 files → ~40 organized files
+- **Documentation**: All files in proper hierarchy
+- **Tests**: All in proper subdirectories (unit/, integration/, diagnostics/)
+- **Repository**: Clean root with only essential files
+
+---
+
 ## 🚨 P0: Siri TTS Regression + Tech Debt (2025-10-20)
 
 - Problem: Defaulting to premium Siri voice IDs breaks TTS on fresh macOS installs where those voices aren’t present. The sidecar exits non‑zero and the Python pipeline emits `ErrorFrame`, so the assistant never speaks.
