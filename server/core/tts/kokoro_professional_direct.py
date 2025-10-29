@@ -177,21 +177,20 @@ class ProfessionalKokoroTTSService(TTSService):
             # Ensure models are available
             model_path, voices_path = self._ensure_models_downloaded()
 
-            # CRITICAL: Unset espeak-ng environment variables to prevent kokoro-onnx
-            # from attempting to use espeakng-loader with hardcoded CI build paths
-            # This forces kokoro-onnx to use its internal phonemizer instead
-            if 'ESPEAK_DATA_PATH' in os.environ:
-                del os.environ['ESPEAK_DATA_PATH']
-                logger.debug("Removed ESPEAK_DATA_PATH from environment")
-            if 'ESPEAK_NG_LIBRARY' in os.environ:
-                del os.environ['ESPEAK_NG_LIBRARY']
-                logger.debug("Removed ESPEAK_NG_LIBRARY from environment")
+            # CRITICAL: Keep ESPEAK_DATA_PATH set (even though we use espeak_config=None)
+            # The dylib still gets loaded during import and needs to find its data files
+            # Our patched dylib looks for /tmp/espeak-ng-data which symlinks to the bundled data
+            if 'ESPEAK_DATA_PATH' not in os.environ:
+                # Set to /tmp/espeak-ng-data (matches our patched dylib)
+                os.environ['ESPEAK_DATA_PATH'] = '/tmp/espeak-ng-data'
+                logger.debug("Set ESPEAK_DATA_PATH to /tmp/espeak-ng-data for dylib initialization")
 
-            # Import Kokoro AFTER unsetting espeak env vars
+            # Import Kokoro with espeak-ng environment properly configured
             from kokoro_onnx import Kokoro
 
-            # Initialize Kokoro WITHOUT espeak-ng to use internal phonemizer
-            # Setting espeak_config=None avoids the hardcoded espeakng-loader paths
+            # Initialize Kokoro WITHOUT espeak-ng phonemizer (use internal)
+            # Note: espeak_config=None means use internal phonemizer, but the dylib
+            # still loads and needs ESPEAK_DATA_PATH to find its data files
             self._pipeline = Kokoro(
                 model_path=model_path,
                 voices_path=voices_path,
@@ -337,10 +336,6 @@ class ProfessionalKokoroTTSService(TTSService):
                     continue
 
                 chunk_start_time = time.time()
-
-                # Mirror the exact text chunk to transcript/UI
-                from pipecat.frames.frames import TTSTextFrame
-                yield TTSTextFrame(text=sentence)
 
                 # Generate audio with professional processing
                 result = await asyncio.get_event_loop().run_in_executor(

@@ -245,8 +245,16 @@ class Retrieval:
         # Clear per-retrieve prosody cache to avoid cross-retrieve contamination
         self._prosody_cache.clear()
         
+        # Detect slot from query (attribute-aware routing)
+        try:
+            from .slot_router import SlotRouter
+            slot_id, slot_conf = SlotRouter.detect_slot(query)
+        except Exception:
+            slot_id, slot_conf = (None, 0.0)
+
         # Source control via env (defaults to graph only for backward compatibility)
         enabled_sources = [s.strip() for s in os.getenv("MEMORY_SOURCES", "graph").split(",") if s.strip()]
+        logger.info(f"[Retrieval] Searching memory sources={enabled_sources} for query='{query[:50]}...'")
         logger.debug(f"[Retrieval] enabled_sources={enabled_sources} query='{query[:50]}'")
 
         # Strengthened intent gating for greetings - suppress memory unless name is relevant
@@ -265,6 +273,7 @@ class Retrieval:
             
             if not asks_for_name:
                 # Suppress all memory injection for pure greetings/smalltalk
+                logger.info(f"[Retrieval] Greeting/smalltalk detected - no memory context needed for: '{q}'")
                 logger.debug(f"[Retrieval] Greeting/smalltalk detected, suppressing memory injection: '{q}'")
                 return []
             
@@ -283,28 +292,75 @@ class Retrieval:
         all_candidates: List[Candidate] = []
         seen_texts = set()
 
+        # Observability: track per-source counts before/after slot filtering
+        pre_counts = {"graph": 0, "convo": 0, "summary": 0, "semantic": 0}
+        post_counts = {"graph": 0, "convo": 0, "summary": 0, "semantic": 0}
+
         for source in enabled_sources:
             if source == "graph" and budget.get("graph", 0) > 0:
                 graph_candidates = self._graph_collect_candidates(
                     query, entities, turn_id, budget["graph"], seen_texts.copy(), relation_allowlist
                 )
+                pre_counts["graph"] = len(graph_candidates)
+                # Slot alignment filter for graph candidates (post-humanization text)
+                if slot_id:
+                    try:
+                        from .slot_router import SlotRouter
+                        graph_candidates = [c for c in graph_candidates if SlotRouter.is_slot_aligned(c.text, slot_id)]
+                    except Exception:
+                        pass
+                post_counts["graph"] = len(graph_candidates)
                 all_candidates.extend(graph_candidates)
                 logger.debug(f"[Retrieval] graph_candidates count={len(graph_candidates)}")
 
             elif source == "convo" and budget.get("convo", 0) > 0:
-                convo_candidates = self._convo_collect_candidates(query, budget["convo"], seen_texts.copy())
+                convo_candidates = self._convo_collect_candidates(query, budget["convo"], seen_texts.copy(), slot_id=slot_id)
+                pre_counts["convo"] = len(convo_candidates)
+                if slot_id:
+                    try:
+                        from .slot_router import SlotRouter
+                        convo_candidates = [c for c in convo_candidates if SlotRouter.is_slot_aligned(c.text, slot_id)]
+                    except Exception:
+                        pass
+                post_counts["convo"] = len(convo_candidates)
                 all_candidates.extend(convo_candidates)
                 logger.debug(f"[Retrieval] convo_candidates count={len(convo_candidates)}")
 
             elif source == "summary" and budget.get("summary", 0) > 0:
                 summary_candidates = self._summary_collect_candidates(budget["summary"], seen_texts.copy())
+                pre_counts["summary"] = len(summary_candidates)
+                # Optional: slot filtering for summaries when slot_id present (conservative)
+                if slot_id:
+                    try:
+                        from .slot_router import SlotRouter
+                        summary_candidates = [c for c in summary_candidates if SlotRouter.is_slot_aligned(c.text, slot_id)]
+                    except Exception:
+                        pass
+                post_counts["summary"] = len(summary_candidates)
                 all_candidates.extend(summary_candidates)
                 logger.debug(f"[Retrieval] summary_candidates count={len(summary_candidates)}")
 
             elif source == "semantic" and budget.get("semantic", 0) > 0:
                 semantic_candidates = self._semantic_collect_candidates(query, budget["semantic"], seen_texts.copy())
+                pre_counts["semantic"] = len(semantic_candidates)
+                if slot_id:
+                    try:
+                        from .slot_router import SlotRouter
+                        semantic_candidates = [c for c in semantic_candidates if SlotRouter.is_slot_aligned(c.text, slot_id)]
+                    except Exception:
+                        pass
+                post_counts["semantic"] = len(semantic_candidates)
                 all_candidates.extend(semantic_candidates)
                 logger.debug(f"[Retrieval] semantic_candidates count={len(semantic_candidates)}")
+
+        # If a slot is detected, prefer aligned candidates only
+        # (Already filtered per-source, this extra guard avoids any leakage).
+        if slot_id:
+            try:
+                from .slot_router import SlotRouter
+                all_candidates = [c for c in all_candidates if SlotRouter.is_slot_aligned(c.text, slot_id)]
+            except Exception:
+                pass
 
         # Composite re-rank all candidates
         scored_candidates: List[Tuple[float, Candidate, Dict[str, float]]] = []
@@ -319,7 +375,37 @@ class Retrieval:
         finally:
             self._scoring_clock_ms = previous_clock
 
+        # If a slot is detected, boost best graph candidate to guarantee first bullet when present
+        if scored_candidates and slot_id:
+            try:
+                from .slot_router import SlotRouter
+                # Identify best aligned graph candidate
+                best_idx = -1
+                best_score = -1e9
+                for i, (score, cand, comps) in enumerate(scored_candidates):
+                    if cand.source == 'graph' and SlotRouter.is_slot_aligned(cand.text, slot_id):
+                        if score > best_score:
+                            best_score = score
+                            best_idx = i
+                if best_idx >= 0:
+                    # Apply a large priority bonus to surface it first
+                    bonus = 1000.0
+                    s, c, comp = scored_candidates[best_idx]
+                    scored_candidates[best_idx] = (s + bonus, c, comp)
+            except Exception:
+                pass
+
         rerank_time_ms = (time.time() - start_time) * 1000
+
+        # INFO: slot summary for observability
+        try:
+            logger.info(
+                f"[Retrieval] SlotRouter: slot={slot_id or '-'} conf={slot_conf:.2f}; "
+                f"convo {pre_counts['convo']}→{post_counts['convo']} graph {pre_counts['graph']}→{post_counts['graph']} "
+                f"summary {pre_counts['summary']}→{post_counts['summary']}"
+            )
+        except Exception:
+            pass
         logger.debug(f"[Retrieval] Composite reranking took {rerank_time_ms:.1f}ms for {len(all_candidates)} candidates")
 
         # Sort by composite score
@@ -355,6 +441,10 @@ class Retrieval:
             for src in ["graph", "convo", "summary"]:
                 if f"[{src}]" in bullet:
                     source_counts[src] = source_counts.get(src, 0) + 1
+        if not final_bullets:
+            logger.info(f"[Retrieval] No memory context found for query")
+        else:
+            logger.info(f"[Retrieval] Returning {len(final_bullets)} memory bullets from sources: {source_counts}")
         logger.debug(f"[Retrieval] final_bullets={len(final_bullets)} source_counts={source_counts}")
 
         return final_bullets[:max_bullets]
@@ -460,21 +550,50 @@ class Retrieval:
             return [], []
         
         for score, candidate, components in scored_candidates:
-            # Cross-source deduplication by normalized humanized text
+            # Enhanced cross-source deduplication:
+            # 1. Exact match on normalized text
             normalized_text = self._normalize_candidate_text(candidate.text)
-            
+
             if normalized_text in seen_normalized_texts:
-                logger.debug(f"[Retrieval] Skipping duplicate candidate: '{candidate.text[:50]}...'")
+                logger.debug(f"[Retrieval] Skipping exact duplicate: '{candidate.text[:50]}...'")
+                continue
+
+            # 2. Semantic similarity check against all selected candidates
+            # Load similarity threshold from environment
+            try:
+                similarity_threshold = float(os.getenv("MEMORY_DEDUP_THRESHOLD", "0.6"))
+            except (ValueError, TypeError):
+                similarity_threshold = 0.6
+
+            is_duplicate = False
+            for selected in selected_candidates:
+                if self._are_semantically_similar(candidate.text, selected.text, similarity_threshold):
+                    logger.debug(
+                        f"[Retrieval] Skipping semantic duplicate: '{candidate.text[:50]}...' "
+                        f"(similar to '{selected.text[:50]}...')"
+                    )
+                    is_duplicate = True
+                    break
+
+            if is_duplicate:
                 continue
                 
-            # Format the bullet based on source and injection mode
+            # Format the bullet based on metadata format setting (for A/B testing)
+            metadata_format = os.getenv("MEMORY_METADATA_FORMAT", "technical").lower()
             injection_mode = os.getenv("MEMORY_INJECTION_MODE", "bullets").lower()
             header_expand_threshold = float(os.getenv("MEMORY_HEADER_EXPAND_THRESHOLD", "0.65"))
-            
-            if injection_mode == "headers":
+
+            if metadata_format == "emoji":
+                # A/B test variant A: Emoji-based metadata
+                bullet = self._format_emoji_bullet(candidate, components, score)
+            elif metadata_format == "minimal":
+                # A/B test variant B: Minimal symbol metadata
+                bullet = self._format_minimal_bullet(candidate, components, score)
+            elif injection_mode == "headers":
+                # Control/Technical: Original header format with numeric metadata
                 bullet = self._format_header_bullet(candidate, components, score, header_expand_threshold)
             else:
-                # Legacy bullet formatting
+                # Legacy bullet formatting (fallback)
                 if candidate.source == "graph":
                     bullet = f"• [graph] {candidate.text}{self._ago_suffix(candidate.ts)}"
                 elif candidate.source == "convo":
@@ -513,16 +632,82 @@ class Retrieval:
     def _normalize_candidate_text(self, text: str) -> str:
         """
         Normalize candidate text for cross-source deduplication.
-        
-        Removes source tags, normalizes case, and removes extra whitespace.
+
+        Removes source tags, normalizes case, removes punctuation/underscores, and collapses whitespace.
+        This creates a more aggressive normalization for better duplicate detection.
         """
         import re
         # Remove source tags like [graph], [convo], etc.
         normalized = re.sub(r'\[(graph|convo|summary|semantic)\]\s*', '', text, flags=re.IGNORECASE)
-        # Normalize case and whitespace
-        normalized = ' '.join(normalized.lower().split())
+        # Normalize case
+        normalized = normalized.lower()
+        # Replace underscores with spaces (before other punctuation removal)
+        normalized = normalized.replace('_', ' ')
+        # Remove punctuation and normalize whitespace
+        normalized = re.sub(r'[^\w\s]', ' ', normalized)
+        normalized = ' '.join(normalized.split())
         return normalized
-    
+
+    def _are_semantically_similar(self, text1: str, text2: str, threshold: float = 0.6) -> bool:
+        """
+        Check if two texts are semantically similar using Jaccard similarity.
+
+        Args:
+            text1: First text
+            text2: Second text
+            threshold: Similarity threshold (default 0.6 = 60% overlap)
+
+        Returns:
+            True if texts are similar enough to be considered duplicates
+        """
+        # Normalize both texts
+        norm1 = self._normalize_candidate_text(text1)
+        norm2 = self._normalize_candidate_text(text2)
+
+        # Split into word sets
+        words1 = set(norm1.split())
+        words2 = set(norm2.split())
+
+        # Handle empty sets
+        if not words1 or not words2:
+            return norm1 == norm2
+
+        # Calculate Jaccard similarity
+        intersection = len(words1 & words2)
+        union = len(words1 | words2)
+
+        if union == 0:
+            return False
+
+        similarity = intersection / union
+        return similarity >= threshold
+
+    def _is_text_question(self, text: str) -> bool:
+        """
+        Detect if text is a question using text patterns (fallback when prosody unavailable).
+
+        Args:
+            text: Text to check
+
+        Returns:
+            True if text appears to be a question
+        """
+        text_clean = text.strip()
+
+        # Question mark is strongest indicator
+        if text_clean.endswith('?'):
+            return True
+
+        # Question word starters
+        question_starters = (
+            'do you', 'did you', 'can you', 'could you', 'would you', 'will you', 'should you',
+            'what', 'when', 'where', 'who', 'why', 'how', 'which',
+            'is it', 'are you', 'have you', 'does', 'did', 'can', 'will', 'should', 'are'
+        )
+
+        text_lower = text_clean.lower()
+        return any(text_lower.startswith(q) for q in question_starters)
+
     def _should_suppress_memory_injection(self, query: str) -> bool:
         """
         Enhanced greeting and intent gating to suppress memory injection for inappropriate queries.
@@ -785,7 +970,7 @@ class Retrieval:
 
         return candidates[:max_bullets]
 
-    def _convo_collect_candidates(self, query: str, max_bullets: int, seen: set) -> List[Candidate]:
+    def _convo_collect_candidates(self, query: str, max_bullets: int, seen: set, slot_id: Optional[str] = None) -> List[Candidate]:
         """Collect conversation candidates as Candidate records with BM25 scores."""
         candidates = []
         
@@ -808,7 +993,7 @@ class Retrieval:
                     # Fallback to current session if user mapping not available
                     allowed_sessions = [session_id]
 
-                enhanced_results = enhanced_fts.enhanced_search(query, max_bullets * 2, session_ids=allowed_sessions)
+                enhanced_results = enhanced_fts.enhanced_search(query, max_bullets * 2, session_ids=allowed_sessions, slot_id=slot_id)
                 hits = [(score, text, eid, ts, turn_id) for score, text, eid, ts, turn_id in enhanced_results]
 
                 logger.debug(f"[Retrieval._convo_collect] Enhanced FTS returned {len(hits)} hits")
@@ -883,7 +1068,12 @@ class Retrieval:
             # Apply quality filter
             if not self._is_quality_bullet(s):
                 continue
-            
+
+            # Filter out questions (they confuse the agent and shouldn't be used as context)
+            if self._is_text_question(s):
+                logger.debug(f"[Retrieval._convo] Skipping question: '{s[:50]}...'")
+                continue
+
             candidates.append(Candidate(
                 text=s,
                 source="convo",
@@ -891,7 +1081,7 @@ class Retrieval:
                 ts=ts,
                 meta={"bm25_score": bm25_score, "eid": eid, "turn_id": turn_id}
             ))
-            
+
             seen.add(s)
             if len(candidates) >= max_bullets:
                 break
@@ -1635,8 +1825,11 @@ class Retrieval:
         max_similarity = 0.0
         
         for other in other_candidates:
-            if other is candidate or other.source != candidate.source:
-                continue  # Only compare within same source for diversity
+            if other is candidate:
+                continue  # Skip self-comparison
+
+            # REMOVED SOURCE RESTRICTION: Now compares across all sources
+            # This enables cross-source diversity penalty to catch duplicates
                 
             other_norm = self._normalize_for_diversity(other.text)
             
@@ -1701,16 +1894,130 @@ class Retrieval:
             logger.warning(f"[Retrieval] Failed to retrieve prosody for session={session_id}, turn={turn_id}: {e}")
             return 0.0
 
+    def _format_emoji_bullet(self, candidate: Candidate, components: Dict[str, float], total_score: float) -> str:
+        """
+        Format candidate with intuitive emoji metadata (A/B test variant A).
+
+        Emojis represent confidence, recency, and importance without technical jargon.
+        Research shows LLMs understand emojis semantically and won't quote them as technical data.
+
+        Args:
+            candidate: Candidate to format
+            components: Scoring components from _composite_score
+            total_score: Combined score for the candidate
+
+        Returns:
+            Formatted bullet with emoji metadata
+        """
+        # Extract metrics
+        confidence = components.get("wconf", 0.0) / self.weights.get("wconf", 1.0)
+        recency = components.get("wrec", 0.0) / self.weights.get("wrec", 1.0)
+        prosody = components.get("wpro", 0.0)
+        prosody_weight = float(os.getenv("MEMORY_WEIGHT_PROSODY", "0.15"))
+        if prosody_weight > 0:
+            prosody = prosody / prosody_weight
+
+        # Map confidence to stars
+        if confidence >= 0.7:
+            conf_emoji = "⭐⭐⭐"  # High confidence
+        elif confidence >= 0.4:
+            conf_emoji = "⭐⭐"    # Medium confidence
+        else:
+            conf_emoji = "⭐"      # Low confidence
+
+        # Map recency to time emoji (based on timestamp age)
+        now_ms = int(time.time() * 1000)
+        age_ms = max(0, now_ms - candidate.ts) if candidate.ts else float('inf')
+        age_hours = age_ms / (1000 * 60 * 60)
+
+        if age_hours < 1:
+            rec_emoji = "🆕"  # Very recent (<1 hour)
+        elif age_hours < 24:
+            rec_emoji = "⏰"  # Recent (<1 day)
+        else:
+            rec_emoji = "📅"  # Older (>1 day)
+
+        # Source/importance emoji
+        if candidate.source == "graph":
+            source_emoji = "📌"  # Established fact
+        elif candidate.source == "convo":
+            source_emoji = "💬"  # From conversation
+        elif candidate.source == "semantic":
+            source_emoji = "🔍"  # Semantic search result
+        else:
+            source_emoji = "📝"  # Summary
+
+        # Build compact emoji prefix
+        emoji_prefix = f"{conf_emoji}{rec_emoji}{source_emoji}"
+
+        # Get cleaned text
+        if candidate.source == "convo":
+            cleaned = self._strip_directive_scaffolding(candidate.text)
+            text = self._smart_truncate(cleaned, 100)
+            text = self._normalize_perspective_to_second_person(text)
+        else:
+            text = self._smart_truncate(candidate.text, 100)
+
+        return f"• {emoji_prefix} {text}"
+
+    def _format_minimal_bullet(self, candidate: Candidate, components: Dict[str, float], total_score: float) -> str:
+        """
+        Format candidate with minimal symbol metadata (A/B test variant B).
+
+        Uses ultra-simple 3-character symbols for confidence and short text for recency.
+        Designed to be unambiguous and impossible to confuse with factual content.
+
+        Args:
+            candidate: Candidate to format
+            components: Scoring components from _composite_score
+            total_score: Combined score for the candidate
+
+        Returns:
+            Formatted bullet with minimal metadata
+        """
+        # Extract metrics
+        confidence = components.get("wconf", 0.0) / self.weights.get("wconf", 1.0)
+
+        # Map confidence to simple symbols
+        if confidence >= 0.7:
+            conf_symbol = "+++"  # High confidence
+        elif confidence >= 0.4:
+            conf_symbol = "++-"  # Medium confidence
+        else:
+            conf_symbol = "+--"  # Low confidence
+
+        # Map recency to short text
+        now_ms = int(time.time() * 1000)
+        age_ms = max(0, now_ms - candidate.ts) if candidate.ts else float('inf')
+        age_hours = age_ms / (1000 * 60 * 60)
+
+        if age_hours < 1:
+            rec_symbol = "now"  # Very recent
+        elif age_hours < 24:
+            rec_symbol = "day"  # Today
+        else:
+            rec_symbol = "old"  # Older
+
+        # Get cleaned text
+        if candidate.source == "convo":
+            cleaned = self._strip_directive_scaffolding(candidate.text)
+            text = self._smart_truncate(cleaned, 100)
+            text = self._normalize_perspective_to_second_person(text)
+        else:
+            text = self._smart_truncate(candidate.text, 100)
+
+        return f"• {conf_symbol} {rec_symbol}: {text}"
+
     def _format_header_bullet(self, candidate: Candidate, components: Dict[str, float], total_score: float, expand_threshold: float) -> str:
         """
         Format candidate as compact header with automatic expansion based on score.
-        
+
         Args:
             candidate: Candidate to format
             components: Scoring components from _composite_score
             total_score: Combined score for the candidate
             expand_threshold: Score below which to expand to full text
-            
+
         Returns:
             Formatted header (or expanded header + full text)
         """
@@ -1753,9 +2060,28 @@ class Retrieval:
 
         elif candidate.source == "convo":
             # Convo: short gist with scalars (INCREASED from 60 → 150 chars)
-            gist = self._smart_truncate(candidate.text, 150)
-            header = f"convo: {gist} [conf={confidence:.2f} pro={prosody:.2f} rec={recency:.2f}]"
-            
+            # Clean directive scaffolding and normalize perspective for user addressing
+            cleaned = self._strip_directive_scaffolding(candidate.text)
+            gist = self._smart_truncate(cleaned, 150)
+            gist = self._normalize_perspective_to_second_person(gist)
+            # Optionally include emotion/arousal if stored for this turn
+            emo_suffix = ""
+            try:
+                turn_id = candidate.meta.get("turn_id") if isinstance(candidate.meta, dict) else None
+                session_id = getattr(self.host, 'current_session_id', None)
+                if session_id and isinstance(turn_id, int) and turn_id >= 0:
+                    certainty, meta = self.host.store.get_turn_prosody(session_id, turn_id)
+                    emotion = (meta or {}).get("emotion")
+                    arousal = (meta or {}).get("arousal")
+                    # Keep compact: include only if available
+                    if emotion is not None:
+                        emo_suffix += f" emo={emotion}"
+                    if isinstance(arousal, (int, float)):
+                        emo_suffix += f" ar={float(arousal):.2f}"
+            except Exception:
+                pass
+            header = f"convo: {gist} [conf={confidence:.2f} pro={prosody:.2f} rec={recency:.2f}{emo_suffix}]"
+        
         elif candidate.source == "semantic":
             # Semantic: similarity-based header (INCREASED from 50 → 120 chars)
             similarity_score = candidate.meta.get("similarity_score")
@@ -1769,11 +2095,13 @@ class Retrieval:
             gist = self._smart_truncate(candidate.text, 120)
             header = f"summary: {gist} [conf={confidence:.2f} rec={recency:.2f}]"
         
-        # Auto-expand rule: expand if combined score below threshold OR confidence near-zero
-        # CRITICAL FIX: Expand low-confidence bullets to provide full context
-        if total_score < expand_threshold or confidence < 0.1:
-            # Add full text after header
+        # Auto-expand rule: expand only for low-score AND low-confidence
+        # Avoid mixing normalized gist with contradictory raw text unless necessary
+        if total_score < expand_threshold and confidence < 0.30:
+            # Add cleaned, normalized full text after header
             full_text = candidate.text.replace("\n", " ").strip()
+            full_text = self._strip_directive_scaffolding(full_text)
+            full_text = self._normalize_perspective_to_second_person(full_text)
             return f"• {header} -> {full_text}"
         else:
             # Compact header only
@@ -1808,3 +2136,66 @@ class Retrieval:
 
         # Default: factual queries work best with graph-first
         return ['graph', 'convo', 'semantic', 'summary']
+
+    def _normalize_perspective_to_second_person(self, text: str) -> str:
+        """
+        Convert common first-person phrases to second-person for user addressing.
+
+        This is a conservative, general-purpose normalization applied to retrieved
+        conversation gists so responses use "you/your" rather than "I/my".
+        """
+        import re
+        if not text:
+            return text
+
+        # Apply targeted replacements in order to avoid over-substitution
+        rules = [
+            (r"\bI'm\b", "You're"),
+            (r"\bI am\b", "you are"),
+            (r"\bI have\b", "you have"),
+            (r"\bI've\b", "You've"),
+            (r"\bI like\b", "you like"),
+            (r"\bI love\b", "you love"),
+            (r"\bI prefer\b", "you prefer"),
+            (r"\bmy\b", "your"),
+            (r"\bmine\b", "yours"),
+            (r"\bI\b", "you"),
+        ]
+
+        out = text
+        for pattern, repl in rules:
+            out = re.sub(pattern, repl, out, flags=re.IGNORECASE)
+
+        # Clean double spaces if any
+        out = re.sub(r"\s+", " ", out).strip()
+        return out
+
+    def _strip_directive_scaffolding(self, text: str) -> str:
+        """Remove common directive scaffolding from conversation text.
+
+        Examples removed: "(so )?please remember", "remember that", "note that",
+        "let me remind you", "I want you to remember", etc.
+        """
+        import re
+        if not isinstance(text, str):
+            return text
+        t = text.strip()
+        tl = t.lower()
+        patterns = [
+            r"^\s*(so\s+)?please\s+remember\s*",
+            r"^\s*remember\s+that\s*",
+            r"^\s*remember\s*",
+            r"^\s*note\s+that\s*",
+            r"^\s*let\s+me\s+remind\s+you\s*",
+            r"^\s*i\s+want\s+you\s+to\s+remember\s*",
+            r"^\s*kindly\s+remember\s*",
+        ]
+        for p in patterns:
+            m = re.match(p, tl)
+            if m:
+                idx = m.end()
+                t = t[idx:].lstrip()
+                tl = t.lower()
+                break
+        t = re.sub(r"\s+", " ", t)
+        return t.strip()

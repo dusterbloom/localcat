@@ -19,6 +19,7 @@ from spacy.tokens import Token
 
 from .memory_store import MemoryStore
 from .extractors.ud import UDExtractor
+from .coreference_integration import create_enhanced_ud_extractor
 from .retrieval import Retrieval
 from .confidence_strategy import (
     ConfidenceStrategy,
@@ -98,7 +99,54 @@ class HotMemory:
     Ultra-fast memory with USGS 27 dependency patterns
     All operations target <200ms p95
     """
-    
+
+    def _is_question_from_prosody(self, prosody_features: Optional[Any], text: str) -> bool:
+        """
+        Detect if utterance is a question using prosody pitch slope (voice-native detection).
+
+        Questions have rising intonation at the end (positive pitch slope).
+        This is more accurate than text-based heuristics and works across languages.
+
+        Args:
+            prosody_features: ProsodyFeatures object with pitch_slope
+            text: Text content (used as fallback)
+
+        Returns:
+            True if utterance is detected as a question
+        """
+        # Primary: Use pitch slope from prosody (voice-native detection)
+        if prosody_features and hasattr(prosody_features, 'pitch_slope'):
+            pitch_slope = prosody_features.pitch_slope
+            if pitch_slope is not None:
+                # Get threshold from environment (default: 10 Hz/s)
+                threshold = float(os.getenv("PROSODY_QUESTION_SLOPE_THRESHOLD", "10"))
+
+                if pitch_slope > threshold:
+                    logger.debug(f"[HotMem] Question detected by prosody: slope={pitch_slope:.1f} > {threshold}")
+                    return True
+
+        # Fallback: Text-based detection (for edge cases or when prosody unavailable)
+        text_clean = text.strip()
+
+        # Question mark is strong indicator
+        if text_clean.endswith('?'):
+            logger.debug(f"[HotMem] Question detected by text: ends with '?'")
+            return True
+
+        # Question word starters
+        question_starters = (
+            'do you', 'did you', 'can you', 'could you', 'would you', 'will you', 'should you',
+            'what', 'when', 'where', 'who', 'why', 'how', 'which',
+            'is it', 'are you', 'have you', 'does', 'did', 'can', 'will', 'should', 'are'
+        )
+
+        text_lower = text_clean.lower()
+        if any(text_lower.startswith(q) for q in question_starters):
+            logger.debug(f"[HotMem] Question detected by text: starts with question word")
+            return True
+
+        return False
+
     def __init__(self, store: MemoryStore, max_recency: int = 50,
                  confidence_strategy: Optional[ConfidenceStrategy] = None,
                  enable_dspy_extraction: bool = None):
@@ -127,7 +175,13 @@ class HotMemory:
         self.metrics = defaultdict(list)
         self.max_metric_size = 1000
         # Extractor (Phase 1C): adapter to existing implementation
-        self.extractor = UDExtractor(self)
+        # If processors/coreference are enabled, use enhanced extractor
+        try:
+            cfg = MemoryConfig.from_env()
+            self.extractor = create_enhanced_ud_extractor(self, cfg)
+        except Exception:
+            # Fallback to standard extractor if anything goes wrong
+            self.extractor = UDExtractor(self)
         self.retriever = Retrieval(self)
 
         # Extraction cache: LRU over (text, lang)
@@ -187,7 +241,7 @@ class HotMemory:
 
         return _cached
 
-    def process_turn(self, text: str, session_id: str, turn_id: int, focus: str = 'standard', intent: Optional[Dict] = None) -> Tuple[List[str], List[Tuple[str, str, str]]]:
+    def process_turn(self, text: str, session_id: str, turn_id: int, focus: str = 'standard', intent: Optional[Dict] = None, prosody_features: Optional[Any] = None) -> Tuple[List[str], List[Tuple[str, str, str]]]:
         """
         Process a conversation turn
         Args:
@@ -196,6 +250,7 @@ class HotMemory:
             turn_id: Current turn ID
             focus: Processing focus strategy
             intent: Optional intent classification for smart retrieval routing
+            prosody_features: Optional ProsodyFeatures for question detection
         Returns: (memory_bullets, extracted_triples)
         """
         start = time.perf_counter()
@@ -207,17 +262,27 @@ class HotMemory:
         # Language detection
         lang = self._detect_language(text) if PYCLD3_AVAILABLE else "en"
 
-        # Stage 1: Extract entities and relations (via extractor seam)
-        # NOTE: Coreference resolution exists but needs proper spacy-coref integration
-        # TODO: Implement proper coref that resolves pronouns in doc before extraction
-        extract_start = time.perf_counter()
+        # Check if this is a question (skip extraction for questions)
+        is_question = self._is_question_from_prosody(prosody_features, text)
 
-        # LRU-cached extraction to avoid duplicate work
-        entities, triples, neg_count, doc, entity_aliases = self._cached_extract(text, lang)
+        extract_start = time.perf_counter()  # Track timing regardless
+
+        if is_question:
+            logger.info(f"[HotMem] Question detected - skipping extraction: '{text[:50]}...'")
+            # Skip extraction for questions (they don't contain facts to learn)
+            entities, triples, neg_count, doc, entity_aliases = [], [], 0, None, {}
+        else:
+            # Stage 1: Extract entities and relations (via extractor seam)
+            # NOTE: Coreference resolution exists but needs proper spacy-coref integration
+            # TODO: Implement proper coref that resolves pronouns in doc before extraction
+
+            # LRU-cached extraction to avoid duplicate work
+            entities, triples, neg_count, doc, entity_aliases = self._cached_extract(text, lang)
 
         self.metrics['extraction_ms'].append((time.perf_counter() - extract_start) * 1000)
         # Store aliases for dual registration in hot index
         self._entity_aliases = entity_aliases
+        logger.info(f"[HotMem] Processing text: '{text[:50]}...'")
         logger.debug(f"[HotMem] Extracted {len(triples)} raw triples from '{text[:50]}...'")
         if triples:
             logger.debug(f"[HotMem] Raw triples (first 3): {triples[:3]}")
@@ -264,12 +329,15 @@ class HotMemory:
 
         # Store the conversation turn FIRST (before edge extraction) for provenance
         turn_id_hash = self.store.enqueue_turn(text, session_id, turn_id, now_ts)
+        logger.info(f"[HotMem] Storing conversation turn {turn_id} in session {session_id}")
 
         # Ensure immediate FTS indexing for real-time conversation retrieval
         # CRITICAL: Use flush() not flush_if_needed() to guarantee edges are on disk before retrieval
         self.store.flush()
 
         is_question = self._is_question(text)
+        if is_question:
+            logger.info(f"[HotMem] Question detected - not storing as memory: '{text[:50]}...'")
         logger.debug(f"[HotMem] Text classified as question: {is_question}")
 
         if not is_question:
@@ -285,6 +353,12 @@ class HotMemory:
                     if old_d in self.entity_index:
                         self.entity_index[old_d].discard((_s, _r, old_d))
                     self._prune_recency_item(s, r, old_d)
+
+                # Log fact storage
+                if len(triples) <= 3:
+                    logger.debug(f"[HotMem] Storing fact: ({s}, {r}, {d})")
+                else:
+                    logger.debug(f"[HotMem] Storing {len(triples)} facts in memory")
 
                 # Compute confidence using injected strategy
                 edge_id = self.store.edge_id(s, r, d)
@@ -352,10 +426,14 @@ class HotMemory:
         elapsed_ms = (time.perf_counter() - start) * 1000
         self.metrics['total_ms'].append(elapsed_ms)
         self._cleanup_metrics()
-        
+
+        # Log summary of memory operations
+        stored_facts = len(triples) if not is_question else 0
+        logger.info(f"[HotMem] Memory turn complete: {len(bullets)} bullets generated, {stored_facts} facts stored, {elapsed_ms:.1f}ms elapsed")
+
         if elapsed_ms > 200:
             logger.warning(f"Hot path took {elapsed_ms:.1f}ms (budget: 200ms)")
-        
+
         return bullets, triples
     
     def _extract(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any, Dict[str, str]]:
@@ -1400,6 +1478,16 @@ class HotMemory:
         if fc:
             fav = _canon_entity_text(fc.group(1))
             refined.append((self.user_eid, "favorite_color", fav))
+
+        # 4b) UK variant: Favourite colour is X → favorite_color
+        fcu = None
+        try:
+            fcu = __import__("re").search(r"\bfavourite colour is\s+([^,.!?]+)", t)
+        except Exception:
+            fcu = None
+        if fcu:
+            favu = _canon_entity_text(fcu.group(1))
+            refined.append((self.user_eid, "favorite_color", favu))
 
         for s, r, d in triples:
             cs = _canon_entity_text(s)

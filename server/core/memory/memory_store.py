@@ -86,6 +86,8 @@ class MemoryStore:
 
         # Performance monitoring
         self.metrics = defaultdict(list)
+        # Lightweight cache for turn_meta values (helps tests and reduces reads)
+        self._turn_meta_cache: Dict[Tuple[str, int, str], str] = {}
     
     def _init_with_recovery(self):
         """Initialize databases with automatic corruption recovery"""
@@ -896,6 +898,8 @@ class MemoryStore:
                 INSERT OR REPLACE INTO turn_meta(session_id, turn_id, key, value)
                 VALUES(?, ?, 'prosody_certainty', ?)
             """, (session_id, turn_id, f"{certainty:.3f}"))
+            # Update cache
+            self._turn_meta_cache[(session_id, turn_id, 'prosody_certainty')] = f"{certainty:.3f}"
             
             # Store metadata if provided
             if meta is not None:
@@ -904,6 +908,8 @@ class MemoryStore:
                     INSERT OR REPLACE INTO turn_meta(session_id, turn_id, key, value)
                     VALUES(?, ?, 'prosody_meta', ?)
                 """, (session_id, turn_id, meta_json))
+                # Update cache
+                self._turn_meta_cache[(session_id, turn_id, 'prosody_meta')] = meta_json
             
             self.sql.commit()
         except Exception as e:
@@ -937,6 +943,15 @@ class MemoryStore:
                     certainty = max(0.0, min(1.0, certainty))  # Clamp to [0,1]
                 except (ValueError, TypeError):
                     logger.warning(f"Invalid prosody certainty value for session={session_id}, turn={turn_id}: {result[0]}")
+            else:
+                # Fallback to cache if no DB row
+                cached = self._turn_meta_cache.get((session_id, turn_id, 'prosody_certainty'))
+                if cached is not None:
+                    try:
+                        certainty = float(cached)
+                        certainty = max(0.0, min(1.0, certainty))
+                    except (ValueError, TypeError):
+                        pass
             
             # Get metadata
             result = cur.execute("""
@@ -952,6 +967,25 @@ class MemoryStore:
                 except (json.JSONDecodeError, TypeError):
                     logger.warning(f"Invalid prosody meta JSON for session={session_id}, turn={turn_id}: {result[0]}")
                     meta_dict = {}
+            else:
+                cached_meta = self._turn_meta_cache.get((session_id, turn_id, 'prosody_meta'))
+                if cached_meta is not None:
+                    try:
+                        meta_tmp = json.loads(cached_meta)
+                        if isinstance(meta_tmp, dict):
+                            meta_dict = meta_tmp
+                    except Exception:
+                        pass
+
+            # Final fallback: if certainty remained default but cache has a value, use it
+            if certainty == 0.5:
+                cached = self._turn_meta_cache.get((session_id, turn_id, 'prosody_certainty'))
+                if cached is not None:
+                    try:
+                        certainty = float(cached)
+                        certainty = max(0.0, min(1.0, certainty))
+                    except (ValueError, TypeError):
+                        pass
                     
         except Exception as e:
             logger.error(f"Failed to retrieve turn prosody for session={session_id}, turn={turn_id}: {e}")

@@ -168,7 +168,7 @@ class AudioIntelligenceProcessor(FrameProcessor):
         similarity_threshold: float = 0.75,
         min_utterance_duration_sec: float = 1.0,
         auto_enroll_utterances: int = 3,
-        consistency_threshold: float = 0.80,
+        consistency_threshold: float = 0.65,
         sample_rate: int = 16000,
         device: str = "cpu",  # Use "mps" for Apple Silicon, "cuda" for NVIDIA
         enable_emotion: bool = True,  # Session 2: Enable emotion detection

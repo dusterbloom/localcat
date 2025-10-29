@@ -30,7 +30,8 @@ import httpx
 from core.logging_config import setup_logging_for_bot
 
 # Load environment first
-load_dotenv(override=True)  # Load from local server/.env
+# override=False allows system env vars (e.g., from Tauri bundle) to take precedence over .env file
+load_dotenv(override=False)  # Load from local server/.env, but don't override existing env vars
 
 # Initialize centralized logging configuration BEFORE importing logger
 setup_logging_for_bot()
@@ -48,23 +49,19 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.frames.frames import TextFrame
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, IceServer
 
+from core.audio.enrollment_state import EnrollmentState
+
 
 async def get_initial_greeting() -> str:
     """Simple greeting for now - HotMem will provide memory context."""
     return "Hello! How can I help you today?"
 
-# Signal handling for graceful shutdown in dev mode
-shutdown_event = asyncio.Event()
+# IMPORTANT: Let Uvicorn own signal handling. We'll use FastAPI lifespan
+# for startup/shutdown cleanup and avoid double SIGINT logs.
 
-def signal_handler(sig, frame):
-    """Handle SIGINT/SIGTERM gracefully during development."""
-    signal_name = 'SIGINT' if sig == signal.SIGINT else 'SIGTERM'
-    logger.info(f"🛑 Received {signal_name}, initiating graceful shutdown...")
-    shutdown_event.set()
-
-# Register signal handlers
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
+# Track active connection objects and their bot tasks
+pcs_map: Dict[str, SmallWebRTCConnection] = {}
+bot_tasks: Dict[str, asyncio.Task] = {}
 
 app = FastAPI()
 app.add_middleware(
@@ -92,10 +89,10 @@ async def api_status():
         pass
     return {"status": "ok", "tts_engine": tts_engine, "onnx_daemon": onnx_engine}
 
-pcs_map: Dict[str, SmallWebRTCConnection] = {}
-
 # Connection monitoring
-CONNECTION_TIMEOUT = 30  # seconds
+# If CONNECTION_INACTIVITY_TIMEOUT_SECS is 0 or unset, inactivity cleanup is disabled.
+CONNECTION_TIMEOUT = 0  # seconds (only for "connecting" state watchdog)
+INACTIVITY_TIMEOUT = float(os.getenv("CONNECTION_INACTIVITY_TIMEOUT_SECS", "0"))
 connection_monitor_task = None
 
 async def monitor_connections():
@@ -113,18 +110,20 @@ async def monitor_connections():
                             if current_time - connection._connection_start_time > CONNECTION_TIMEOUT:
                                 logger.warning(f"Connection {pc_id} stuck in connecting state for {CONNECTION_TIMEOUT}s, cleaning up")
                                 try:
-                                    await connection.close()
+                                    # SmallWebRTCConnection exposes `disconnect()`
+                                    await connection.disconnect()
                                 except:
                                     pass
                                 pcs_map.pop(pc_id, None)
 
-                    # Check if connection appears dead (no recent activity)
-                    if hasattr(connection, '_last_activity'):
-                        if current_time - connection._last_activity > CONNECTION_TIMEOUT * 2:
-                            logger.warning(f"Connection {pc_id} appears inactive, cleaning up")
+                    # Optional: Check if connection appears dead (no recent activity)
+                    # Disabled by default; enable by setting CONNECTION_INACTIVITY_TIMEOUT_SECS > 0
+                    if INACTIVITY_TIMEOUT > 0 and hasattr(connection, '_last_activity'):
+                        if current_time - connection._last_activity > INACTIVITY_TIMEOUT:
+                            logger.warning(f"Connection {pc_id} appears inactive for {INACTIVITY_TIMEOUT:.0f}s, cleaning up")
                             try:
-                                await connection.close()
-                            except:
+                                await connection.disconnect()
+                            except Exception:
                                 pass
                             pcs_map.pop(pc_id, None)
 
@@ -143,7 +142,7 @@ ice_servers = []
 # LocalSmartTurnAnalyzerV3 includes model weights bundled with Pipecat
 
 
-async def run_bot(webrtc_connection):
+async def run_bot(webrtc_connection: SmallWebRTCConnection):
     # Load centralized configuration
     config = VoiceAgentConfig.from_env()
     logger.info(f"Configuration loaded:\n{config.summary()}")
@@ -164,24 +163,41 @@ async def run_bot(webrtc_connection):
     memory = services['memory']
     context = services['context']
     task = services['task']
+    router = services.get('enrollment_router')
+    coordinator = services.get('enrollment_coordinator')
 
     @rtvi.event_handler("on_client_ready")
     async def on_client_ready(rtvi):
         await rtvi.set_bot_ready()
 
-        # If intro/enrollment pipeline is enabled, coordinator leads the first message
-        if not (factory.config.enable_intro_pipeline):
-            # Get greeting
-            greeting = await get_initial_greeting()
-            # Add the greeting as an assistant message to start the conversation
-            context.add_message({"role": "assistant", "content": greeting})
-            # Send greeting directly to TTS without triggering LLM
-            await task.queue_frames([TextFrame(greeting)])
+        # Initial prompts are handled in on_pipeline_started to ensure StartFrame ordering
 
         try:
             memory.refresh_session_header()
         except Exception:
             pass
+
+    # IMPORTANT: Initial prompts sent via on_pipeline_started hook (Pipecat-compliant)
+    # This ensures frames go to the ACTIVE task, not a dying/cancelled one
+    @task.event_handler("on_pipeline_started")
+    async def on_pipeline_started(_, frame):
+        try:
+            # Check if enrollment coordinator wants to send initial prompt
+            if coordinator and coordinator.should_send_initial_prompt():
+                # Set router state BEFORE queueing frames
+                if router:
+                    await router.update_state(EnrollmentState.CHOICE)
+                # Use task.queue_frames() to explicitly target THIS pipeline
+                prompts = coordinator.get_initial_prompts()
+                logger.info(f"[bot] Sending {len(prompts)} initial prompts via task.queue_frames()")
+                await task.queue_frames(prompts)
+            elif not factory.config.enable_intro_pipeline:
+                # Fallback greeting path (no enrollment UX)
+                greeting = await get_initial_greeting()
+                context.add_message({"role": "assistant", "content": greeting})
+                await task.queue_frames([TextFrame(greeting)])
+        except Exception as e:
+            logger.warning(f"Failed to enqueue initial prompt: {e}")
 
     @transport.event_handler("on_first_participant_joined")
     async def on_first_participant_joined(transport, participant):
@@ -195,19 +211,38 @@ async def run_bot(webrtc_connection):
 
     runner = PipelineRunner(handle_sigint=False)
 
-    await runner.run(task)
+    try:
+        await runner.run(task)
+    except asyncio.CancelledError:
+        logger.debug("Pipeline runner task cancelled; shutting down bot cleanly")
+        try:
+            await task.cancel()
+        except Exception:
+            pass
+        raise
+    finally:
+        # Ensure transport is disconnected on exit
+        try:
+            await webrtc_connection.disconnect()
+        except Exception:
+            pass
 
 
 @app.post("/api/offer")
 async def offer(request: dict, background_tasks: BackgroundTasks):
     pc_id = request.get("pc_id")
 
+    # Log all /api/offer calls to detect duplicate connection attempts
+    logger.info(f"📞 /api/offer called with pc_id={pc_id}. Active connections: {len(pcs_map)}")
+    if pcs_map:
+        logger.debug(f"   Existing connections: {list(pcs_map.keys())}")
+
     # CRITICAL: Always clean up old sessions to prevent state bleeding
     if pc_id and pc_id in pcs_map:
         old_connection = pcs_map.pop(pc_id)
-        logger.info(f"Cleaning up old session for pc_id: {pc_id} to prevent state bleeding")
+        logger.warning(f"⚠️  Duplicate connection detected! Cleaning up old session for pc_id: {pc_id}")
         try:
-            await old_connection.close()
+            await old_connection.disconnect()
         except Exception as e:
             logger.warning(f"Error closing old connection: {e}")
 
@@ -223,13 +258,26 @@ async def offer(request: dict, background_tasks: BackgroundTasks):
     async def handle_disconnected(webrtc_connection: SmallWebRTCConnection):
         logger.info(f"Connection closed for pc_id: {webrtc_connection.pc_id}")
         pcs_map.pop(webrtc_connection.pc_id, None)
+        t = bot_tasks.pop(webrtc_connection.pc_id, None)
+        if t and not t.done():
+            t.cancel()
 
-    # Run fresh bot instance for this session
-    background_tasks.add_task(run_bot, pipecat_connection)
+    # Run fresh bot instance for this session and track it so we can
+    # cancel/await during shutdown.
+    async def _start_session():
+        try:
+            await run_bot(pipecat_connection)
+        finally:
+            # Remove from maps on exit
+            pcs_map.pop(pipecat_connection.pc_id, None)
+            bot_tasks.pop(pipecat_connection.pc_id, None)
+
+    task = asyncio.create_task(_start_session(), name=f"bot_session_{pc_id or 'new'}")
 
     answer = pipecat_connection.get_answer()
     # Updating the peer connection inside the map
     pcs_map[answer["pc_id"]] = pipecat_connection
+    bot_tasks[answer["pc_id"]] = task
 
     return answer
 
@@ -263,9 +311,35 @@ async def lifespan(app: FastAPI):
             pass
 
     # Cleanup on shutdown
-    coros = [pc.disconnect() for pc in pcs_map.values()]
-    await asyncio.gather(*coros)
-    pcs_map.clear()
+    # 1) Cancel all running bot tasks
+    for t in list(bot_tasks.values()):
+        t.cancel()
+    if bot_tasks:
+        await asyncio.gather(*bot_tasks.values(), return_exceptions=True)
+    bot_tasks.clear()
+
+    # 2) Disconnect any leftover peer connections
+    if pcs_map:
+        await asyncio.gather(*(pc.disconnect() for pc in pcs_map.values()), return_exceptions=True)
+        pcs_map.clear()
+
+
+# Attach explicit lifespan manager so startup/shutdown hooks run
+app.router.lifespan_context = lifespan
+
+
+@app.post("/api/shutdown")
+async def api_shutdown():
+    """Programmatically request graceful shutdown (used by bundled app)."""
+    logger.info("🛑 Shutdown requested via /api/shutdown endpoint")
+
+    async def _delayed_kill():
+        await asyncio.sleep(0.3)
+        # Use SIGINT so Uvicorn performs graceful shutdown
+        os.kill(os.getpid(), signal.SIGINT)
+
+    asyncio.create_task(_delayed_kill())
+    return {"status": "shutting_down"}
 
 
 if __name__ == "__main__":
@@ -278,4 +352,13 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    uvicorn.run(app, host=args.host, port=args.port)
+    # Let Uvicorn own signal handling and lifespan. Avoid reload in prod/bundle.
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        log_level="info",
+        reload=False,
+        loop="asyncio",
+        http="h11",
+    )

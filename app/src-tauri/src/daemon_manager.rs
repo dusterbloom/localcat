@@ -243,6 +243,17 @@ pub fn start_server(app: &AppHandle) -> Result<(), String> {
         .env("HUGGINGFACE_HUB_CACHE", &hf_hub_cache)
         .env("SKIP_TTS_VALIDATION", "true");  // Skip pre-validation in bundle - models are pre-bundled
 
+    // Bundle-specific anti-hallucination thresholds (stricter than dev defaults)
+    // Addresses audio feedback/echo issues in production WebView environment
+    if resource_dir.is_some() {
+        cmd.env("WHISPER_NO_SPEECH_THRESHOLD", "0.90")           // Higher = more conservative (dev: 0.80)
+            .env("WHISPER_LOGPROB_THRESHOLD", "-0.25")            // CRITICAL: Reject low-confidence transcriptions (dev: -0.1)
+            .env("WHISPER_HALLUCINATION_SILENCE_THRESHOLD", "0.70") // More suppression (dev: 0.50)
+            .env("WHISPER_VOLUME_THRESHOLD", "0.025")             // Require louder audio (dev: 0.015)
+            .env("VAD_MIN_VOLUME", "0.12");                       // Less sensitive VAD (dev: 0.08)
+        println!("   📡 Bundle-specific anti-hallucination thresholds applied");
+    }
+
     // Configure espeak-ng data path for Kokoro TTS phonemization
     // espeak-ng-data is bundled in the venv's espeakng_loader package
     let espeak_data_path = server_dir
@@ -256,22 +267,43 @@ pub fn start_server(app: &AppHandle) -> Result<(), String> {
 
     println!("   ESPEAK_DATA_PATH: {:?}", espeak_data_path);
 
-    // CRITICAL: Create/update /tmp/espeak-ng-data symlink
-    // The kokoro-onnx library has a hardcoded CI build path that expects espeak-ng-data in /tmp
-    // This works around the hardcoded path without patching the binary
-    let tmp_symlink = Path::new("/tmp/espeak-ng-data");
+    // CRITICAL: Copy espeak-ng-data to /tmp/espeak-ng-data (NO SYMLINKS)
+    // The kokoro-onnx dylib has a hardcoded CI build path that expects espeak-ng-data at /tmp/espeak-ng-data
+    // We must COPY the directory (not symlink) to satisfy the hardcoded path
+    let tmp_espeak = Path::new("/tmp/espeak-ng-data");
 
-    // Remove old symlink if it exists (might point to old DMG mount)
-    if tmp_symlink.exists() || tmp_symlink.read_link().is_ok() {
-        let _ = std::fs::remove_file(tmp_symlink);
-        println!("   Removed old /tmp/espeak-ng-data symlink");
+    // Always ensure fresh copy (remove old one if exists)
+    if tmp_espeak.exists() {
+        let _ = std::fs::remove_dir_all(tmp_espeak);
+        println!("   Removed old /tmp/espeak-ng-data directory");
     }
 
-    // Create fresh symlink pointing to current bundle
-    if let Err(e) = std::os::unix::fs::symlink(&espeak_data_path, tmp_symlink) {
-        println!("   ⚠️  Could not create /tmp/espeak-ng-data symlink: {}", e);
-    } else {
-        println!("   ✅ Created /tmp/espeak-ng-data -> {:?}", espeak_data_path);
+    // Copy espeak-ng-data to /tmp (about 10MB, takes ~100ms)
+    use std::process::Command;
+    let copy_result = Command::new("cp")
+        .arg("-R")
+        .arg(&espeak_data_path)
+        .arg("/tmp/espeak-ng-data")
+        .output();
+
+    match copy_result {
+        Ok(output) if output.status.success() => {
+            println!("   ✅ Copied espeak-ng-data to /tmp/espeak-ng-data");
+            // Verify phontab exists
+            let phontab = tmp_espeak.join("phontab");
+            if phontab.exists() {
+                println!("   ✅ Verified phontab exists at /tmp/espeak-ng-data/phontab");
+            } else {
+                println!("   ⚠️  WARNING: phontab NOT found at /tmp/espeak-ng-data/phontab");
+            }
+        }
+        Ok(output) => {
+            println!("   ⚠️  Failed to copy espeak-ng-data: {}",
+                String::from_utf8_lossy(&output.stderr));
+        }
+        Err(e) => {
+            println!("   ⚠️  Could not copy espeak-ng-data to /tmp: {}", e);
+        }
     }
 
     // Add Homebrew binaries to PATH for ffmpeg (needed by Parakeet STT)

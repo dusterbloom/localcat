@@ -265,8 +265,10 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
       echo "  Pruning venv caches and bytecode..."
       find "$TAURI_SERVER_DIR/.venv" -name "__pycache__" -type d -prune -exec rm -rf {} +
       find "$TAURI_SERVER_DIR/.venv" -name "*.pyc" -delete -o -name "*.pyo" -delete || true
-      find "$TAURI_SERVER_DIR/.venv" -type d -name "tests" -prune -exec rm -rf {} + || true
-      echo "  ✅ venv pruning complete"
+      # CRITICAL: Do NOT remove numpy._core.tests (imported by numpy.testing at runtime)
+      # Only remove test dirs that are clearly dev-only (e.g., package-level tests)
+      find "$TAURI_SERVER_DIR/.venv/lib" -type d -name "tests" ! -path "*/numpy/*" -prune -exec rm -rf {} + || true
+      echo "  ✅ venv pruning complete (preserved numpy._core.tests)"
 
       # CRITICAL: Patch and sign eSpeak dylib for Kokoro PyTorch compatibility
       # This fixes hardcoded CI build path issue in libespeak-ng.dylib
@@ -433,41 +435,65 @@ echo "  Copying required models (profile-aware bundling)..."
   for MODEL_DIR in "${WHISPER_DIRS[@]}"; do
     if [ -d "$MODEL_DIR" ]; then
       echo "      🔍 Found Whisper cache dir: $MODEL_DIR"
-      # If snapshots/ exists, use the first snapshot folder
+
+      # Preserve the original model name (e.g., models--mlx-community--whisper-small.en-mlx-q4)
+      MODEL_NAME=$(basename "$MODEL_DIR")
+      SOURCE_DIR="$MODEL_DIR"
+
+      # If snapshots/ exists, we need to copy the entire model structure
       if [ -d "$MODEL_DIR/snapshots" ]; then
         LATEST_SNAPSHOT=$(find "$MODEL_DIR/snapshots" -maxdepth 1 -type d ! -path "$MODEL_DIR/snapshots" | head -1)
         if [ -n "$LATEST_SNAPSHOT" ] && [ -d "$LATEST_SNAPSHOT" ]; then
-          MODEL_DIR="$LATEST_SNAPSHOT"
-          echo "      📍 Using snapshot: $MODEL_DIR"
-        fi
-      fi
+          echo "      📍 Using snapshot: $LATEST_SNAPSHOT"
+          # Verify snapshot has required files
+          CFG="$LATEST_SNAPSHOT/config.json"
+          W_SFT="$LATEST_SNAPSHOT/weights.safetensors"
+          W_NPZ="$LATEST_SNAPSHOT/weights.npz"
 
-      CFG="$MODEL_DIR/config.json"
-      W_SFT="$MODEL_DIR/weights.safetensors"
-      W_NPZ="$MODEL_DIR/weights.npz"
-      if [ -f "$CFG" ] && { [ -f "$W_SFT" ] || [ -f "$W_NPZ" ]; }; then
-        echo "      ✅ Required Whisper files present, copying..."
-        DEST_NAME=$(basename "$MODEL_DIR")
-        mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME"
-        if rsync -avL --exclude='cache' --exclude='*.lock' --exclude='refs' --exclude='.git' \
-          "$MODEL_DIR/" "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME/"; then
-          # Verify
-          if [ -f "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME/config.json" ] && \
-             { [ -f "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME/weights.safetensors" ] || \
-               [ -f "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME/weights.npz" ]; }; then
-            SIZE=$(du -sh "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME" | cut -f1)
+          if [ -f "$CFG" ] && { [ -f "$W_SFT" ] || [ -f "$W_NPZ" ]; }; then
+            echo "      ✅ Required Whisper files present, copying with HuggingFace structure..."
+            # Copy entire model directory to preserve structure: models--org--name/snapshots/hash/
+            mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub"
+            if rsync -avL --exclude='cache' --exclude='*.lock' --exclude='.git' \
+              "$MODEL_DIR/" "$TAURI_SERVER_DIR/models/hf_cache/hub/$MODEL_NAME/"; then
+              # Verify
+              SNAPSHOT_HASH=$(basename "$LATEST_SNAPSHOT")
+              if [ -f "$TAURI_SERVER_DIR/models/hf_cache/hub/$MODEL_NAME/snapshots/$SNAPSHOT_HASH/config.json" ]; then
+                SIZE=$(du -sh "$TAURI_SERVER_DIR/models/hf_cache/hub/$MODEL_NAME" | cut -f1)
+                echo "      ✅ Whisper‑MLX copied successfully with full structure ($SIZE)"
+                FOUND_WHISPER=true
+                break
+              else
+                echo "      ❌ Whisper copy verification failed"
+                rm -rf "$TAURI_SERVER_DIR/models/hf_cache/hub/$MODEL_NAME"
+              fi
+            else
+              echo "      ❌ rsync failed copying Whisper‑MLX"
+            fi
+          else
+            echo "      ⚠️  Missing Whisper files in snapshot: $LATEST_SNAPSHOT"
+          fi
+        fi
+      else
+        # No snapshots/ directory - copy model files directly
+        CFG="$MODEL_DIR/config.json"
+        W_SFT="$MODEL_DIR/weights.safetensors"
+        W_NPZ="$MODEL_DIR/weights.npz"
+        if [ -f "$CFG" ] && { [ -f "$W_SFT" ] || [ -f "$W_NPZ" ]; }; then
+          echo "      ✅ Required Whisper files present (flat structure), copying..."
+          mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub/$MODEL_NAME"
+          if rsync -avL --exclude='cache' --exclude='*.lock' --exclude='.git' \
+            "$MODEL_DIR/" "$TAURI_SERVER_DIR/models/hf_cache/hub/$MODEL_NAME/"; then
+            SIZE=$(du -sh "$TAURI_SERVER_DIR/models/hf_cache/hub/$MODEL_NAME" | cut -f1)
             echo "      ✅ Whisper‑MLX copied successfully ($SIZE)"
             FOUND_WHISPER=true
             break
           else
-            echo "      ❌ Whisper copy verification failed"
-            rm -rf "$TAURI_SERVER_DIR/models/hf_cache/hub/$DEST_NAME"
+            echo "      ❌ rsync failed copying Whisper‑MLX"
           fi
         else
-          echo "      ❌ rsync failed copying Whisper‑MLX"
+          echo "      ⚠️  Missing Whisper files in: $MODEL_DIR"
         fi
-      else
-        echo "      ⚠️  Missing Whisper files in: $MODEL_DIR"
       fi
     fi
   done
@@ -484,6 +510,31 @@ echo "  Copying required models (profile-aware bundling)..."
     else
       echo "      ⚠️  Failed to copy emotion recognition model (optional, continuing...)"
     fi
+  fi
+
+  # Copy LLM model (LFM2-1.2B-4bit for fast local inference)
+  echo "    Copying LLM model for Direct MLX-LM..."
+  LLM_MODEL_DIR="../server/models/hf_cache/hub/models--mlx-community--LFM2-1.2B-4bit"
+  ALT_LLM_DIR="$HOME/AI-Models/shared/huggingface/hub/models--mlx-community--LFM2-1.2B-4bit"
+
+  FOUND_LLM=false
+  if [ -d "$LLM_MODEL_DIR" ]; then
+    if rsync -aL --exclude='.cache' "$LLM_MODEL_DIR/" \
+      "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--LFM2-1.2B-4bit/"; then
+      echo "      ✅ LFM2-1.2B-4bit (~1.2GB)"
+      FOUND_LLM=true
+    fi
+  elif [ -d "$ALT_LLM_DIR" ]; then
+    if rsync -aL --exclude='.cache' "$ALT_LLM_DIR/" \
+      "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--LFM2-1.2B-4bit/"; then
+      echo "      ✅ LFM2-1.2B-4bit from AI-Models (~1.2GB)"
+      FOUND_LLM=true
+    fi
+  fi
+
+  if [ "$FOUND_LLM" = false ]; then
+    echo "      ⚠️  LFM2-1.2B-4bit not found; app will fail without LLM"
+    echo "         Run: cd server && uv run python -c 'from mlx_lm import load; load(\"mlx-community/LFM2-1.2B-4bit\")'"
   fi
 
   # Platform-specific TTS models
@@ -525,7 +576,7 @@ echo "  Copying required models (profile-aware bundling)..."
       fi
     fi
   fi
-fi
+
 
 # Step 3.5: .env is already bundled via tauri.conf.json resources
 # No need to copy it post-build (signed .app is read-only anyway)

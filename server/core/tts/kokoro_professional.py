@@ -57,11 +57,17 @@ class ProfessionalKokoroTTSService(TTSService):
         fade_duration_ms: float = 50.0,
         target_peak_db: float = -3.0,
         enable_quality_logging: bool = True,
+        aggregate_sentences: bool = True,  # Enable internal sentence aggregation (default True)
         **kwargs,
     ):
+        # Debug: Log TTS initialization parameters
+        from loguru import logger
+        logger.info(f"🔧 [ProfessionalKokoroTTS] Initializing with aggregate_sentences={aggregate_sentences}, push_text_frames=True")
+
         super().__init__(
             sample_rate=sample_rate,
-            aggregate_sentences=True,
+            aggregate_sentences=aggregate_sentences,  # Use configurable value
+            push_text_frames=True,  # Let Pipecat emit TTSTextFrame for RTVI bot-tts-text messages
             **kwargs
         )
 
@@ -152,18 +158,43 @@ class ProfessionalKokoroTTSService(TTSService):
     def _initialize_pipeline(self):
         """Initialize the Kokoro ONNX pipeline"""
         try:
-            from kokoro_onnx import Kokoro
+            import os
+            import espeakng_loader
+            from kokoro_onnx.config import EspeakConfig
 
             logger.debug(f"🚀 Initializing Professional Kokoro ONNX with voice: {self._voice}")
+
+            # CRITICAL: Use /tmp/espeak-ng-data if available (short path for bundled apps)
+            # Tauri copies espeak-ng-data to /tmp at startup to avoid long path issues
+            tmp_espeak_data = Path("/tmp/espeak-ng-data")
+            if tmp_espeak_data.exists() and (tmp_espeak_data / "phontab").exists():
+                espeak_data_path = str(tmp_espeak_data)
+                logger.info(f"📍 Using /tmp/espeak-ng-data (Tauri bundle mode)")
+            else:
+                espeak_data_path = espeakng_loader.get_data_path()
+                logger.info(f"📍 Using espeakng_loader data path (dev mode)")
+
+            # Always use bundled dylib (it's patched to work with /tmp/espeak-ng-data)
+            espeak_lib_path = espeakng_loader.get_library_path()
+
+            logger.debug(f"Configuring espeak: data={espeak_data_path}, lib={espeak_lib_path}")
+
+            # Create explicit espeak config with short /tmp path
+            espeak_config = EspeakConfig(
+                data_path=espeak_data_path,
+                lib_path=espeak_lib_path
+            )
+
+            from kokoro_onnx import Kokoro
 
             # Ensure models are available
             model_path, voices_path = self._ensure_models_downloaded()
 
-            # Initialize Kokoro with the correct files
+            # Initialize Kokoro with explicit espeak configuration
             self._pipeline = Kokoro(
                 model_path=model_path,
                 voices_path=voices_path,
-                espeak_config=None
+                espeak_config=espeak_config
             )
 
             logger.debug(f"✅ Professional Kokoro pipeline loaded")
@@ -306,10 +337,6 @@ class ProfessionalKokoroTTSService(TTSService):
                     continue
 
                 chunk_start_time = time.time()
-
-                # Mirror the exact text chunk to transcript/UI
-                from pipecat.frames.frames import TTSTextFrame
-                yield TTSTextFrame(text=sentence)
 
                 # Generate audio with professional processing
                 result = await asyncio.get_event_loop().run_in_executor(

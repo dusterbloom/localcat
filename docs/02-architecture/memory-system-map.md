@@ -2,9 +2,9 @@
 
 **Purpose**: Reference guide for any LLM to quickly understand and improve the memory system without wasting time on assumptions.
 
-**Last Updated**: 2025-10-01
+**Last Updated**: 2025-10-28
 **Database Location**: `../data/memory.db` (from server/ directory)
-**Current State**: Multi-source retrieval (graph+convo+summary), FTS-indexed conversations
+**Current State**: Multi-source retrieval (graph+convo+summary, optional semantic), FTS-indexed conversations
 
 ---
 
@@ -13,12 +13,18 @@
 The memory system extracts knowledge from conversations and stores it in a dual-storage architecture (SQLite + LMDB) for fast retrieval. It combines pattern-based extraction with semantic search (LEANN).
 
 **Key Characteristics**:
-- ⚡ **Fast**: 5–6 ms extraction with contextual modifier capture
+- ⚡ **Fast**: ~40–60 ms average extraction with contextual modifier capture (sub‑200 ms p95 hot path)
 - 🧠 **Smart**: Coreference resolution + contextual object enrichment (prep/adjective/compound)
 - 🔁 **Alias-Aware**: Enriched triples indexed under both enriched and canonical base entities for retrieval fan-out
 - 📊 **Dual Storage**: SQLite (persistence) + LMDB (fast adjacency lookups)
-- 🔍 **Semantic Search**: LEANN HNSW index for similarity-based retrieval
+- 🔍 **Semantic Search**: Optional semantic sidecar (FAISS). Disabled by default; no LEANN code in current tree
 - 🎯 **Quality**: Context-preserving triples reduce contradictions (e.g., swimming vs swimming in lakes)
+
+> Reality check (Oct 28, 2025):
+> - Semantic search uses an optional FAISS sidecar (`semantic_sidecar.py`); there is no LEANN implementation in the current codebase.
+> - Coreference is implemented as a processor but not wired into `HotMemory` by default.
+> - DSPy-assisted extraction is gated in code but the extractor lives under `server/archive/experimental/...` and is not imported by default.
+> - Prosody is captured and can influence retrieval and confidence when enabled; communicating prosody/emotion to the LLM works best with headers-first injection.
 
 ---
 
@@ -34,7 +40,7 @@ bot.py (line 114)
   └─→ MEMORY_BACKEND=hotpath → HotPathMemoryProcessor (FrameProcessor interface)
 ```
 
-**Current Config** (.env line 74): `MEMORY_BACKEND=hotmem` (but may have been changed)
+**Current Config**: `.env` currently sets `MEMORY_BACKEND=hotpath` (HotPathMemoryProcessor)
 
 **HotMemService** (core/memory/hotmem_service.py)
 - Pipecat-compatible MemoryService
@@ -59,7 +65,10 @@ HotMemory.process_turn() (memory_hotpath.py:115)
 │ Input: "I'm working on my startup. The company grows."      │
 │ Output: "I'm working on my startup. My startup grows."      │
 │ Component: processors/coreference.py (FastCoref)            │
-│ Config: MEMORY_COREFERENCE_ENABLED=true (.env:82)          │
+│ Config: MEMORY_COREFERENCE_ENABLED defaults to false;       │
+│         not currently wired into HotMemory (UDExtractor     │
+│         is constructed without processors). See             │
+│         coreference_integration.py for planned wiring.      │
 └─────────────────────────────────────────────────────────────┘
   ↓
 ┌─────────────────────────────────────────────────────────────┐

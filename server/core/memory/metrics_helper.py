@@ -28,29 +28,20 @@ class MetricsCollector:
     
     def __init__(self):
         self.measurements: List[TimingResult] = []
-        self._start_time: Optional[float] = None
+        # Support nested timing via a simple stack of (operation, start_time)
+        self._stack: List[Tuple[str, float]] = []
     
     def start_timing(self, operation: str) -> None:
-        """Start timing an operation"""
-        self._start_time = time.perf_counter()
-        self._current_operation = operation
+        """Start timing an operation (supports nesting)"""
+        self._stack.append((operation, time.perf_counter()))
     
     def end_timing(self, metadata: Optional[Dict[str, Any]] = None) -> float:
-        """End timing and record the result"""
-        if self._start_time is None:
+        """End timing and record the result (supports nesting)"""
+        if not self._stack:
             raise ValueError("Must call start_timing() before end_timing()")
-        
-        duration_ms = (time.perf_counter() - self._start_time) * 1000
-        
-        result = TimingResult(
-            operation=self._current_operation,
-            duration_ms=duration_ms,
-            metadata=metadata
-        )
-        
-        self.measurements.append(result)
-        self._start_time = None
-        
+        operation, start_time = self._stack.pop()
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        self.measurements.append(TimingResult(operation=operation, duration_ms=duration_ms, metadata=metadata))
         return duration_ms
     
     def add_measurement(self, operation: str, duration_ms: float, 

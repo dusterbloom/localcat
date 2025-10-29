@@ -6,6 +6,7 @@ Handles formatting and injection of memory context into conversation.
 
 from typing import List, Dict, Any, Optional
 from loguru import logger
+import os
 from .config_manager import MemoryConfiguration
 from .context_formatter import ContextFormatter
 
@@ -113,6 +114,15 @@ class ContextInjector:
 
             context.set_messages(messages)
 
+            # Emit a concise INFO summary so operators can see context injections easily
+            try:
+                first_preview = bullets[0] if bullets else ""
+                logger.info(
+                    f"🧠 Injected memory ({len(bullets)}): header='{self.config.inject_header[:40]}...', first='{first_preview[:120]}'"
+                )
+            except Exception:
+                pass
+
             # Prune context window to keep conversation "forever" with a rolling window
             try:
                 if self.config.ctx_window_enabled:
@@ -122,6 +132,13 @@ class ContextInjector:
                         logger.debug(f"[ContextInjector] Pruned context window")
             except Exception as e:
                 logger.debug(f"[ContextInjector] Context pruning failed: {e}")
+
+            # Optional: emit compact context snapshot for operators
+            try:
+                if os.getenv("LOG_CONTEXT_SNAPSHOTS", "false").lower() in ("1", "true", "yes"):
+                    self._log_context_snapshot(context)
+            except Exception as e:
+                logger.debug(f"[ContextInjector] Snapshot logging failed: {e}")
 
             # Clear pending bullets after injection
             self._pending_bullets = []
@@ -432,3 +449,56 @@ class ContextInjector:
     def has_signaled_turn_ready(self) -> bool:
         """Return True if a turn-ready handshake was signaled this turn."""
         return self._turn_ready_signaled
+
+    def _log_context_snapshot(self, context) -> None:
+        """Log a compact snapshot of the current context for observability.
+
+        Shows: first system line, memory header + first bullet, and last 2 turns.
+        """
+        try:
+            messages = list(context.get_messages())
+        except Exception:
+            return
+
+        systems = [m for m in messages if isinstance(m, dict) and m.get('role') == 'system']
+        ua = [m for m in messages if isinstance(m, dict) and m.get('role') in ('user', 'assistant')]
+
+        # System headline (persona/system prompt first line)
+        sys_head = None
+        if systems:
+            content = systems[0].get('content', '')
+            if isinstance(content, str):
+                sys_head = content.splitlines()[0][:120]
+
+        # Memory header (find by configured inject_header)
+        mem_head = None
+        mem_first_bullet = None
+        for m in systems:
+            content = m.get('content', '')
+            if isinstance(content, str) and content.startswith(self.config.inject_header):
+                mem_head = self.config.inject_header
+                lines = content.splitlines()[1:]
+                if lines:
+                    mem_first_bullet = lines[0][:160]
+                break
+
+        # Last 2 UA messages
+        last = ua[-4:]  # at most 2 pairs
+        ua_lines = []
+        for m in last:
+            role = m.get('role', '')
+            content = m.get('content', '')
+            if isinstance(content, str):
+                ua_lines.append(f"{role}: {content[:120]}")
+
+        snapshot_lines = ["📄 CONTEXT SNAPSHOT:"]
+        if sys_head:
+            snapshot_lines.append(f"  system: {sys_head}")
+        if mem_head:
+            snapshot_lines.append(f"  memory: {mem_head}")
+        if mem_first_bullet:
+            snapshot_lines.append(f"   • {mem_first_bullet}")
+        for ln in ua_lines:
+            snapshot_lines.append(f"  {ln}")
+
+        logger.info("\n".join(snapshot_lines))

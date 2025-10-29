@@ -36,6 +36,7 @@ class KokoroProfessionalStrategy(TTSCreationStrategy):
     def create(self, use_boundaries: bool = True) -> Any:
         # Import via service_factory to honor tests' monkeypatching of ProfessionalKokoroTTSService
         from core.factories import service_factory as sf
+        # Use aggregate_sentences=True for both intro and conversation (same working pattern)
         return sf.ProfessionalKokoroTTSService(
             voice=self.tts_config["voice"],
             speed=self.tts_config["speed"],
@@ -43,6 +44,7 @@ class KokoroProfessionalStrategy(TTSCreationStrategy):
             fade_duration_ms=self.tts_config["fade_duration_ms"],
             target_peak_db=self.tts_config["target_peak_db"],
             enable_quality_logging=self.tts_config["enable_quality_logging"],
+            # aggregate_sentences defaults to True, which works for both intro and conversation
         )
 
 

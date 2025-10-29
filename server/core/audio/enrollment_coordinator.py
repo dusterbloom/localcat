@@ -10,6 +10,7 @@ import asyncio
 import os
 import difflib
 from pathlib import Path
+import re
 from typing import Optional
 from loguru import logger
 
@@ -107,7 +108,8 @@ class EnrollmentCoordinator(FrameProcessor):
         self._anonymous_terms = self._load_terms(
             os.getenv(
                 "ANONYMOUS_TERMS",
-                "anonymous|private|don't store|do not store|skip|no",
+                # Removed generic 'no' to avoid false triggers (e.g., "I know")
+                "anonymous|private|don't store|do not store|skip",
             )
         )
         self._sign_in_requested: bool = False
@@ -121,19 +123,49 @@ class EnrollmentCoordinator(FrameProcessor):
             f"(skip_returning={skip_for_returning}, "
             f"include_privacy={include_privacy_explanation})"
         )
-    
+
+    def should_send_initial_prompt(self) -> bool:
+        """
+        Check if coordinator wants to send initial choice prompt.
+        Called by bot.py on_pipeline_started hook.
+        """
+        return self._enable_ephemeral_choice and self._awaiting_choice
+
+    def get_initial_prompts(self) -> list:
+        """
+        Return frames for initial choice prompt.
+        Called by bot.py on_pipeline_started hook.
+        """
+        from pipecat.frames.frames import TextFrame
+
+        if not self.should_send_initial_prompt():
+            return []
+
+        text = (
+            "Would you like to sign up, sign in, "
+            "or chat anonymously without storing anything? Say 'sign up', 'recognize me', or 'anonymous'."
+        )
+
+        return [
+            TextFrame(text),
+            TextFrame("So...")
+        ]
+
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Process enrollment-related frames and generate feedback."""
         await super().process_frame(frame, direction)
         
         # CRITICAL: Always forward StartFrame immediately for pipeline initialization
-        from pipecat.frames.frames import StartFrame
+        from pipecat.frames.frames import StartFrame, OutputTransportReadyFrame
         if isinstance(frame, StartFrame):
             await self.push_frame(frame, direction)
-            # Kick off initial choice when enabled
-            if self._enable_ephemeral_choice and self._awaiting_choice:
-                await self._router.update_state(EnrollmentState.CHOICE)
-                await self._send_choice_message(direction)
+            # DO NOT trigger intro here - wait for OutputTransportReadyFrame to ensure connection is ready
+            return
+
+        # Simply forward OutputTransportReadyFrame
+        # (Initial prompts now handled by bot.py's on_pipeline_started hook)
+        if isinstance(frame, OutputTransportReadyFrame):
+            await self.push_frame(frame, direction)
             return
         
         # Handle unknown speaker detection (first utterance)
@@ -204,15 +236,17 @@ class EnrollmentCoordinator(FrameProcessor):
         await self.push_frame(frame, direction)
     
     async def _send_choice_message(self, direction: FrameDirection):
-        """Ask the user to choose anonymous chat vs quick enrollment."""
+        """
+        Ask the user to choose anonymous chat vs quick enrollment.
+        Used when user logs out during conversation (not for initial prompt).
+        """
         # NOTE: Mic is automatically muted during CHOICE state by mic_gate_filter in factory.py
-        logger.info("[EnrollmentCoordinator] Sending choice prompt (sign up / sign in / anonymous)")
+        logger.info("[EnrollmentCoordinator] Sending choice prompt (logout scenario)")
         text = (
             "Would you like to sign up, sign in, "
             "or chat anonymously without storing anything? Say 'sign up', 'recognize me', or 'anonymous'."
         )
         await self.push_frame(TextFrame(text), direction)
-        # Optional: hint UI input is available
         await self.push_frame(TextFrame("So..."), direction)
 
     async def _send_intro_message(self, direction: FrameDirection):
@@ -507,6 +541,8 @@ class EnrollmentCoordinator(FrameProcessor):
         if not text:
             return
 
+        logger.info(f"[EnrollmentCoordinator] Processing transcription in state {self._router.current_state.value}: '{text[:50]}...'")
+
         # CRITICAL: Drop suppressed transcriptions (e.g., post-recognition stale frames)
         if self._suppress_next_transcription:
             try:
@@ -558,7 +594,7 @@ class EnrollmentCoordinator(FrameProcessor):
                         logger.info("[EnrollmentCoordinator] Disabled audio intelligence for anonymous mode")
                 except Exception as e:
                     logger.warning(f"[EnrollmentCoordinator] Failed to disable audio intelligence: {e}")
-                
+
                 await self.push_frame(TextFrame("Okay, let's chat anonymously. Nothing will be stored."), direction)
                 await self._router.update_state(EnrollmentState.CONVERSATION)
                 # Send neutral greeting to start the convo without personal data
@@ -568,12 +604,17 @@ class EnrollmentCoordinator(FrameProcessor):
                 # Enter returning-user fast path
                 self._awaiting_choice = False
                 self._sign_in_requested = True
-                await self.push_frame(TextFrame("Okay — say a few words and I’ll sign you in."), direction)
-                # Start a soft timeout in case recognition doesn’t trigger
+                await self.push_frame(TextFrame("Okay — say a few words and I'll sign you in."), direction)
+                # Start a soft timeout in case recognition doesn't trigger
                 if not self._sign_in_timeout_task:
                     self._sign_in_timeout_task = asyncio.create_task(self._sign_in_timeout(direction))
                 return
 
+            # If no keywords matched during CHOICE, consume transcription without forwarding
+            # The prompt is clear about expected responses, so just wait for valid keywords
+            logger.debug(f"[EnrollmentCoordinator] No CHOICE keywords matched, consuming: '{text[:50]}'")
+
+            return
         # Handle fixed-phrase guidance (nudge only)
         if self._router.current_state == EnrollmentState.ENROLLING and self._fixed_phrase and self._require_fixed_phrase:
             ratio = difflib.SequenceMatcher(None, text.lower(), self._fixed_phrase.lower()).ratio()
@@ -638,7 +679,23 @@ class EnrollmentCoordinator(FrameProcessor):
         return set(parts)
 
     def _contains_any(self, text: str, terms: set) -> bool:
-        return any(t in text for t in terms)
+        """Robust term detection with word-boundary matching for single words.
+
+        - Single-word terms must match as whole words (\bterm\b)
+        - Multi-word phrases fall back to substring matching
+        """
+        for t in terms:
+            if not t:
+                continue
+            if " " in t:
+                # Phrase: simple substring
+                if t in text:
+                    return True
+            else:
+                # Single word: enforce word boundaries
+                if re.search(rf"\b{re.escape(t)}\b", text):
+                    return True
+        return False
 
     def _normalize_name_candidate(self, text: str) -> str:
         # Keep only letters, hyphens, apostrophes, and spaces; collapse spaces

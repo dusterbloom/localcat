@@ -91,6 +91,7 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
   });
   const [showVisualizerControls, setShowVisualizerControls] = useState(false);
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
+  const isConnectingRef = useRef(false); // Guard against concurrent connection attempts
 
   useEffect(() => {
     // Initialize PipecatClient
@@ -244,6 +245,7 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
           onBotTtsStarted: () => {
             console.log('Bot TTS started - keep accumulating text');
             // Don't clear! Let text accumulate across TTS sessions
+            setShowTranscript(true);  // ADD THIS - Auto-open transcript when bot speaks
           },
           onBotTtsStopped: () => {
             console.log('Bot TTS stopped - check for any remaining text');
@@ -368,14 +370,27 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
   const handleConnect = async () => {
     if (!client || (appState !== "idle" && appState !== "disconnected")) return;
 
+    // CRITICAL: Prevent concurrent connection attempts
+    if (isConnectingRef.current) {
+      console.log("🚫 Connection already in progress, skipping duplicate attempt");
+      return;
+    }
+
     try {
+      isConnectingRef.current = true;
+      console.log("📞 Initiating connection to server...");
+
       const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL || "http://127.0.0.1:7860";
       await client.connect({
         connectionUrl: `${serverUrl}/api/offer`,
       });
+
+      console.log("✅ Connection request completed");
     } catch (error) {
-      console.error("Connection error:", error);
+      console.error("❌ Connection error:", error);
       setAppState("disconnected");
+    } finally {
+      isConnectingRef.current = false;
     }
   };
 

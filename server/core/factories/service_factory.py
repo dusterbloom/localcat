@@ -188,26 +188,14 @@ class ServiceFactory:
         if self.config.video_input_enabled:
             logger.info(f"📹 Video input ENABLED (target_fps={self.config.video_target_fps})")
 
-        self._services_cache['transport'] = transport
+        # Do not cache transports; they are FrameProcessors and must be per session/pipeline
         return transport
 
     def create_stt_service(self) -> Any:
         """Create STT service based on configuration."""
-        cache_enabled = os.getenv("SERVICE_FACTORY_CACHE_STT", "true").lower() in ("true", "1", "yes")
-        if cache_enabled and 'stt' in self._services_cache:
-            logger.debug("Using cached STT service")
-            return self._services_cache['stt']
-
+        # Always create a fresh STT service per session/pipeline
         with self._stt_lock:
-            if cache_enabled and 'stt' in self._services_cache:
-                logger.debug("Using cached STT service (post-lock)")
-                return self._services_cache['stt']
-
-            # Delegate to builder (preserves behavior)
             stt = STTServiceBuilder(self.config).build()
-
-        if cache_enabled:
-            self._services_cache['stt'] = stt
         return stt
 
     def create_tts_service(self, use_boundaries: bool = True) -> Any:
@@ -219,23 +207,11 @@ class ServiceFactory:
                            Set False for intro messages to play as one unit.
         """
         # Per-boundary caching (enabled by default)
-        cache_enabled = os.getenv("SERVICE_FACTORY_CACHE_TTS", "true").lower() in ("true", "1", "yes")
-        cache_key = f"tts_{bool(use_boundaries)}"
-        if cache_enabled and cache_key in self._services_cache:
-            logger.debug(f"Using cached TTS service for use_boundaries={use_boundaries}")
-            return self._services_cache[cache_key]
-
+        # Always create a fresh TTS service per session/pipeline
         with self._tts_lock:
-            if cache_enabled and cache_key in self._services_cache:
-                logger.debug(f"Using cached TTS service for use_boundaries={use_boundaries} (post-lock)")
-                return self._services_cache[cache_key]
-
             tts = TTSServiceBuilder(self.config, siri_creator=self._try_create_siri_tts).build(
                 use_boundaries=use_boundaries
             )
-
-            if cache_enabled:
-                self._services_cache[cache_key] = tts
             return tts
 
     def _try_create_siri_tts(self, tts_config: Dict[str, Any], use_boundaries: bool) -> SiriStreamingTTSService:
@@ -278,16 +254,8 @@ class ServiceFactory:
 
     def create_llm_service(self) -> OpenAILLMService:
         """Create LLM service with streaming configuration."""
-        # Check if LLM service is already cached
-        if 'llm' in self._services_cache:
-            logger.debug("Using cached LLM service")
-            return self._services_cache['llm']
-
+        # Always create a fresh LLM service per session/pipeline
         with self._llm_lock:
-            if 'llm' in self._services_cache:
-                logger.debug("Using cached LLM service (post-lock)")
-                return self._services_cache['llm']
-
             logger.debug("Creating new LLM service via builder")
             llm = LLMServiceBuilder(self.config).build()
 
@@ -296,7 +264,6 @@ class ServiceFactory:
             if os.getenv("LLM_PREWARM", "true").lower() in ("true", "1", "yes") and not os.getenv("LLM_USE_DIRECT_MLX", "false").lower() in ("true", "1", "yes"):
                 _prewarm_llm_service(llm, llm_config)
 
-            self._services_cache['llm'] = llm
             return llm
 
     def create_memory_processor(self, context_aggregator: Any, session_tracker: SessionTracker) -> HotPathMemoryProcessor:
@@ -315,7 +282,8 @@ class ServiceFactory:
             agent_id=os.getenv("AGENT_ID", "locat"),
         )
 
-        self._services_cache['memory'] = memory
+        # Do not cache memory processors; they are FrameProcessors and must be
+        # unique per pipeline/session to avoid task reuse and startup races.
         return memory
 
     def create_audio_intelligence_processor(self) -> Any:
@@ -337,7 +305,7 @@ class ServiceFactory:
                 similarity_threshold=float(os.getenv("SPEAKER_SIMILARITY_THRESHOLD", "0.75")),
                 min_utterance_duration_sec=float(os.getenv("SPEAKER_MIN_UTTERANCE_SEC", "1.0")),
                 auto_enroll_utterances=int(os.getenv("SPEAKER_AUTO_ENROLL_UTTERANCES", "3")),
-                consistency_threshold=float(os.getenv("SPEAKER_CONSISTENCY_THRESHOLD", "0.80")),
+                consistency_threshold=float(os.getenv("SPEAKER_CONSISTENCY_THRESHOLD", "0.65")),
                 sample_rate=16000,
                 device=device,
                 enable_emotion=os.getenv("AUDIO_INTEL_ENABLE_EMOTION", "true").lower() in ("true", "1", "yes"),
@@ -349,7 +317,7 @@ class ServiceFactory:
             )
 
             logger.info(f"✅ Audio Intelligence processor ready on {device}")
-            self._services_cache['audio_intelligence'] = audio_intel
+            # Do not cache; create per session
             return audio_intel
 
         except ImportError as e:
@@ -470,8 +438,7 @@ class ServiceFactory:
 
         )
 
-        self._services_cache['context'] = context
-        self._services_cache['anonymous_aggregator'] = anonymous_aggregator
+        # Do not cache context aggregators; they are FrameProcessors and must be per-pipeline
         return anonymous_aggregator
 
     def create_session_tracker(self) -> SessionTracker:
@@ -504,7 +471,7 @@ class ServiceFactory:
     def create_rtvi_processor(self) -> RTVIProcessor:
         """Create RTVI processor for client UI events."""
         rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
-        self._services_cache['rtvi'] = rtvi
+        # Do not cache RTVI processors; create per session
         return rtvi
 
     def create_mic_probe(self) -> Optional[Any]:
@@ -535,18 +502,22 @@ class ServiceFactory:
 
         # Favor slightly larger spans to reduce too-frequent TTS calls
         # Allow LLM_* overrides for sentence-aware aggregation
-        min_tokens = _get_int("LLM_MIN_TOKENS_FOR_TTS", _get_int("FAST_TEXT_MIN_TOKENS", 175))
+        # Increased default min_tokens from 175 to 200 for more natural phrase boundaries
+        min_tokens = _get_int("LLM_MIN_TOKENS_FOR_TTS", _get_int("FAST_TEXT_MIN_TOKENS", 200))
         max_tokens = _get_int("LLM_MAX_TOKENS", _get_int("FAST_TEXT_MAX_TOKENS", 250))
         max_time = _get_float("FAST_TEXT_MAX_TIME", 0.5)
         sentence_delims = os.getenv("LLM_SENTENCE_DELIMITERS")
+        # Minimum words required before releasing on clause boundaries (commas, semicolons, etc.)
+        min_words = _get_int("FAST_TEXT_MIN_WORDS", 10)
 
         aggregator = FastTextAggregator(
             min_tokens=min_tokens,
             max_tokens=max_tokens,
             max_time=max_time,
-            sentence_delimiters=sentence_delims
+            sentence_delimiters=sentence_delims,
+            min_words=min_words
         )
-        self._services_cache['text_aggregator'] = aggregator
+        # Do not cache text aggregators; create per session
         return aggregator
 
     def has_existing_speaker_profiles(self) -> bool:

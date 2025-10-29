@@ -130,9 +130,22 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
         # Frame processing state
         self._turn_id = 0
         self._ephemeral = config.ephemeral_mode
-        
+
+        # Log initial ephemeral mode state for debugging
+        logger.info(
+            f"[FrameProcessor] Initialized with ephemeral_mode={self._ephemeral}, "
+            f"memory_enabled={config.enabled}, user_id={config.user_id}"
+        )
+        if self._ephemeral:
+            logger.warning("[FrameProcessor] Memory persistence is DISABLED (ephemeral mode active)")
+
         # Prosody tracking
         self._last_prosody_certainty: Optional[float] = None
+        self._last_prosody_features: Optional[Any] = None  # Full ProsodyFeatures for question detection
+        # Emotion tracking (optional from AudioIntelligence)
+        self._last_emotion: Optional[str] = None
+        self._last_emotion_confidence: Optional[float] = None
+        self._last_arousal: Optional[float] = None
 
     async def process_frame(
         self,
@@ -169,10 +182,23 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
 
         # Handle AudioIntelligenceFrame (prosody capture)
         if AUDIO_INTEL_AVAILABLE and isinstance(frame, AudioIntelligenceFrame):
-            # Capture prosody certainty for storage on next transcription
-            if hasattr(frame, 'prosody_certainty'):
-                self.capture_prosody_certainty(frame.prosody_certainty)
-                logger.debug(f"[FrameProcessor] Captured prosody from AudioIntelligenceFrame: {frame.prosody_certainty:.3f}")
+            # Capture prosody certainty and emotion for storage on next transcription
+            try:
+                if hasattr(frame, 'prosody_certainty'):
+                    self.capture_prosody_certainty(frame.prosody_certainty)
+                    logger.debug(f"[FrameProcessor] Captured prosody from AudioIntelligenceFrame: {frame.prosody_certainty:.3f}")
+                # Capture full prosody features for question detection
+                if hasattr(frame, 'prosody_features'):
+                    self._last_prosody_features = frame.prosody_features
+                    logger.debug(f"[FrameProcessor] Captured prosody features: {frame.prosody_features}")
+                if hasattr(frame, 'emotion'):
+                    self._last_emotion = getattr(frame, 'emotion', None)
+                if hasattr(frame, 'emotion_confidence'):
+                    self._last_emotion_confidence = getattr(frame, 'emotion_confidence', None)
+                if hasattr(frame, 'arousal'):
+                    self._last_arousal = getattr(frame, 'arousal', None)
+            except Exception as e:
+                logger.debug(f"[FrameProcessor] Failed to capture audio intelligence fields: {e}")
             yield frame
             return
 
@@ -274,6 +300,7 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
         
         # WhisperSTTServiceMLX doesn't set is_final, so treat None as final (non-streaming)
         if is_final is True or is_final is None:
+            logger.info(f"[FrameProcessor] Processing transcription (is_final={is_final}): '{text}'")
             logger.debug(f"[FrameProcessor] Processing transcription (is_final={is_final}): '{text}'")
             
             # Store prosody certainty if available
@@ -299,8 +326,15 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
                     # Store the prosody certainty with metadata
                     meta = {
                         "source": "frame_processor",
-                        "captured_at": int(asyncio.get_event_loop().time() * 1000)
+                        "captured_at": int(asyncio.get_event_loop().time() * 1000),
                     }
+                    # Include emotion scalars if available
+                    if self._last_emotion is not None:
+                        meta["emotion"] = self._last_emotion
+                    if self._last_emotion_confidence is not None:
+                        meta["emotion_confidence"] = float(self._last_emotion_confidence)
+                    if self._last_arousal is not None:
+                        meta["arousal"] = float(self._last_arousal)
                     
                     self.hot_memory.store.set_turn_prosody(
                         session_id, 
@@ -311,8 +345,12 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
                     
                     logger.debug(f"[FrameProcessor] Stored prosody certainty {self._last_prosody_certainty:.3f} for session={session_id}, turn={turn_id}")
                 
-                # Clear the stored prosody after persisting
+                # Clear the stored prosody/emotion after persisting
                 self._last_prosody_certainty = None
+                self._last_prosody_features = None
+                self._last_emotion = None
+                self._last_emotion_confidence = None
+                self._last_arousal = None
                 
         except Exception as e:
             logger.warning(f"[FrameProcessor] Failed to store prosody for turn: {e}")
@@ -391,30 +429,58 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
             # Process through hot memory
             if self.hot_memory:
                 bullets, triples = self.hot_memory.process_turn(
-                    text, 
-                    self.session_manager.session_id, 
-                    self._turn_id, 
-                    focus=focus, 
-                    intent=intent_result
+                    text,
+                    self.session_manager.session_id,
+                    self._turn_id,
+                    focus=focus,
+                    intent=intent_result,
+                    prosody_features=self._last_prosody_features
                 )
                 
+                logger.info(f"[FrameProcessor] Memory processing complete: extracted {len(triples)} facts, prepared {len(bullets)} bullets")
                 logger.debug(f"[FrameProcessor] Extracted {len(triples)} facts, prepared {len(bullets)} bullets")
             else:
                 bullets = []
                 triples = []
 
-            # Store conversation text for retrieval
+            # Store conversation text for retrieval and ensure user→session mapping exists
             if self.hot_memory and self.hot_memory.store:
-                if text.strip() and self.quality_filter.is_quality_for_storage(text):
-                    now_ts = int(asyncio.get_event_loop().time() * 1000)
-                    self.hot_memory.store.enqueue_mention(
-                        self.session_manager.user_eid, 
-                        text.strip(), 
-                        now_ts, 
-                        self.session_manager.session_id, 
-                        self._turn_id
+                now_ts = int(asyncio.get_event_loop().time() * 1000)
+                # 1) Always ensure mapping once per session, even for questions
+                try:
+                    owned = self.hot_memory.store.is_session_owned_by_user(
+                        self.session_manager.session_id, self.session_manager.user_eid
                     )
-                    self.hot_memory.store.flush_if_needed()
+                except Exception:
+                    owned = False
+                if not owned:
+                    # Insert a minimal mapping row; use a stable token so it doesn't pollute retrieval
+                    mapping_text = "[session-mapping]"
+                    try:
+                        self.hot_memory.store.enqueue_mention(
+                            self.session_manager.user_eid,
+                            mapping_text,
+                            now_ts,
+                            self.session_manager.session_id,
+                            self._turn_id
+                        )
+                        self.hot_memory.store.flush_if_needed()
+                    except Exception:
+                        pass
+
+                # 2) Quality-guarded mention write for actual retrieval content
+                if text.strip() and self.quality_filter.is_quality_for_storage(text):
+                    try:
+                        self.hot_memory.store.enqueue_mention(
+                            self.session_manager.user_eid,
+                            text.strip(),
+                            now_ts,
+                            self.session_manager.session_id,
+                            self._turn_id
+                        )
+                        self.hot_memory.store.flush_if_needed()
+                    except Exception:
+                        pass
 
             # Update context injector with new bullets
             if bullets:
@@ -423,6 +489,7 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
             # Refresh injection if different from interim
             if self.context_injector.should_refresh_injection():
                 await self.context_injector.inject_memory_context()
+                logger.info(f"[FrameProcessor] Memory context injected: {len(bullets)} bullets added to conversation")
                 logger.debug(f"[FrameProcessor] Final injection refreshed with {len(bullets)} bullets")
 
             # Update session tracking
