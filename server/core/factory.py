@@ -188,6 +188,7 @@ class VoiceAgentFactory:
         from core.audio.pipeline_router import SpeakerEnrollmentRouter
         from core.audio.enrollment_coordinator import EnrollmentCoordinator
         from core.audio.enrollment_state import EnrollmentState
+        from core.processors.context_monitor import create_context_monitor_pipeline_stage
         
         # Determine initial state: if ephemeral choice is enabled, start with CHOICE
         has_profiles = self._has_existing_speaker_profiles()
@@ -284,6 +285,8 @@ class VoiceAgentFactory:
         conversation_processors.extend([
             services['memory'],
             services['context_aggregator'].user(),
+            # Add context monitor after context aggregator user() to see context updates
+            create_context_monitor_pipeline_stage("ConversationContextMonitor"),
             services['llm'],
             services['text_aggregator'],  # Intelligent sentence boundary detection (splits into sentences for TTS)
             services['tts'],  # Main TTS instance (context_aggregator.assistant moved to main pipeline after transport.output)
@@ -373,14 +376,18 @@ class VoiceAgentFactory:
         # Create transcript processor for UI display
         transcript = TranscriptProcessor()
 
-        # Add event handler to log all conversation content
+        # Add event handler to log all conversation content with context visibility
         @transcript.event_handler("on_transcript_update")
         async def log_intro_conversation(processor, frame):
             """Log all conversation content to the log files."""
-            for message in frame.messages:
+            logger.info(f"[IntroPipeline] Transcript update: {len(frame.messages)} messages")
+            for i, message in enumerate(frame.messages):
                 role = message.role.upper()
                 content = message.content
-                logger.info(f"📝 CONVERSATION [{role}]: {content}")
+                # Truncate long content for readability
+                display_content = content[:150] + "..." if len(content) > 150 else content
+                position = f"{i+1}/{len(frame.messages)}"
+                logger.info(f"📝 CONVERSATION [{role}] ({position}): {display_content}")
 
         # Core processing before router
         stages.extend([
@@ -429,6 +436,7 @@ class VoiceAgentFactory:
 
     def create_pipeline(self, transport: SmallWebRTCTransport, services: Dict[str, Any]) -> Pipeline:
         """Create the main voice agent pipeline with optional audio intelligence."""
+
         # Use intro-aware pipeline if enabled
         if self.config.enable_intro_pipeline and services.get('audio_intelligence'):
             logger.info("🎭 Using intro-aware pipeline for enrollment UX")
@@ -467,14 +475,18 @@ class VoiceAgentFactory:
         # Create transcript processor for UI display
         transcript = TranscriptProcessor()
 
-        # Add event handler to log all conversation content
+        # Add event handler to log all conversation content with context visibility
         @transcript.event_handler("on_transcript_update")
         async def log_conversation(processor, frame):
             """Log all conversation content to the log files."""
-            for message in frame.messages:
+            logger.info(f"[StandardPipeline] Transcript update: {len(frame.messages)} messages")
+            for i, message in enumerate(frame.messages):
                 role = message.role.upper()
                 content = message.content
-                logger.info(f"📝 CONVERSATION [{role}]: {content}")
+                # Truncate long content for readability
+                display_content = content[:150] + "..." if len(content) > 150 else content
+                position = f"{i+1}/{len(frame.messages)}"
+                logger.info(f"📝 CONVERSATION [{role}] ({position}): {display_content}")
 
         stages.extend([
             services['stt'],
@@ -515,9 +527,8 @@ class VoiceAgentFactory:
             # Output audio then capture assistant transcripts (per Pipecat docs)
             transport.output(),
             transcript.assistant(),
-            services['context_aggregator'].assistant(),
-
-        ])
+            services['context_aggregator'].assistant()
+            ])
 
         pipeline = Pipeline(stages)
         self._services_cache['pipeline'] = pipeline

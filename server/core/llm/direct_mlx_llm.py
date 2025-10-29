@@ -201,6 +201,31 @@ class DirectMLXLLMService(LLMService):
 
             logger.debug(f"📝 Processing {len(messages)} messages")
 
+            # Log complete context for debugging
+            logger.info("📄 COMPLETE CONTEXT SENT TO LLM:")
+            for i, msg in enumerate(messages):
+                role = msg.get("role", "unknown").upper()
+                content = msg.get("content", "")
+
+                # Handle different content types
+                if isinstance(content, list):
+                    # Structured content (vision + text)
+                    content_parts = []
+                    for item in content:
+                        if item.get("type") == "text":
+                            text_content = item.get("text", "")[:200]
+                            content_parts.append(f"text: {text_content}{'...' if len(item.get('text', '')) > 200 else ''}")
+                        elif item.get("type") == "image_url":
+                            content_parts.append("image: [base64 image data]")
+                    content_str = " | ".join(content_parts)
+                elif isinstance(content, str):
+                    # Simple text content
+                    content_str = content[:200] + "..." if len(content) > 200 else content
+                else:
+                    content_str = str(content)[:200] + "..." if len(str(content)) > 200 else str(content)
+
+                logger.info(f"  {i+1}/{len(messages)} [{role}]: {content_str}")
+
             # Apply chat template
             try:
                 prompt = self._tokenizer.apply_chat_template(

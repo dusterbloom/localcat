@@ -55,13 +55,11 @@ class AnonymousAwareContextAggregator:
     
     def user(self) -> Any:
         """Get user aggregator (delegated to wrapped aggregator)."""
-        # logger.debug("[AnonymousContext] Providing user context aggregator")
-        return ContextAggregatorWrapper(self._aggregator.user(), "user", self._anonymous_mode)
+        return self._aggregator.user()
 
     def assistant(self) -> Any:
         """Get assistant aggregator (delegated to wrapped aggregator)."""
-        # logger.debug("[AnonymousContext] Providing assistant context aggregator")
-        return ContextAggregatorWrapper(self._aggregator.assistant(), "assistant", self._anonymous_mode)
+        return self._aggregator.assistant()
     
     @property
     def context(self) -> OpenAILLMContext:
@@ -235,59 +233,3 @@ class AnonymousAwareContextAggregator:
         self._context.set_messages(messages)
 
 
-class ContextAggregatorWrapper:
-    """
-    Wrapper for context aggregator processors that adds logging for frame processing.
-
-    This wraps the actual context aggregator processors returned by Pipecat
-    to provide visibility into when TranscriptionFrames and TTSTextFrames
-    are processed and added to the conversation context.
-    """
-
-    def __init__(self, aggregator_processor: Any, aggregator_type: str, anonymous_mode: bool = False):
-        """
-        Initialize the wrapper.
-
-        Args:
-            aggregator_processor: The actual context aggregator processor from Pipecat
-            aggregator_type: Either "user" or "assistant" for logging identification
-            anonymous_mode: Whether we're currently in anonymous mode
-        """
-        self._processor = aggregator_processor
-        self._type = aggregator_type
-        self._anonymous_mode = anonymous_mode
-
-    async def process_frame(self, frame, direction):
-        """
-        Process frames with logging.
-
-        This method is called by Pipecat pipeline when frames flow through
-        the context aggregator. We log what type of frame is being processed
-        and delegate to the actual processor.
-        """
-        from pipecat.frames.frames import TranscriptionFrame, TTSTextFrame
-
-        # Log frame processing with details
-        if isinstance(frame, TranscriptionFrame):
-            logger.info(f"[ContextAggregator-{self._type}] Processing TranscriptionFrame: '{frame.text[:100]}{'...' if len(frame.text) > 100 else ''}' (anonymous: {self._anonymous_mode})")
-        elif isinstance(frame, TTSTextFrame):
-            logger.info(f"[ContextAggregator-{self._type}] Processing TTSTextFrame: '{frame.text[:100]}{'...' if len(frame.text) > 100 else ''}' (anonymous: {self._anonymous_mode})")
-        else:
-            logger.debug(f"[ContextAggregator-{self._type}] Processing frame type: {type(frame).__name__}")
-
-        # Delegate to actual processor
-        try:
-            result = await self._processor.process_frame(frame, direction)
-
-            # Log successful context update
-            if isinstance(frame, (TranscriptionFrame, TTSTextFrame)):
-                logger.info(f"[ContextAggregator-{self._type}] Successfully added {type(frame).__name__} to context")
-
-            return result
-        except Exception as e:
-            logger.error(f"[ContextAggregator-{self._type}] Error processing {type(frame).__name__}: {e}")
-            raise
-
-    def __getattr__(self, name):
-        """Delegate any other attribute access to the wrapped processor."""
-        return getattr(self._processor, name)

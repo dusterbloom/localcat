@@ -2,7 +2,7 @@ from typing import Any, Dict
 from loguru import logger
 
 from config import VoiceAgentConfig
-from pipecat.services.openai.llm import OpenAILLMService
+from core.llm.openai_context_logger import OpenAIContextLoggerService as OpenAILLMService
 
 
 class LLMServiceBuilder:

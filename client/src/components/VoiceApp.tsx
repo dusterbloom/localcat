@@ -169,12 +169,27 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
                   if (endsWithPunctuation) {
                     setConversationHistory(prev => {
                       const allAssistantMessages = prev.filter(msg => msg.role === 'assistant');
+
+                      // Normalize whitespace to catch variations like "memory, able" vs "memory,able"
+                      const normalizeWhitespace = (text: string) =>
+                        text
+                          .replace(/\s+/g, ' ')  // Collapse multiple spaces
+                          .replace(/\s*([,;:.!?])\s*/g, '$1')  // Remove spaces around punctuation
+                          .trim();
+                      const normalizedNewText = normalizeWhitespace(newText);
+
                       for (const msg of allAssistantMessages) {
-                        if (
-                          msg.text === newText ||
-                          msg.text.includes(newText) ||
-                          newText.includes(msg.text)
-                        ) {
+                        const normalizedMsgText = normalizeWhitespace(msg.text);
+
+                        // Check exact match (after normalization)
+                        if (normalizedMsgText === normalizedNewText) {
+                          // Duplicate detected — skip
+                          return prev;
+                        }
+
+                        // Check substring match (one contains the other)
+                        if (normalizedMsgText.includes(normalizedNewText) ||
+                            normalizedNewText.includes(normalizedMsgText)) {
                           // Duplicate/partial detected — skip
                           return prev;
                         }
@@ -213,11 +228,27 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
                       const allAssistantMessages = prev.filter(msg => msg.role === 'assistant');
 
                       // Check if this exact text or a variation already exists
+                      // Normalize whitespace to catch variations like "memory, able" vs "memory,able"
+                      const normalizeWhitespace = (text: string) =>
+                        text
+                          .replace(/\s+/g, ' ')  // Collapse multiple spaces
+                          .replace(/\s*([,;:.!?])\s*/g, '$1')  // Remove spaces around punctuation
+                          .trim();
+                      const normalizedNewText = normalizeWhitespace(newText);
+
                       for (const msg of allAssistantMessages) {
-                        if (msg.text === newText ||
-                            msg.text.includes(newText) ||
-                            newText.includes(msg.text)) {
-                          console.log('🚫 Duplicate/partial sentence found, skipping:', newText);
+                        const normalizedMsgText = normalizeWhitespace(msg.text);
+
+                        // Check exact match (after normalization)
+                        if (normalizedMsgText === normalizedNewText) {
+                          console.log('🚫 Duplicate sentence found (exact match after normalization):', newText);
+                          return prev;
+                        }
+
+                        // Check substring match (one contains the other)
+                        if (normalizedMsgText.includes(normalizedNewText) ||
+                            normalizedNewText.includes(normalizedMsgText)) {
+                          console.log('🚫 Duplicate/partial sentence found (substring match):', newText);
                           return prev;
                         }
                       }

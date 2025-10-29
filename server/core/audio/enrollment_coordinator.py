@@ -572,12 +572,20 @@ class EnrollmentCoordinator(FrameProcessor):
             if self._contains_any(normalized, self._anonymous_terms):
                 self._awaiting_choice = False
                 self._ephemeral_selected = True
-                # Enable ephemeral memory (no storage/extraction)
-                try:
-                    if self._memory and hasattr(self._memory, 'set_ephemeral_mode'):
-                        self._memory.set_ephemeral_mode(True)
-                except Exception as e:
-                    logger.warning(f"[EnrollmentCoordinator] Failed to set ephemeral mode: {e}")
+
+                # Check if session persistence is enabled - only set ephemeral mode if persistence is disabled
+                session_persistence = os.getenv("VOICE_AGENT_SESSION_PERSISTENCE", "true").lower() in ("1", "true", "yes")
+
+                if not session_persistence:
+                    # Enable ephemeral memory only if persistence is disabled (no storage/extraction)
+                    try:
+                        if self._memory and hasattr(self._memory, 'set_ephemeral_mode'):
+                            self._memory.set_ephemeral_mode(True)
+                            logger.info("[EnrollmentCoordinator] Ephemeral mode enabled (SESSION_PERSISTENCE=false)")
+                    except Exception as e:
+                        logger.warning(f"[EnrollmentCoordinator] Failed to set ephemeral mode: {e}")
+                else:
+                    logger.info("[EnrollmentCoordinator] Anonymous mode selected, but SESSION_PERSISTENCE=true → memory will persist")
 
                 # Clear context history and remove Context Guide in anonymous mode
                 try:

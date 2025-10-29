@@ -182,8 +182,29 @@ class MemoryConfiguration(BaseConfiguration):
         summary_window_mode = get_env("SUMMARIZER_WINDOW_MODE") or "turn_pairs"
         summary_turn_pairs = _parse_int(get_env("SUMMARIZER_TURN_PAIRS"), default=5)
 
-        # Ephemeral mode
-        ephemeral_mode = _parse_bool(get_env("EPHEMERAL_MODE") or "false")
+        # Ephemeral mode - Process MEMORY_MODE first, then fall back to direct EPHEMERAL_MODE
+        memory_mode = os.getenv("MEMORY_MODE", "").lower()
+        if memory_mode:
+            # Map MEMORY_MODE to ephemeral_mode and enabled
+            if memory_mode == "off":
+                enabled = False
+                ephemeral_mode = True
+                logger.info(f"[Config] MEMORY_MODE=off → enabled=False, ephemeral_mode=True")
+            elif memory_mode == "ephemeral":
+                # enabled stays True from earlier
+                ephemeral_mode = True
+                logger.info(f"[Config] MEMORY_MODE=ephemeral → enabled=True, ephemeral_mode=True")
+            elif memory_mode == "persistent":
+                # enabled stays True from earlier
+                ephemeral_mode = False
+                logger.info(f"[Config] MEMORY_MODE=persistent → enabled=True, ephemeral_mode=False")
+            else:
+                logger.warning(f"[Config] Unknown MEMORY_MODE={memory_mode}, using default")
+                ephemeral_mode = _parse_bool(get_env("EPHEMERAL_MODE") or "false")
+        else:
+            # Fallback to direct EPHEMERAL_MODE setting
+            ephemeral_mode = _parse_bool(get_env("EPHEMERAL_MODE") or "false")
+
         ephemeral_ttl_seconds = _parse_int(get_env("EPHEMERAL_TTL"), default=3600)
         
         # Excluded phrases
