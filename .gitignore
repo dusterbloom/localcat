@@ -81,6 +81,8 @@ server/results/*.json
 server/results/**/*.json
 server/tts_performance_report_*.json
 server/core/tts/*.backup
+test_results_*.json
+server/test_results_*.json
 
 ### Database files (local development only)
 memory.db
@@ -92,3 +94,10 @@ memory.db
 *.bak
 *.swp
 *.tmp
+.env.backup
+.env.pre-experiment-*
+
+### Temporary investigation and cleanup files
+*INVESTIGATION*.txt
+*CLEANUP*.md
+*PIPELINE_FLOW*.txt
