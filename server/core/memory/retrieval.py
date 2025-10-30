@@ -724,7 +724,10 @@ class Retrieval:
             "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
             "top of the morning", "howdy", "greetings", "what's up", "sup", "yo"
         )
-        is_greeting = any(term in q for term in greeting_terms) and len(q.split()) <= 5
+        # Fix: Use word boundary matching instead of substring matching
+        # to avoid false positives (e.g., "yo" matching "you")
+        words = set(q.split())
+        is_greeting = any(term in words for term in greeting_terms) and len(words) <= 5
         if is_greeting:
             # Only allow name-related memories for greetings
             name_terms = ("name", "call me", "called", "my name is")

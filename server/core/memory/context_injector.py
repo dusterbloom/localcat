@@ -7,6 +7,7 @@ Handles formatting and injection of memory context into conversation.
 from typing import List, Dict, Any, Optional
 from loguru import logger
 import os
+from collections import deque
 from .config_manager import MemoryConfiguration
 from .context_formatter import ContextFormatter
 
@@ -38,13 +39,16 @@ class ContextInjector:
             inject_header=config.inject_header
         )
         self.context_aggregator = context_aggregator
-        
+
         # Injection metrics
         self._injection_count = 0
         self._last_injected_bullets: List[str] = []
         self._turn_has_preinjected_bullets: bool = False
         self._turn_ready_signaled: bool = False
         self._pending_bullets: List[str] = []
+
+        # Memory repetition prevention (track last 3 turns)
+        self._recently_injected_edge_ids: deque = deque(maxlen=3)
 
     async def inject_memory_context(self) -> bool:
         """
@@ -198,6 +202,33 @@ class ContextInjector:
             logger.debug(f"[ContextInjector] inject_into_messages failed: {e}")
             return messages
 
+    def _extract_edge_id_from_bullet(self, bullet: str) -> Optional[int]:
+        """
+        Extract a unique identifier from a memory bullet for repetition tracking.
+
+        Uses bullet text hash as identifier since bullets may not contain explicit edge_ids.
+        This is sufficient for detecting repeated injections of the same memory.
+
+        Args:
+            bullet: Formatted memory bullet string
+
+        Returns:
+            Hash of bullet text, or None if extraction fails
+        """
+        try:
+            # Extract the core text after formatting markers
+            # Format: "• ⭐⏰💬 text..." or similar
+            if '•' in bullet:
+                text = bullet.split('•')[-1].strip()
+            else:
+                text = bullet.strip()
+
+            # Return hash of normalized text
+            return hash(text.lower()) if text else None
+        except Exception as e:
+            logger.debug(f"[ContextInjector] Failed to extract edge_id from bullet: {e}")
+            return None
+
     async def retrieve_and_prepare_bullets(self, query: str, read_only: bool = True, intent: Optional[Dict] = None) -> List[str]:
         """
         Retrieve memory bullets for query and prepare them for injection.
@@ -229,12 +260,34 @@ class ContextInjector:
 
             # Prepare bullets for injection
             if bullets:
+                # Filter out recently injected memories to prevent repetition
+                filtered_bullets = []
+                filtered_count = 0
+
+                for bullet in bullets:
+                    bullet_hash = self._extract_edge_id_from_bullet(bullet)
+                    if bullet_hash and bullet_hash in self._recently_injected_edge_ids:
+                        logger.debug(f"[ContextInjector] Filtered recently injected memory: {bullet[:80]}...")
+                        filtered_count += 1
+                        continue
+                    filtered_bullets.append(bullet)
+
+                if filtered_count > 0:
+                    logger.info(f"[ContextInjector] Filtered {filtered_count} recently injected memories (preventing repetition)")
+
                 # Limit to configured maximum
                 cap = max(0, self.config.bullets_max)
-                prepared_bullets = bullets[:cap]
+                prepared_bullets = filtered_bullets[:cap]
+
+                # Track newly injected bullets for future filtering
+                for bullet in prepared_bullets:
+                    bullet_hash = self._extract_edge_id_from_bullet(bullet)
+                    if bullet_hash:
+                        self._recently_injected_edge_ids.append(bullet_hash)
+
                 self._pending_bullets = list(prepared_bullets)
-                
-                logger.debug(f"[ContextInjector] Prepared {len(prepared_bullets)} memory bullets for injection")
+
+                logger.debug(f"[ContextInjector] Prepared {len(prepared_bullets)} memory bullets for injection (filtered {filtered_count})")
                 return prepared_bullets
             else:
                 self._pending_bullets = []

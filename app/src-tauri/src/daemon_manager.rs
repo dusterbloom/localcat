@@ -327,7 +327,7 @@ pub fn start_server(app: &AppHandle) -> Result<(), String> {
             cmd.env("SESSION_DB_PATH", data_dir.join("sessions.db"))
                 .env("MEMORY_SEMANTIC_DIR", data_dir.join("semantic_index"))
                 .env("MEMORY_SQLITE_PATH", data_dir.join("memory.db"))
-                .env("MEMORY_LMDB_PATH", data_dir.join("graph.lmdb"))
+                .env("MEMORY_LMDB_PATH", data_dir.join("memory.lmdb"))
                 .env("YAML_GRAPH_JUDGE_MODEL", data_dir.join("graph_judge.json"))
                 .env("YAML_GRAPH_JUDGE_GRAYZONE_LOG", data_dir.join("judge_grayzone.jsonl"))
                 .env("YAML_GRAPH_JUDGE_SCHEMA", data_dir.join("graph_judge_schema.json"))
