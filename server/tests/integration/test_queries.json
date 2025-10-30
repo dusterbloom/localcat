@@ -1,0 +1,128 @@
+{
+  "test_scenarios": [
+    {
+      "id": 1,
+      "name": "high_confidence_fact",
+      "query": "What is my favorite color?",
+      "description": "High confidence fact retrieval",
+      "expected_behavior": "Direct answer without hedging, no metadata leaking",
+      "metadata_indicators": ["conf=", "rec=", "⭐", "+++", "0."],
+      "success_criteria": {
+        "no_metadata_leak": true,
+        "confident_tone": true,
+        "uses_memory": true
+      }
+    },
+    {
+      "id": 2,
+      "name": "low_confidence_fact",
+      "query": "What's my middle name?",
+      "description": "Low confidence or missing fact",
+      "expected_behavior": "Hedging response (maybe, I think, not sure) if confidence low, or admits not knowing",
+      "metadata_indicators": ["conf=", "rec=", "⭐", "+++", "0."],
+      "success_criteria": {
+        "no_metadata_leak": true,
+        "appropriate_hedging": true
+      }
+    },
+    {
+      "id": 3,
+      "name": "very_recent",
+      "query": "What did we just talk about?",
+      "description": "Very recent conversation recall",
+      "expected_behavior": "References recent conversation, prioritizes recent items",
+      "metadata_indicators": ["conf=", "rec=", "⭐", "+++", "0."],
+      "success_criteria": {
+        "no_metadata_leak": true,
+        "uses_recent_memory": true
+      }
+    },
+    {
+      "id": 4,
+      "name": "old_fact",
+      "query": "Where was I born?",
+      "description": "Old established fact",
+      "expected_behavior": "States fact without mentioning age of information",
+      "metadata_indicators": ["conf=", "rec=", "⭐", "+++", "0."],
+      "success_criteria": {
+        "no_metadata_leak": true,
+        "uses_memory": true,
+        "no_time_mention": true
+      }
+    },
+    {
+      "id": 5,
+      "name": "multiple_facts",
+      "query": "Tell me about yourself",
+      "description": "Synthesize multiple memories",
+      "expected_behavior": "Combines multiple facts naturally, no metadata leaking",
+      "metadata_indicators": ["conf=", "rec=", "⭐", "+++", "0."],
+      "success_criteria": {
+        "no_metadata_leak": true,
+        "multiple_facts_used": false
+      }
+    },
+    {
+      "id": 6,
+      "name": "conflicting_confidence",
+      "query": "What do you know about my family?",
+      "description": "Query with high and low confidence items mixed",
+      "expected_behavior": "Weights appropriately, hedges on uncertain items",
+      "metadata_indicators": ["conf=", "rec=", "⭐", "+++", "0."],
+      "success_criteria": {
+        "no_metadata_leak": true,
+        "appropriate_confidence": true
+      }
+    },
+    {
+      "id": 7,
+      "name": "no_memory",
+      "query": "What's the capital of France?",
+      "description": "General knowledge, no relevant memory",
+      "expected_behavior": "Answers from general knowledge, ignores empty memory context",
+      "metadata_indicators": ["conf=", "rec=", "⭐", "+++", "0."],
+      "success_criteria": {
+        "no_metadata_leak": true,
+        "correct_answer": true
+      }
+    },
+    {
+      "id": 8,
+      "name": "ambiguous",
+      "query": "What do I like?",
+      "description": "Ambiguous query requiring memory synthesis",
+      "expected_behavior": "Lists known preferences without listing metadata",
+      "metadata_indicators": ["conf=", "rec=", "⭐", "+++", "0."],
+      "success_criteria": {
+        "no_metadata_leak": true,
+        "uses_memory": true
+      }
+    },
+    {
+      "id": 9,
+      "name": "followup_confidence",
+      "query": "Are you sure?",
+      "description": "Follow-up question testing confidence awareness",
+      "setup_query": "What is my favorite color?",
+      "expected_behavior": "Shows confidence awareness without quoting symbols/emojis",
+      "metadata_indicators": ["conf=", "rec=", "⭐", "+++", "0."],
+      "success_criteria": {
+        "no_metadata_leak": true,
+        "confidence_aware": true
+      }
+    },
+    {
+      "id": 10,
+      "name": "multiturn_consistency",
+      "query": "And what else?",
+      "description": "Multi-turn reference to previous answer",
+      "setup_query": "What do you know about me?",
+      "expected_behavior": "Consistent behavior across turns, no metadata leaking",
+      "metadata_indicators": ["conf=", "rec=", "⭐", "+++", "0."],
+      "success_criteria": {
+        "no_metadata_leak": true,
+        "contextual_response": true
+      }
+    }
+  ]
+}
