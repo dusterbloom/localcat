@@ -115,6 +115,41 @@ The Rust code sets critical environment variables before spawning Python:
 - `ESPEAK_DATA_PATH` - Points to bundled espeak-ng-data
 - `SKIP_TTS_VALIDATION=true` - Skips TTS voice validation in production
 
+**Database path resolution:**
+LocalCat uses a two-tier strategy to ensure database paths work correctly across development and production:
+
+**Development Mode** (running `server/bot.py` directly):
+- Reads `server/.env` for database paths
+- Uses `~/Library/Application Support/LocalCat/data/` (portable across users)
+- Python's `os.path.expanduser()` expands `~` to current user's home
+- Falls back to `server/data/` if env vars not set
+
+**Production Mode** (running from LocalCat.app bundle):
+- Rust code in `daemon_manager.rs:316-338` **overrides** .env paths at runtime
+- Uses `$HOME/Library/Application Support/LocalCat/data/` (current user's home)
+- Creates directories automatically if they don't exist
+- Environment variables set:
+  - `MEMORY_SQLITE_PATH` → `memory.db` (main conversation memory)
+  - `MEMORY_LMDB_PATH` → `memory.lmdb/` (graph adjacency index)
+  - `SESSION_DB_PATH` → `sessions.db` (conversation sessions)
+  - `SPEAKER_PROFILE_DIR` → `speaker_profiles/` (voice enrollments)
+
+**Per-User Data Locations:**
+```
+~/Library/Application Support/LocalCat/data/
+├── memory.db           (SQLite - conversation memory)
+├── memory.lmdb/        (LMDB - fast graph lookups)
+├── sessions.db         (SQLite - session metadata)
+├── speaker_profiles/   (Voice enrollment data)
+└── semantic_index/     (Vector embeddings)
+```
+
+**Why This Design:**
+1. **Portability**: `~` in .env works for all users (no hardcoded `/Users/username/`)
+2. **Safety**: Rust override ensures production always uses correct paths
+3. **Fallback**: Python auto-detects environment if paths not explicitly set
+4. **macOS Standard**: Follows Apple's Application Support conventions
+
 ### Build Process (`src-tauri/build.rs`)
 
 The build script runs before compilation to **hydrate voice symlinks**:
