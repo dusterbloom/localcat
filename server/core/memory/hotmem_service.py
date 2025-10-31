@@ -19,6 +19,7 @@ from pipecat.frames.frames import (
     Frame,
     LLMContextFrame,
     LLMMessagesFrame,
+    TranscriptionFrame,
     ErrorFrame
 )
 from pipecat.processors.aggregators.llm_context import LLMContext
@@ -126,6 +127,7 @@ class HotMemService(FrameProcessor):
         session_tracker: Optional[SessionTracker] = None,
         confidence_strategy: Optional[ConfidenceStrategy] = None,
         enable_dspy_extraction: Optional[bool] = None,
+        context_aggregator: Optional[Any] = None,
         **kwargs
     ):
         """
@@ -184,6 +186,7 @@ class HotMemService(FrameProcessor):
         self._session_id = f"{self.user_id}_{int(time.time())}_{os.urandom(4).hex()}"
         self._turn_id = 0
         self._session_tracker = session_tracker
+        self.context_aggregator = context_aggregator  # For context enhancement integration
         self.last_query = None  # Mem0 compatibility
 
         # Performance settings
@@ -273,8 +276,11 @@ class HotMemService(FrameProcessor):
 
         This combines traditional memory retrieval with tool availability.
         """
+        logger.debug(f"[HotMemService] _enhance_context_with_memories called with query: '{query[:50]}...'")
+
         # Skip if same query (Mem0 compatibility)
         if self.last_query == query:
+            logger.debug(f"[HotMemService] Skipping duplicate query")
             return
 
         self.last_query = query
@@ -303,14 +309,14 @@ class HotMemService(FrameProcessor):
                 memory_text += f"{i}. {memory.get('memory', '')}\n"
 
             # Add tool availability notice
-            memory_text += "\nMemory tools available: hotmem_remember, hotmem_recall, hotmem_forget, hotmem_search\n"
+            memory_text += "\nMemory tools available: hotmem_remember, hotmem_recall, hotmem_forget, hotmem_search\n (use only when asked explicitly by the user)"
 
             # Add as system message
             context.add_message({"role": "system", "content": memory_text})
             logger.debug(f"Enhanced context with {len(memories['results'])} memories and tool notice")
         else:
             # No memories found, but still add tool availability
-            tool_text = self._inject_header + "\nMemory tools available: hotmem_remember, hotmem_recall, hotmem_forget, hotmem_search\n"
+            tool_text = self._inject_header + "\nMemory tools available: hotmem_remember, hotmem_recall, hotmem_forget, hotmem_search (use only when asked explicitly by the user)\n"
             context.add_message({"role": "system", "content": tool_text})
             logger.debug("Enhanced context with memory tool availability notice")
 
@@ -318,21 +324,88 @@ class HotMemService(FrameProcessor):
         """
         Process frames with memory enhancement (similar to Mem0MemoryService).
 
-        This version focuses on core memory functionality rather than complex tool handling.
+        Handles both TranscriptionFrame (from UserTranscriptProcessor) and context frames.
         """
         await super().process_frame(frame, direction)
 
-        # Handle context frames (same as Mem0MemoryService)
-        context = None
-        messages = None
+        # Debug: Log all frame types received
+        # logger.debug(f"[HotMemService] Received frame: {type(frame).__name__} from {direction.name}")
 
-        if isinstance(frame, (LLMContextFrame, OpenAILLMContextFrame)):
+        # Handle TranscriptionFrame (from UserTranscriptProcessor) - convert to context and enhance
+        if isinstance(frame, TranscriptionFrame):
+            try:
+                # Extract transcription text
+                transcription_text = getattr(frame, 'text', '') or getattr(frame, 'content', '')
+                if not transcription_text:
+                    await self.push_frame(frame, direction)
+                    return
+
+                logger.debug(f"[HotMemService] Processing TranscriptionFrame: '{transcription_text[:50]}...'")
+
+                # Create user message from transcription
+                user_message = {"role": "user", "content": transcription_text}
+                messages = [user_message]
+
+                # Store message automatically
+                self._store_messages(messages)
+
+                # Check if this is a question (avoid extraction from questions)
+                is_question = self._is_question_from_text(transcription_text)
+
+                if not is_question:
+                    # Extract facts from non-questions for memory storage
+                    try:
+                        bullets, triples = self.hot.process_turn(
+                            transcription_text,
+                            self._session_id,
+                            self._turn_id
+                        )
+                        self._turn_id += 1
+                        logger.debug(f"[HotMemService] Extracted {len(triples)} facts, {len(bullets)} bullets")
+                    except Exception as e:
+                        logger.warning(f"[HotMemService] Memory extraction failed: {e}")
+
+                # Pass through the TranscriptionFrame
+                # The context_aggregator will create the context frame next
+                await self.push_frame(frame, direction)
+
+            except Exception as e:
+                logger.error(f"[HotMemService] Error processing TranscriptionFrame: {e}")
+                await self.push_frame(frame, direction)  # Still pass original frame
+
+        # Handle context frames (same as Mem0MemoryService)
+        elif isinstance(frame, (LLMContextFrame, OpenAILLMContextFrame)):
+            logger.debug(f"[HotMemService] Processing context frame: {type(frame).__name__}")
             context = frame.context
+            messages = None
+
+            try:
+                # Get latest user message for memory enhancement
+                context_messages = context.get_messages()
+                latest_user_message = None
+
+                for message in reversed(context_messages):
+                    if message.get("role") == "user" and isinstance(message.get("content"), str):
+                        latest_user_message = message.get("content")
+                        break
+
+                if latest_user_message:
+                    logger.debug(f"[HotMemService] Latest user message: '{latest_user_message[:50]}...'")
+                    # Enhanced with memories and tool availability notice
+                    self._enhance_context_with_memories(context, latest_user_message)
+                    logger.debug(f"[HotMemService] Enhanced context with memories and tools")
+
+                # Forward enhanced context
+                await self.push_frame(frame, direction)
+
+            except Exception as e:
+                logger.error(f"[HotMemService] Error processing context frame: {str(e)}")
+                await self.push_frame(frame, direction)  # Still pass original frame
+
         elif isinstance(frame, LLMMessagesFrame):
             messages = frame.messages
             context = LLMContext(messages)
 
-        if context:
             try:
                 # Get latest user message for memory enhancement
                 context_messages = context.get_messages()
@@ -346,23 +419,41 @@ class HotMemService(FrameProcessor):
                 if latest_user_message:
                     # Enhanced with memories and tool availability notice
                     self._enhance_context_with_memories(context, latest_user_message)
-                    # Store messages automatically (maintains compatibility)
-                    self._store_messages(context_messages)
 
                 # Forward enhanced context
-                if messages is not None:
-                    await self.push_frame(LLMMessagesFrame(context.get_messages()), direction)
-                else:
-                    await self.push_frame(frame, direction)
+                await self.push_frame(LLMMessagesFrame(context.get_messages()), direction)
 
             except Exception as e:
-                logger.error(f"Error processing with HotMem: {str(e)}")
-                await self.push_frame(ErrorFrame(f"Error processing with HotMem: {str(e)}"), direction)
+                logger.error(f"[HotMemService] Error processing messages frame: {str(e)}")
                 await self.push_frame(frame, direction)  # Still pass original frame
         else:
-            # For non-context frames, just pass through
+            # For other frame types, just pass through
             await self.push_frame(frame, direction)
 
+
+    def _is_question_from_text(self, text: str) -> bool:
+        """Check if text is a question to avoid fact extraction from questions."""
+        if not text or not text.strip():
+            return False
+
+        text_lower = text.strip().lower()
+
+        # Check for question marks
+        if '?' in text:
+            return True
+
+        # Check for question words at the beginning
+        question_starters = [
+            'what', 'where', 'when', 'why', 'how', 'who', 'which', 'whose',
+            'are', 'is', 'do', 'does', 'did', 'can', 'could', 'would', 'should',
+            'will', 'shall', 'may', 'might', 'must', 'have', 'has', 'had'
+        ]
+
+        words = text_lower.split()
+        if words and words[0] in question_starters:
+            return True
+
+        return False
 
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get memory statistics (HotPath compatibility)."""

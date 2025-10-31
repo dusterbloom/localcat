@@ -133,14 +133,16 @@ def _prewarm_llm_service(llm_service: OpenAILLMService, llm_config: Dict[str, An
 class ServiceFactory:
     """Factory for creating individual voice agent services with dependency injection."""
 
-    def __init__(self, config: VoiceAgentConfig):
+    def __init__(self, config: VoiceAgentConfig, preloaded_models=None):
         """
         Initialize service factory with configuration.
 
         Args:
             config: Voice agent configuration object
+            preloaded_models: Optional PreloadedModels instance for fast service creation
         """
         self.config = config
+        self.preloaded_models = preloaded_models  # NEW: Store preloaded models
         self._services_cache: Dict[str, Any] = {}
         # Concurrency-safe creation locks to avoid double-initialization
         self._stt_lock = threading.Lock()
@@ -192,10 +194,13 @@ class ServiceFactory:
         return transport
 
     def create_stt_service(self) -> Any:
-        """Create STT service based on configuration."""
+        """Create STT service based on configuration.
+
+        Uses preloaded models if available for instant creation.
+        """
         # Always create a fresh STT service per session/pipeline
         with self._stt_lock:
-            stt = STTServiceBuilder(self.config).build()
+            stt = STTServiceBuilder(self.config, self.preloaded_models).build()
         return stt
 
     def create_tts_service(self, use_boundaries: bool = True) -> Any:
@@ -328,7 +333,7 @@ class ServiceFactory:
             logger.error(f"Failed to create AudioIntelligenceProcessor: {e}")
             return None
 
-    def create_hotmem_service(self, session_tracker: Optional[SessionTracker] = None) -> HotMemService:
+    def create_hotmem_service(self, context_aggregator: Any, session_tracker: Optional[SessionTracker] = None) -> HotMemService:
         """Create HotMemService (Pipecat-compatible memory service)."""
         # Create confidence strategy based on configuration
         confidence_strategy = self._create_confidence_strategy()
@@ -349,7 +354,8 @@ class ServiceFactory:
             sqlite_path=_expand(os.getenv("MEMORY_SQLITE_PATH")),
             lmdb_dir=_expand(os.getenv("MEMORY_LMDB_PATH")),
             session_tracker=session_tracker,
-            confidence_strategy=confidence_strategy
+            confidence_strategy=confidence_strategy,
+            context_aggregator=context_aggregator
         )
 
         self._services_cache['hotmem_service'] = hotmem_service
