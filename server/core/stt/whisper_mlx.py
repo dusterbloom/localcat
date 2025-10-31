@@ -48,6 +48,7 @@ class DirectMLXWhisperSTT(SegmentedSTTService):
         temperature: float = 0.0,
         no_speech_threshold: float = 0.6,
         hallucination_silence_threshold: float = 0.3,
+        _preloaded_whisper_module=None,  # NEW: Accept preloaded module
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -55,6 +56,7 @@ class DirectMLXWhisperSTT(SegmentedSTTService):
         self._model = model
         self._language = language
         self._temperature = temperature
+        self._preloaded_whisper = _preloaded_whisper_module  # Store for later use
         # Allow env overrides for anti-hallucination tuning
         import os as _os
         try:
@@ -116,17 +118,23 @@ class DirectMLXWhisperSTT(SegmentedSTTService):
         except Exception:
             self._max_chunk_sec = 10.0
 
-        # Import mlx_whisper
-        try:
-            import mlx_whisper
-            self._mlx_whisper = mlx_whisper
-            logger.info(f"🚀 DirectMLXWhisperSTT: {model}")
-        except ImportError:
-            logger.error("mlx-whisper not available. Install with: pip install mlx-whisper")
-            raise
-
-        # Warmup: Load model and eliminate cold start penalty
-        self._warmup()
+        # Use preloaded module if available, otherwise import fresh
+        if self._preloaded_whisper:
+            self._mlx_whisper = self._preloaded_whisper
+            logger.info(f"✅ DirectMLXWhisperSTT using PRELOADED module: {model} (instant!)")
+            # Skip warmup - already done during preload
+        else:
+            # Fallback: Load from scratch (slower)
+            try:
+                import mlx_whisper
+                self._mlx_whisper = mlx_whisper
+                logger.info(f"🚀 DirectMLXWhisperSTT: {model}")
+                # Warmup: Load model and eliminate cold start penalty
+                self._warmup()
+                logger.warning("⚠️  Loaded Whisper from scratch (slow) - preloading failed?")
+            except ImportError:
+                logger.error("mlx-whisper not available. Install with: pip install mlx-whisper")
+                raise
 
     def _warmup(self):
         """Warmup the model to eliminate first-call latency penalty."""

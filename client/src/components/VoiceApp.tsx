@@ -49,6 +49,39 @@ const formatUserText = (text: string): string => {
   return formatted;
 };
 
+// Filter out tool call JSON and XML from bot text
+const isToolCallText = (text: string): boolean => {
+  if (!text) return false;
+
+  const stripped = text.trim();
+
+  // Check if text is JSON object (likely tool call argument)
+  if (stripped.startsWith('{') && stripped.endsWith('}') && stripped.includes('"')) {
+    console.log('[ToolCallFilter] Blocking JSON object from UI:', text.substring(0, 50));
+    return true;
+  }
+
+  // Check for XML tool call syntax
+  const toolCallPatterns = [
+    /<function\s*=/i,
+    /<\/function>/i,
+    /<think>/i,
+    /<\/think>/i,
+    /\{\s*"information"\s*:/,
+    /\{\s*"query"\s*:/,
+    /\{\s*"new_information"\s*:/,
+  ];
+
+  for (const pattern of toolCallPatterns) {
+    if (pattern.test(text)) {
+      console.log('[ToolCallFilter] Blocking tool call syntax from UI:', text.substring(0, 50));
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const formatBotText = (text: string): string => {
   // Remove markdown asterisks and other formatting
   if (!text) return text;
@@ -94,6 +127,9 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
   const isConnectingRef = useRef(false); // Guard against concurrent connection attempts
 
   useEffect(() => {
+    let mounted = true;
+    let currentClient: PipecatClient | null = null;
+
     // Initialize PipecatClient
     const initClient = async () => {
       const transport = new SmallWebRTCTransport();
@@ -161,6 +197,12 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
               const raw = transcript?.text || '';
               if (!raw.trim()) return;
 
+              // Filter out tool call JSON/XML
+              if (isToolCallText(raw)) {
+                console.log('[onBotTranscript] Filtered out tool call text');
+                return;
+              }
+
               const newText = formatBotText(raw);
               // Mirror the onBotTtsText handling so we save only full, non-duplicate sentences
               setCurrentAssistantTranscript(prevText => {
@@ -211,6 +253,12 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
           onBotTtsText: (ttsData) => {
             console.log('🎵 onBotTtsText:', ttsData);
             if (ttsData && ttsData.text && ttsData.text.trim().length > 0) {
+              // Filter out tool call JSON/XML
+              if (isToolCallText(ttsData.text)) {
+                console.log('[onBotTtsText] Filtered out tool call text');
+                return;
+              }
+
               const newText = formatBotText(ttsData.text);
               // Only update if the new text is longer (accumulating)
               setCurrentAssistantTranscript(prevText => {
@@ -310,10 +358,36 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
       });
 
       await pcClient.initDevices();
-      setClient(pcClient);
+      currentClient = pcClient;
+
+      // Only set client if component is still mounted
+      if (mounted) {
+        setClient(pcClient);
+      } else {
+        // Component unmounted during initialization, clean up
+        pcClient.disconnect();
+      }
     };
 
     initClient();
+
+    // Cleanup function to prevent memory leaks and duplicate connections
+    return () => {
+      mounted = false;
+      if (currentClient) {
+        console.log('🧹 Cleaning up PipecatClient on unmount');
+        currentClient.disconnect();
+      }
+    };
+  }, []);
+
+  // Reset connection state on unmount to prevent stale state in dev mode
+  useEffect(() => {
+    return () => {
+      console.log('🔄 Resetting connection state on unmount');
+      setWasConnected(false);
+      setAutoReconnectAttempts(0);
+    };
   }, []);
 
   // Auto-scroll transcript to bottom when new messages arrive
@@ -326,7 +400,8 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
 
   // Auto-reconnection logic for kings 👑
   useEffect(() => {
-    if (appState === "disconnected" && wasConnected && autoReconnectAttempts < 5) {
+    // Ensure client exists and we're in the right state for auto-reconnect
+    if (appState === "disconnected" && wasConnected && autoReconnectAttempts < 5 && client) {
       const delay = Math.min(1000 * Math.pow(2, autoReconnectAttempts), 10000); // Exponential backoff, max 10s
       console.log(`🔄 Auto-reconnecting in ${delay}ms (attempt ${autoReconnectAttempts + 1}/5)...`);
 
@@ -349,7 +424,7 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
 
       return () => clearTimeout(reconnectTimeout);
     }
-  }, [appState, wasConnected, autoReconnectAttempts]);
+  }, [appState, wasConnected, autoReconnectAttempts, client]);
 
   // Performance monitoring
   useEffect(() => {

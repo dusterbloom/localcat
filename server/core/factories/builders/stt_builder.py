@@ -11,8 +11,9 @@ from core.factories.utils.model_resolver import resolve_parakeet_model_path
 class STTServiceBuilder:
     """Builds STT services with explicit fallback chains."""
 
-    def __init__(self, config: VoiceAgentConfig):
+    def __init__(self, config: VoiceAgentConfig, preloaded_models=None):
         self.config = config
+        self.preloaded_models = preloaded_models  # NEW: Accept preloaded models
 
     def build(self) -> Any:
         stt_config = self.config.get_component_config("stt")
@@ -69,12 +70,19 @@ class STTServiceBuilder:
 
         def _create_whisper_direct_mlx() -> Any:
             from core.stt.whisper_mlx import DirectMLXWhisperSTT
+            # Use preloaded Whisper module if available
+            preloaded_whisper = None
+            if self.preloaded_models and hasattr(self.preloaded_models, 'whisper_module'):
+                preloaded_whisper = self.preloaded_models.whisper_module
+                logger.debug("🚀 STTBuilder using preloaded Whisper module")
+
             return DirectMLXWhisperSTT(
                 model=stt_config.get("model", "mlx-community/whisper-small.en-mlx-q4"),
                 language=stt_config.get("language", "en"),
                 temperature=0.0,
                 no_speech_threshold=0.6,
                 hallucination_silence_threshold=0.3,
+                _preloaded_whisper_module=preloaded_whisper,  # Pass preloaded module
             )
 
         chains: Dict[str, List[Callable[[], Any]]] = {
