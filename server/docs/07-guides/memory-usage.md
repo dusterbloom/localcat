@@ -1,306 +1,299 @@
-# HotMemService Usage Guide
+# LocalCat Memory System Guide
 
 ## Overview
 
-HotMemService is a drop-in replacement for Pipecat's `Mem0MemoryService` that combines:
+LocalCat uses a unified memory system called **HotPath** that provides:
 
-- **HotPath's ultra-fast performance** (<5ms typical, <200ms guaranteed)
-- **Tool-based explicit interface** (no intent classification required)
-- **Full Mem0 compatibility** (existing Pipecat code works unchanged)
-- **Local storage** (no external API dependencies)
+- **🚀 Automatic context injection** with emoji formatting for visual clarity
+- **🛠️ Explicit tool access** (remember, recall, forget, search)
+- **⚡ DirectMLX performance** (5-6x faster than HTTP-based solutions)
+- **🎯 Superior retrieval accuracy** and relevance scoring
+- **💾 Local storage** with no external API dependencies
 
 ## Quick Start
 
-### Basic Replacement
+### Basic Setup
 
-Replace this:
-```python
-from pipecat.services.mem0.memory import Mem0MemoryService
+Set your memory backend to HotPath (recommended):
 
-memory_service = Mem0MemoryService(
-    api_key="your-mem0-api-key",
-    user_id="user123",
-    agent_id="agent456"
-)
+```bash
+# In your .env file
+MEMORY_BACKEND=hotpath
+VOICE_AGENT_MEMORY_ENABLED=true
 ```
 
-With this:
-```python
-from core.memory import HotMemService
+### Factory Integration
 
-memory_service = HotMemService(
-    user_id="user123",
-    agent_id="agent456"
-    # No API key needed - uses local HotPath storage
+HotPath integrates automatically through the VoiceAgentFactory:
+
+```python
+from config import VoiceAgentConfig
+from core.factory import VoiceAgentFactory
+
+# Create factory - HotPath is used by default
+config = VoiceAgentConfig()
+factory = VoiceAgentFactory(config)
+
+# Memory processor with HotPath backend
+session_tracker = factory.create_session_tracker()
+memory_processor = factory.create_memory_processor(None, session_tracker)
+
+# HotPath tools are automatically registered with compatible LLMs
+voice_agent = factory.create_voice_agent(
+    room_url="your-room-url",
+    transport=your_transport,
+    stt=your_stt,
+    llm=your_llm,  # DirectMLX with tools recommended
+    tts=your_tts
 )
-```
-
-### Pipeline Integration
-
-HotMemService works exactly like Mem0MemoryService in your Pipecat pipeline:
-
-```python
-from pipecat.pipeline.pipeline import Pipeline
-from core.memory import HotMemService
-
-# Create pipeline with HotMemService
-pipeline = Pipeline([
-    # ... other processors
-    HotMemService(
-        user_id="user123",
-        agent_id="mybot",
-        run_id="session001"
-    ),
-    # ... LLM and other processors
-])
 ```
 
 ## Key Features
 
-### 1. Automatic Memory Storage
+### 1. Automatic Context Injection
 
-Just like Mem0MemoryService, HotMemService automatically stores conversation messages:
+HotPath automatically injects relevant memories into the conversation context:
 
-```python
-# Messages are automatically processed and stored
-messages = [
-    {"role": "user", "content": "My name is Alice and I'm a developer"},
-    {"role": "assistant", "content": "Nice to meet you Alice!"}
-]
-
-# This happens automatically when messages flow through the pipeline
-memory_service._store_messages(messages)
+```
+🧠 Memory Context:
+👤 User mentioned: "I work as a software engineer"
+🏠 User lives in: "San Francisco"
+💼 User prefers: "Python and TypeScript"
+🎯 User goal: "Building a voice assistant"
 ```
 
-### 2. Enhanced Context with Memory + Tools
-
-HotMemService enhances context with both relevant memories AND tool availability:
-
-```python
-from pipecat.processors.aggregators.llm_context import LLMContext
-
-context = LLMContext()
-context.add_message({"role": "user", "content": "What do you know about me?"})
-
-# Adds relevant memories + tool availability notice
-memory_service._enhance_context_with_memories(context, "What do you know about me?")
-
-# Context now includes:
-# 1. Original user message
-# 2. System message with relevant memories
-# 3. Notice about available memory tools
-```
-
-### 3. Memory Tools Available
+### 2. Memory Tools Available
 
 The LLM can use these tools explicitly:
 
 - `hotmem_remember`: Store specific information
 - `hotmem_recall`: Retrieve specific information
-- `hotmem_forget`: Remove information (placeholder)
-- `hotmem_search`: Search with different strategies
+- `hotmem_forget`: Remove information
+- `hotmem_search`: Search with different strategies (conversation, graph, context, related, entity, temporal, semantic)
 
-### 4. Ultra-Fast Performance
+### 3. High-Performance Storage
 
-Performance results from testing:
-- Storage: ~3-5ms typical
-- Retrieval: ~2-4ms typical
-- Total: <10ms (vs 200ms target)
-- Memory extraction: Uses proven HotPath 27-pattern system
+HotPath uses a dual storage system:
+
+- **SQLite**: Structured data with FTS5 full-text search
+- **LMDB**: Graph data for relationship traversal
+- **Processing**: 27-pattern extraction system
+- **Performance**: <10ms total for storage + retrieval
 
 ## Configuration Options
 
 ### Environment Variables
 
 ```bash
-# Memory behavior
-MEMORY_ENABLED=true                    # Enable/disable memory
-MEMORY_BULLETS_MAX=3                   # Max memory bullets to inject
-MEMORY_INJECT_ROLE=system              # Role for memory messages
-MEMORY_INJECT_HEADER="[HotMem Context]" # Header for memory messages
+# Core memory settings
+MEMORY_BACKEND=hotpath                    # Use HotPath (recommended)
+VOICE_AGENT_MEMORY_ENABLED=true          # Enable memory system
+VOICE_AGENT_HOTPATH_ENABLED=true         # Enable HotPath processor
+VOICE_AGENT_SESSION_PERSISTENCE=true     # Enable session persistence
 
-# Storage paths (optional)
-SQLITE_PATH=/path/to/memory.db         # SQLite database path
-LMDB_DIR=/path/to/lmdb                 # LMDB directory path
+# Storage paths (optional - uses defaults if not set)
+MEMORY_SQLITE_PATH=./data/memory.db      # SQLite database path
+MEMORY_LMDB_PATH=./data/graph.lmdb       # LMDB directory path
+
+# Behavior settings
+MEMORY_BULLETS_MAX=3                     # Max memory bullets to inject
+MEMORY_INTERIM_MIN_WORDS=6               # Min words for interim processing
+MEMORY_INJECT_ROLE=user                  # Role for memory messages
+MEMORY_INJECT_HEADER=[Memory context]    # Header for memory messages
+MEMORY_SOURCES=graph,convo,summary       # Memory sources to use
+
+# Context management
+CONTEXT_SLIDING_WINDOW=true              # Enable sliding window
+CONTEXT_MAX_TURN_PAIRS=4                 # Max turn pairs in context
+LLM_CONTEXT_MAX_TOKENS=3000              # Max tokens for LLM context
+LLM_CONTEXT_PRUNE_THRESHOLD=0.70         # Prune at 70% capacity
+LLM_CONTEXT_MIN_TURNS=3                  # Min turns to keep
 ```
 
-### Constructor Options
+### LLM Configuration for Tools
 
-```python
-HotMemService(
-    # Required: Mem0 compatibility
-    user_id="user123",           # User identifier
-    agent_id="agent456",         # Agent identifier
-    run_id="session001",         # Optional run identifier
+For the best experience, use DirectMLX with tool calling support:
 
-    # Optional: HotPath specific
-    sqlite_path="/custom/path.db",   # Custom SQLite path
-    lmdb_dir="/custom/lmdb",         # Custom LMDB directory
-    session_tracker=tracker,        # Optional session tracker
-
-    # Ignored: Mem0 compatibility (no external API needed)
-    api_key=None,                # Ignored - no API needed
-    local_config=None,           # Ignored - uses HotPath
-    host=None                    # Ignored - local storage
-)
+```bash
+# Model selection (tool-capable models recommended)
+LLM_MODEL=mlx-community/Qwen3-1.7B-8bit  # Tool-capable model
+LLM_USE_DIRECT_MLX=true                  # Enable DirectMLX
+LLM_MAX_TOKENS=256                       # Response tokens
+LLM_TEMPERATURE=0.7                      # Creativity level
 ```
 
-## Migration Examples
+## Memory Tool Usage Examples
 
-### From Mem0MemoryService
+### Automatic Memory
 
-**Before (Mem0MemoryService):**
-```python
-from pipecat.services.mem0.memory import Mem0MemoryService
+Users don't need to do anything - memories are stored automatically:
 
-# Required external API
-memory = Mem0MemoryService(
-    api_key="mem0-api-key",
-    user_id="user123",
-    agent_id="assistant",
-    params=Mem0MemoryService.InputParams(
-        search_limit=5,
-        system_prompt="Context: "
-    )
-)
+```
+User: "My name is Sarah and I'm a graphic designer from New York."
+Assistant: "Nice to meet you, Sarah! How can I help you today?"
+# [HotPath automatically stores this information]
 ```
 
-**After (HotMemService):**
-```python
-from core.memory import HotMemService
+### Explicit Memory Requests
 
-# No external API needed
-memory = HotMemService(
-    user_id="user123",
-    agent_id="assistant"
-    # search_limit and system_prompt handled automatically
-    # Uses local HotPath storage with superior performance
-)
+Users can explicitly ask the agent to use memory tools:
+
+```
+User: "Remember that I prefer short, direct responses."
+Assistant: "I'll remember that preference for future conversations."
+# [Agent uses hotmem_remember tool]
+
+User: "What do you know about my work?"
+Assistant: "Let me check what I remember about your work."
+# [Agent uses hotmem_recall tool]
 ```
 
-### Tool Usage Example
+### Memory Search
 
-With HotMemService, the LLM can use memory tools explicitly:
-
-```python
-# Example LLM conversation with tool usage:
-
-User: "Remember that I prefer short responses"
-Assistant: I'll remember that preference.
-[Uses hotmem_remember tool internally]
-
-User: "What did I tell you about my preferences?"
-Assistant: I'll check what I remember about your preferences.
-[Uses hotmem_recall tool internally]
-
-# Tools are available automatically - no setup needed
+```
+User: "Search for information about my project deadlines."
+Assistant: "I'll search through my memory for project deadline information."
+# [Agent uses hotmem_search with different search types]
 ```
 
 ## Performance Comparison
 
-| Operation | Mem0MemoryService | HotMemService | Improvement |
-|-----------|------------------|---------------|-------------|
-| Storage   | ~50-200ms       | ~3-5ms        | 10-40x faster |
-| Retrieval | ~100-300ms      | ~2-4ms        | 25-75x faster |
-| Total     | ~150-500ms      | ~5-10ms       | 15-50x faster |
-| Dependencies | External API | Local only | No network |
+| Feature | HotPath | HTTP-based Solutions |
+|---------|---------|---------------------|
+| Storage | ~3-5ms | ~50-200ms |
+| Retrieval | ~2-4ms | ~100-300ms |
+| Tool Calling | Native DirectMLX | HTTP overhead |
+| Context Injection | Automatic with emojis | Manual or basic |
+| Dependencies | Local only | External APIs |
+| Performance | **5-6x faster** | Baseline |
 
 ## Advanced Usage
 
 ### Custom Storage Paths
 
 ```python
-memory_service = HotMemService(
-    user_id="user123",
-    agent_id="agent456",
-    sqlite_path="/app/data/memory.db",
-    lmdb_dir="/app/data/graph"
+from core.memory.database_path import setup_database_paths
+
+# Setup custom paths
+setup_database_paths(
+    sqlite_path="/custom/location/memory.db",
+    lmdb_dir="/custom/location/graph.lmdb"
 )
 ```
 
 ### Session Tracking
 
 ```python
-from core.memory.session_tracker import SessionTracker
-
-tracker = SessionTracker()
-memory_service = HotMemService(
-    user_id="user123",
-    agent_id="agent456",
-    session_tracker=tracker
-)
+# Session tracking is automatic with HotPath
+# Sessions persist across restarts if VOICE_AGENT_SESSION_PERSISTENCE=true
 ```
 
 ### Memory Statistics
 
 ```python
-stats = memory_service.get_memory_stats()
-print(f"Session: {stats['session_id']}")
-print(f"Turn: {stats['turn_id']}")
-print(f"Performance: {stats.get('hot_metrics', {})}")
+# Access memory processor for advanced usage
+memory_processor = factory.create_memory_processor(None, session_tracker)
+
+# Get performance metrics
+if hasattr(memory_processor, 'hot'):
+    stats = memory_processor.hot.get_performance_stats()
+    print(f"Storage time: {stats.get('avg_storage_time_ms', 0):.2f}ms")
+    print(f"Retrieval time: {stats.get('avg_retrieval_time_ms', 0):.2f}ms")
 ```
 
-## Testing
+## Migration from Other Memory Systems
 
-Run the provided tests to verify functionality:
+### From HotMem (Legacy)
+
+HotMem is now deprecated. Simply change your configuration:
 
 ```bash
-# Basic functionality tests
-python test_hotmem_service.py
+# Before (deprecated)
+MEMORY_BACKEND=hotmem
 
-# Integration example
-python integration_example.py
+# After (recommended)
+MEMORY_BACKEND=hotpath
+```
+
+All your existing memories will be accessible through HotPath with improved performance and features.
+
+### From External Memory Services
+
+```bash
+# Before (external service)
+MEMORY_BACKEND=external
+API_KEY=your-api-key
+
+# After (local HotPath)
+MEMORY_BACKEND=hotpath
+# No API key needed - uses local storage
+```
+
+## Testing and Validation
+
+### Basic Functionality Test
+
+```bash
+# Test HotPath tools integration
+python test_hotpath_tools_simple.py
+
+# Test comprehensive HotPath functionality
+python test_hotpath_tools_integration.py
+```
+
+### Performance Testing
+
+```bash
+# Test memory backend performance
+python test_memory_backends_comparison.py
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Import Error**: Make sure `core.memory` is in your Python path
-2. **Storage Issues**: Check file permissions for SQLite/LMDB directories
-3. **Performance**: Verify spaCy English model is installed
+1. **Tools not available**: Ensure you're using a tool-capable model with `LLM_USE_DIRECT_MLX=true`
+2. **Slow performance**: Check that DirectMLX is being used (not HTTP-based LLM)
+3. **No context injection**: Verify `VOICE_AGENT_MEMORY_ENABLED=true` and `MEMORY_BACKEND=hotpath`
 
 ### Debug Logging
 
 ```python
 import os
-os.environ["HOTMEM_LOG_LEVEL"] = "DEBUG"
-
-# Or use Python logging
-import logging
-logging.getLogger("core.memory").setLevel(logging.DEBUG)
+os.environ["HOTMEM_LOG_LEVEL"] = "DEBUG"  # Shows HotPath operations
 ```
 
-### Storage Location
+### Storage Issues
 
-Default storage locations:
-- SQLite: `memory.db` in current directory
-- LMDB: `graph.lmdb/` in current directory
-- Logs: `core/memory/.logs/hotmem.log`
+Check file permissions for your data directories:
+- SQLite database: `./data/memory.db` (or custom path)
+- LMDB graph: `./data/graph.lmdb/` (or custom path)
 
 ## Architecture Notes
 
-HotMemService combines:
+HotPath combines:
 
-1. **Mem0MemoryService Interface**: Full compatibility with existing Pipecat code
-2. **HotPath Backend**: Ultra-fast local memory system with 27 extraction patterns
-3. **Tool Awareness**: Adds memory tool availability to context
-4. **Automatic Processing**: Stores messages automatically while allowing explicit tool usage
+1. **Automatic Processing**: Conversation messages are processed automatically
+2. **Tool Integration**: Memory tools available for explicit LLM control
+3. **High-Performance Storage**: SQLite + LMDB dual storage system
+4. **Smart Retrieval**: Context-aware memory injection with emojis
+5. **DirectMLX Support**: Native tool calling without HTTP overhead
 
-This hybrid approach provides the best of both worlds:
-- Existing code works unchanged (compatibility)
-- Performance is dramatically improved (speed)
-- Memory tools are available for explicit use (control)
-- No external dependencies (reliability)
+This unified approach provides:
+- ✅ **Zero configuration** - Works out of the box
+- ✅ **Maximum performance** - DirectMLX + local storage
+- ✅ **Rich context** - Emoji-formatted memory injection
+- ✅ **Explicit control** - Tool-based memory operations
+- ✅ **No external dependencies** - Completely local
 
 ## Summary
 
-HotMemService is a high-performance, drop-in replacement for Mem0MemoryService that:
+HotPath is the recommended memory solution for LocalCat that provides:
 
-✅ **Works with existing code** - No changes needed
-✅ **Performs 15-50x faster** - Local HotPath backend
-✅ **Provides tool interface** - Explicit memory control
-✅ **Requires no external APIs** - Local storage only
-✅ **Maintains full compatibility** - Same interface as Mem0MemoryService
+🚀 **Best performance** - 5-6x faster than HTTP-based solutions
+🧠 **Automatic context** - Smart memory injection with visual formatting
+🛠️ **Tool support** - Explicit memory operations when needed
+💾 **Local storage** - No external API dependencies
+📈 **Superior retrieval** - Advanced search and relevance scoring
 
-Simply replace `Mem0MemoryService` imports with `HotMemService` and enjoy the performance boost!
+Simply set `MEMORY_BACKEND=hotpath` and enjoy the unified memory experience!
