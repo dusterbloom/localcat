@@ -2,7 +2,19 @@
 
 import asyncio
 import re
+import time
+import uuid
 from typing import Optional
+
+from loguru import logger
+
+try:
+    import tiktoken
+    TIKTOKEN_AVAILABLE = True
+except ImportError:
+    TIKTOKEN_AVAILABLE = False
+    logger.warning("tiktoken not available, falling back to character-based token estimation")
+
 
 from pipecat.frames.frames import (
     BotInterruptionFrame,
@@ -12,7 +24,8 @@ from pipecat.frames.frames import (
     LLMFullResponseEndFrame,
     InterimTranscriptionFrame,
     InterruptionFrame,
-    TextFrame
+    TextFrame,
+    LLMTextFrame  # Import LLMTextFrame to filter it out
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
@@ -49,22 +62,62 @@ class FastTextAggregator(FrameProcessor):
             'do', 'does', 'did', 'doing'
         }
 
+        # Frame tracking for duplication detection
+        self._seen_text_frames = {}  # text -> (frame_id, timestamp, count)
+        self._frame_counter = 0
+
+        # Response tracking to prevent multiple releases
+        self._response_complete = False
+
+        # CRITICAL FIX: Lock to prevent buffer corruption during concurrent access
+        self._release_lock = asyncio.Lock()
+
+        # Initialize tiktoken for accurate token counting
+        self._encoding = None
+        if TIKTOKEN_AVAILABLE:
+            try:
+                # Use cl100k_base encoding (GPT-4, GPT-3.5-turbo, text-embedding-ada-002)
+                self._encoding = tiktoken.get_encoding("cl100k_base")
+                logger.debug("[FastTextAggregator] Using tiktoken for accurate token counting")
+            except Exception as e:
+                logger.warning(f"[FastTextAggregator] Failed to load tiktoken encoding: {e}")
+
     async def _release_text(self):
         """Release accumulated text to TTS."""
-        if self._aggregation.strip():
+        # CRITICAL FIX: Use lock to prevent race conditions during concurrent access
+        async with self._release_lock:
+            # CRITICAL FIX: Check if response is already complete to prevent duplicate releases
+            if self._response_complete:
+                logger.debug("[FastTextAggregator] _release_text: Response already complete, ignoring")
+                return
+
+            # Double-check that we still have content after acquiring lock
+            if not self._aggregation.strip():
+                return
+
+            import traceback
+
+            # Store text to release and clear buffer atomically
+            text_to_release = self._aggregation
+            self._aggregation = ""
+
             # Clean and format text for better TTS
-            clean_text = self._clean_text_for_tts(self._aggregation)
+            clean_text = self._clean_text_for_tts(text_to_release)
             if clean_text:
-                from loguru import logger
-                logger.debug(f"[FastTextAggregator] Releasing text: '{clean_text[:100]}...' (len={len(clean_text)}, aggregated={len(self._aggregation)})")
+                logger.debug(f"[FastTextAggregator] Releasing: '{clean_text[:50]}...' ({len(clean_text)} chars)")
                 await self.push_frame(TextFrame(clean_text))
 
-        self._aggregation = ""
-        self._last_release_time = asyncio.get_event_loop().time()
+            # Verify buffer was actually cleared
+            if len(self._aggregation) > 0:
+                logger.error(f"🚨 FastTextAggregator buffer not cleared! Still has {len(self._aggregation)} chars after release")
 
-        if self._timer and not self._timer.done():
-            self._timer.cancel()
-        self._timer = None
+            logger.debug(f"[FastTextAggregator] Cleared buffer (was {len(text_to_release)} chars)")
+
+            self._last_release_time = asyncio.get_event_loop().time()
+
+            if self._timer and not self._timer.done():
+                self._timer.cancel()
+            self._timer = None
 
     def _clean_text_for_tts(self, text: str) -> str:
         """Clean and format text for better TTS output."""
@@ -74,6 +127,14 @@ class FastTextAggregator(FrameProcessor):
         text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # Remove **bold** but keep text
         text = re.sub(r'\*([^*]+)\*', r'\1', text)      # Remove *italic* but keep text
         text = re.sub(r'`([^`]+)`', r'\1', text)        # Remove `code` but keep text
+
+        # Remove tool call patterns (XML and JSON) that should not be spoken
+        # These are function calls meant for internal processing, not TTS
+        text = re.sub(r'<function=\w+>.*?</function>', '', text, flags=re.DOTALL)
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        text = re.sub(r'<\|im_start\|>.*?<\|im_end\|>', '', text, flags=re.DOTALL)
+        # Remove standalone JSON that looks like tool calls
+        text = re.sub(r'\{\s*"query"\s*:.*?"new_information"\s*:.*?\}', '', text, flags=re.DOTALL)
 
         # Remove emojis and problematic characters for TTS
         text = sanitize_for_voice(text)
@@ -107,6 +168,25 @@ class FastTextAggregator(FrameProcessor):
     def _count_words(self, text: str) -> int:
         """Count words in text (simple whitespace split)."""
         return len(text.strip().split())
+
+    def _count_tokens(self, text: str) -> int:
+        """
+        Count tokens in text using tiktoken (or fallback to estimation).
+
+        Args:
+            text: Text to count tokens for
+
+        Returns:
+            Number of tokens
+        """
+        if self._encoding:
+            try:
+                return len(self._encoding.encode(text))
+            except Exception as e:
+                logger.warning(f"[FastTextAggregator] tiktoken encoding failed: {e}, falling back to estimation")
+
+        # Fallback: rough approximation (1 token ≈ 4 chars for English)
+        return len(text) // 4
 
     def _is_safe_break_point(self, text: str, position: int) -> bool:
         """Check if position is safe for breaking (not right after auxiliary verb).
@@ -156,15 +236,48 @@ class FastTextAggregator(FrameProcessor):
             return
 
         if isinstance(frame, TextFrame):
+            # Defensive check: ensure frame.text is actually a string
+            if not isinstance(frame.text, str):
+                logger.error(f"🚨 FastTextAggregator received TextFrame with non-string text: {type(frame.text)} = {frame.text}")
+                await self.push_frame(frame, direction)  # Pass through without processing
+                return
+
+            # CRITICAL FIX: Reset response_complete flag when new text arrives after end
+            if self._response_complete:
+                logger.debug("[FastTextAggregator] New TextFrame arrived after response complete, resetting flag")
+                self._response_complete = False
+
+            # FRAME TRACKING: Check for duplicates
+            self._frame_counter += 1
+            frame_id = f"TF{self._frame_counter}_{int(time.time() * 1000)}"
+
+            text_content = frame.text.strip()
+            if text_content in self._seen_text_frames:
+                prev_id, prev_timestamp, count = self._seen_text_frames[text_content]
+                time_diff = time.time() - prev_timestamp
+
+                # Track for debugging only - don't block (common words appear in different responses)
+                logger.debug(f"Token seen before: '{text_content[:30]}' ({time_diff:.1f}s ago, count: {count + 1})")
+
+                # Update counter for tracking
+                self._seen_text_frames[text_content] = (frame_id, time.time(), count + 1)
+
+                # Continue processing - no blocking (removed overly aggressive duplicate prevention)
+            else:
+                # First time seeing this text in current session
+                self._seen_text_frames[text_content] = (frame_id, time.time(), 1)
+                logger.debug(f"🔍 New TextFrame: '{text_content[:30]}...' (len={len(text_content)})")
+
             # Clean asterisks from incoming text
             clean_text = frame.text.replace('*', '')
+
+            # Simple text accumulation as Pipecat standard pattern
             self._aggregation += clean_text
 
-            from loguru import logger
             logger.debug(f"[FastTextAggregator] Accumulated: '{self._aggregation[:80]}...' (total_len={len(self._aggregation)})")
 
-            # Estimate token count (rough approximation: 1 token ≈ 4 chars for English)
-            estimated_tokens = len(self._aggregation) // 4
+            # Count tokens accurately with tiktoken (or fallback to estimation)
+            estimated_tokens = self._count_tokens(self._aggregation)
 
             # Check for natural boundaries
             should_release = False
@@ -233,7 +346,12 @@ class FastTextAggregator(FrameProcessor):
                         logger.debug(f"[FastTextAggregator] Clause boundary but only {word_count} words (min {self._min_words}), continuing")
 
             if should_release:
+                # Release text immediately at natural boundaries
                 await self._release_text()
+                # CRITICAL FIX: Cancel any pending timer to prevent duplicate release
+                if self._timer and not self._timer.done():
+                    self._timer.cancel()
+                    self._timer = None
             else:
                 # Schedule release after timeout as fallback
                 if self._timer and not self._timer.done():
@@ -241,8 +359,37 @@ class FastTextAggregator(FrameProcessor):
                 self._timer = asyncio.create_task(self._delayed_release())
 
         elif isinstance(frame, (EndFrame, LLMFullResponseEndFrame)):
-            if self._aggregation.strip():
-                await self._release_text()
+            # CRITICAL FIX: Use lock to prevent race conditions with concurrent _release_text calls
+            async with self._release_lock:
+                # Cancel any pending timer
+                if self._timer and not self._timer.done():
+                    self._timer.cancel()
+                    self._timer = None
+
+                # CRITICAL FIX: Only release if we have accumulated text AND buffer is not empty
+                # This prevents double-release of text that was already released by boundaries
+                if self._aggregation.strip() and len(self._aggregation) > 0:
+                    logger.debug(f"[FastTextAggregator] EndFrame releasing remaining text: '{self._aggregation[:50]}...' ({len(self._aggregation)} chars)")
+                    # Release text without using the lock (we already hold it)
+                    text_to_release = self._aggregation
+                    self._aggregation = ""
+
+                    # Clean and format text for better TTS
+                    clean_text = self._clean_text_for_tts(text_to_release)
+                    if clean_text:
+                        logger.debug(f"[FastTextAggregator] EndFrame pushing final text: '{clean_text[:50]}...'")
+                        await self.push_frame(TextFrame(clean_text))
+                else:
+                    logger.debug("[FastTextAggregator] EndFrame: No remaining text to release")
+
+                # Mark response as complete to prevent further releases
+                self._response_complete = True
+                logger.debug("[FastTextAggregator] EndFrame marked response as complete")
+
+                # Clear seen frames cache for next response (prevents cross-response interference)
+                self._seen_text_frames.clear()
+                logger.debug("[FastTextAggregator] Cleared frame tracking cache for next response")
+
             await self.push_frame(frame)
         else:
             await self.push_frame(frame, direction)

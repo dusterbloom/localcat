@@ -79,9 +79,9 @@ class SpeakerEnrollmentRouter(ParallelPipeline):
         CRITICAL: System frames (StartFrame, EndFrame, CancelFrame) must ALWAYS
         pass through to ensure proper pipeline initialization.
 
-        IMPORTANT: During CHOICE state, user transcriptions should go to CONVERSATION
-        pipeline (which has LLM) to handle ambiguous responses. Only TextFrames
-        (from coordinator) should go to INTRO pipeline for TTS.
+        CRITICAL FIX: TextFrames should ONLY go to ONE pipeline to prevent audio duplication.
+        During CHOICE state, intro pipeline should be BLOCKED from all TextFrames
+        to prevent duplicate TTS processing.
         """
         from pipecat.frames.frames import (
             StartFrame, EndFrame, CancelFrame, SystemFrame,
@@ -93,15 +93,15 @@ class SpeakerEnrollmentRouter(ParallelPipeline):
             return True
 
         async with self._state_lock:
-            # Special handling for CHOICE state: route user transcriptions to conversation
-            # pipeline so the LLM can handle ambiguous responses
+            # CRITICAL FIX: Block ALL TextFrames from intro pipeline during CHOICE state
+            # This prevents duplicate TTS processing when conversation pipeline is active
             if self._state == EnrollmentState.CHOICE:
-                if isinstance(frame, (TranscriptionFrame, TranscriptionUpdateFrame)):
+                if isinstance(frame, TextFrame):
+                    logger.info(f"[EnrollmentRouter] CHOICE state: BLOCKING TextFrame from INTRO pipeline to prevent duplication - '{frame.text[:50]}...' goes to CONVERSATION only")
+                    return False  # ALWAYS block TextFrames from intro during CHOICE
+                elif isinstance(frame, (TranscriptionFrame, TranscriptionUpdateFrame)):
                     logger.info(f"[EnrollmentRouter] CHOICE state: Routing user transcription '{frame.text[:50]}...' to CONVERSATION pipeline for LLM processing")
                     return False  # Send to conversation pipeline
-                elif isinstance(frame, TextFrame):
-                    logger.debug(f"[EnrollmentRouter] CHOICE state: Routing TextFrame '{frame.text[:50]}...' to INTRO pipeline for TTS")
-                    return True  # Send to intro pipeline for TTS
                 else:
                     logger.debug(f"[EnrollmentRouter] CHOICE state: Routing {frame.__class__.__name__} to INTRO pipeline")
                     return True
