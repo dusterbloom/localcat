@@ -6,7 +6,7 @@ scattered across the codebase.
 """
 
 # Graph edge weight thresholds
-WEIGHT_MIN_ACTIVE: float = 0.25   # Minimum weight considered active
+WEIGHT_MIN_ACTIVE: float = 0.15   # Minimum weight considered active (lowered from 0.25 to improve recall)
 WEIGHT_MIN_WEAK: float = 0.10     # Minimum weight considered weak (not negative)
 MAX_CONF_CAP: float = 0.75        # Cap for initial confidence on new edges
 

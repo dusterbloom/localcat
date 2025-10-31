@@ -360,7 +360,7 @@ class EnhancedFTS:
             """, (text, 'conversation', timestamp, session_id, turn_id, term_freq, doc_length, 1.0))
             
             self.store.sql.commit()
-            logger.debug(f"[EnhancedFTS] Indexed conversation: {text[:30]}...")
+            # logger.debug(f"[EnhancedFTS] Indexed conversation: {text[:30]}...")
             
         except Exception as e:
             logger.error(f"[EnhancedFTS] Failed to index conversation: {e}")

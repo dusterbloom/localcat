@@ -268,9 +268,12 @@ class HotMemory:
         extract_start = time.perf_counter()  # Track timing regardless
 
         if is_question:
-            logger.info(f"[HotMem] Question detected - skipping extraction: '{text[:50]}...'")
-            # Skip extraction for questions (they don't contain facts to learn)
-            entities, triples, neg_count, doc, entity_aliases = [], [], 0, None, {}
+            logger.info(f"[HotMem] Question detected - extracting entities for retrieval: '{text[:50]}...'")
+            # Extract entities for retrieval (enables graph traversal for questions)
+            # But don't store triples (questions don't contain facts to learn)
+            entities, _, _, doc, entity_aliases = self._cached_extract(text, lang)
+            entities = self.extractor.refine_entities(text, entities)
+            triples, neg_count = [], 0
         else:
             # Stage 1: Extract entities and relations (via extractor seam)
             # NOTE: Coreference resolution exists but needs proper spacy-coref integration
@@ -301,11 +304,14 @@ class HotMemory:
         triples = self.extractor.refine(text, triples, doc)
         logger.debug(f"[HotMem] After refinement: {len(triples)} triples")
         # Rebuild entities from refined triples + text context
-        ent_from_triples: Set[str] = set()
-        for s, r, d in triples:
-            ent_from_triples.add(s)
-            ent_from_triples.add(d)
-        entities = self.extractor.refine_entities(text, list(ent_from_triples))
+        # IMPORTANT: For questions, triples=[] but we already have entities from line 274-275
+        # Only rebuild entities if we have triples (not a question)
+        if triples:
+            ent_from_triples: Set[str] = set()
+            for s, r, d in triples:
+                ent_from_triples.add(s)
+                ent_from_triples.add(d)
+            entities = self.extractor.refine_entities(text, list(ent_from_triples))
 
         # Ensure base aliases (e.g., "swimming") are present alongside enriched forms
         # (e.g., "swimming in the sea") so retrieval can fan out on both keys.

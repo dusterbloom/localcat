@@ -442,7 +442,9 @@ class Retrieval:
                 if f"[{src}]" in bullet:
                     source_counts[src] = source_counts.get(src, 0) + 1
         if not final_bullets:
-            logger.info(f"[Retrieval] No memory context found for query")
+            logger.warning(f"[Retrieval] No memory context found for query - returning diagnostic")
+            # Return diagnostic bullet to prevent silent failures that lead to hallucination
+            return ["[diag] No relevant memories found for this query. The system may need more conversation history or the information hasn't been stored yet."]
         else:
             logger.info(f"[Retrieval] Returning {len(final_bullets)} memory bullets from sources: {source_counts}")
         logger.debug(f"[Retrieval] final_bullets={len(final_bullets)} source_counts={source_counts}")
