@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict
 from loguru import logger
 
@@ -17,9 +18,9 @@ class LLMServiceBuilder:
         ).lower() in ("true", "1", "yes")
 
         if use_direct_mlx:
-            from core.llm.direct_mlx_llm import DirectMLXLLMService
-            logger.info("🚀 Using Direct MLX-LM (zero HTTP overhead)")
-            return DirectMLXLLMService(
+            from core.llm.direct_mlx_llm_with_tools import DirectMLXLLMServiceWithTools
+            logger.info("🚀 Using Direct MLX-LM with Tools (zero HTTP overhead + tool calling)")
+            return DirectMLXLLMServiceWithTools(
                 model=llm_config["model"],
                 max_tokens=llm_config.get("max_tokens", 256),
                 temperature=llm_config.get("temperature", 0.7),
@@ -33,7 +34,7 @@ class LLMServiceBuilder:
             stream=use_llm_streaming,
             debug=False,
             extra_body={
-                "think": False,
+                "think": False,  # Performance optimization: thinking mode disabled for faster responses
                 "stream": use_llm_streaming,
                 "options": {
                     "num_predict": 768,

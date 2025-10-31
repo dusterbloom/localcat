@@ -8,6 +8,7 @@ enabling better testability and maintainability.
 
 import asyncio
 import os
+import time
 from typing import Dict, Any, Optional, Union
 from loguru import logger
 
@@ -34,6 +35,7 @@ from pipecat.processors.filters.stt_mute_filter import (
     STTMuteConfig,
     STTMuteStrategy
 )
+from core.filters.tool_call_filter import create_tool_call_filter
 
 # Local imports
 from config import VoiceAgentConfig
@@ -45,26 +47,37 @@ from core.memory.session_tracker import SessionTracker
 _global_service_factory = None
 
 
-def get_global_service_factory(config: VoiceAgentConfig) -> ServiceFactory:
-    """Get or create the global ServiceFactory instance."""
+def get_global_service_factory(config: VoiceAgentConfig, preloaded_models=None) -> ServiceFactory:
+    """Get or create the global ServiceFactory instance.
+
+    Args:
+        config: Voice agent configuration
+        preloaded_models: Optional preloaded models from bot.py startup
+
+    Returns:
+        Global ServiceFactory instance
+    """
     global _global_service_factory
     if _global_service_factory is None:
-        _global_service_factory = ServiceFactory(config)
-        logger.info("🌐 Global ServiceFactory created for shared service caching")
+        _global_service_factory = ServiceFactory(config, preloaded_models)
+        if preloaded_models:
+            logger.info("🌐 Global ServiceFactory created with PRELOADED MODELS")
+        else:
+            logger.info("🌐 Global ServiceFactory created for shared service caching")
     return _global_service_factory
 
 
 class VoiceAgentFactory:
     """Factory for creating voice agent services with dependency injection."""
 
-    def __init__(self, config: VoiceAgentConfig):
+    def __init__(self, config: VoiceAgentConfig, preloaded_models=None):
         self.config = config
         self._services_cache: Dict[str, Any] = {}
         # Use global ServiceFactory to share services across all VoiceAgentFactory instances
         # This prevents multiple LLM service creation and eliminates 40+ second loading delays
-        self._service_factory = get_global_service_factory(config)
+        self._service_factory = get_global_service_factory(config, preloaded_models)
 
-        # CRITICAL: Global lock for MLX operations (STT + TTS share MLX runtime)
+        # CRITICAL: Global lock for MLX operations (STT + LLM share MLX runtime)
         # This prevents heap corruption from concurrent MLX access on macOS Sequoia
         self.mlx_lock = asyncio.Lock()
         logger.info("🔒 MLX global lock initialized (prevents concurrent Metal access)")
@@ -119,9 +132,9 @@ class VoiceAgentFactory:
             self._services_cache['audio_intelligence'] = audio_intel
         return audio_intel
 
-    def create_hotmem_service(self, session_tracker: Optional[SessionTracker] = None):
+    def create_hotmem_service(self, context_aggregator: Any, session_tracker: Optional[SessionTracker] = None):
         """Create HotMemService (Pipecat-compatible memory service)."""
-        hotmem_service = self._service_factory.create_hotmem_service(session_tracker)
+        hotmem_service = self._service_factory.create_hotmem_service(context_aggregator, session_tracker)
         self._services_cache['hotmem_service'] = hotmem_service
         return hotmem_service
 
@@ -206,14 +219,13 @@ class VoiceAgentFactory:
             f"flags: intro={self.config.enable_intro_pipeline}, choice={self.config.enable_ephemeral_choice}, force={self.config.force_intro})"
         )
         
-        # CRITICAL: ParallelPipeline requires separate processor instances for each branch
-        # Reusing the same TTS instance causes initialization errors
-        
-        # Define intro pipeline (bypasses LLM for direct feedback)
-        # Create a separate TTS instance for intro messages
-        # CRITICAL: Disable sentence boundaries so the full intro/instructions play as a single unit.
-        # For Siri, this uses a no-boundaries mode; for Kokoro, aggregate_sentences/use_boundaries are disabled.
-        intro_tts = self.create_tts_service(use_boundaries=False)
+        # CRITICAL FIX: Remove intro TTS to prevent duplicate TTS processing
+        # The intro pipeline should NOT have TTS - intro messages are handled by coordinator
+        # Having separate TTS instances causes duplicate audio processing
+
+        # Define intro pipeline (handles system routing only, no audio output)
+        # INTRO TTS REMOVED: Intro messages are handled by EnrollmentCoordinator, not pipeline
+        intro_tts = None
 
         # Optional: prevent TTS from being interrupted during intro/enrollment
         async def _no_intro_interruptions(frame) -> bool:
@@ -225,10 +237,11 @@ class VoiceAgentFactory:
 
         from pipecat.processors.filters.function_filter import FunctionFilter as _FF
 
-        # Feed intro TextFrames directly to TTS
+        # INTRO TTS REMOVED: Intro pipeline handles routing only, no audio output
+        # Intro messages are handled by EnrollmentCoordinator using direct TTS calls
         intro_processors = [
-            _FF(_no_intro_interruptions),
-            intro_tts
+            _FF(_no_intro_interruptions)
+            # REMOVED: intro_tts - Prevents duplicate TTS processing
         ]
         
         # Define conversation pipeline (full processing)
@@ -281,7 +294,7 @@ class VoiceAgentFactory:
             else:
                 logger.warning("📹 Video enabled but context not available - skipping vision injection")
 
-        # Continue with rest of conversation pipeline (no extra debug filters)
+        # Continue with rest of conversation pipeline
         conversation_processors.extend([
             services['memory'],
             services['context_aggregator'].user(),
@@ -291,7 +304,7 @@ class VoiceAgentFactory:
             services['text_aggregator'],  # Intelligent sentence boundary detection (splits into sentences for TTS)
             services['tts'],  # Main TTS instance (context_aggregator.assistant moved to main pipeline after transport.output)
         ])
-        
+
         # Determine enrollment sample count from AudioIntelligence (single source of truth)
         total_samples = 3
         try:
@@ -376,6 +389,9 @@ class VoiceAgentFactory:
         # Create transcript processor for UI display
         transcript = TranscriptProcessor()
 
+        # Create filter to block tool call TextFrames from reaching assistant transcript
+        assistant_tool_call_filter = create_tool_call_filter()
+
         # Add event handler to log all conversation content with context visibility
         @transcript.event_handler("on_transcript_update")
         async def log_intro_conversation(processor, frame):
@@ -415,17 +431,11 @@ class VoiceAgentFactory:
 
         # Capture assistant responses for conversation memory (moved from conversation branch to ensure
         # TTSTextFrame has transport.output() as source for RTVIObserver's isinstance check)
-        stages.append(services['context_aggregator'].assistant())
-
-        # Add debug filter to see what's going to transcript.assistant()
-        async def _debug_transcript_assistant(frame) -> bool:
-            from pipecat.frames.frames import TTSTextFrame
-            if isinstance(frame, TTSTextFrame):
-                logger.info(f"🔍 [TRANSCRIPT.ASSISTANT INPUT] TTSTextFrame: '{frame.text[:100]}...'")
-            return True
-
-        stages.append(_FF(_debug_transcript_assistant))
+        # COMBINED: Both transcript and context aggregator in sequence to prevent duplicates
+        # Insert filter BEFORE transcript to block tool call TextFrames from UI
+        stages.append(assistant_tool_call_filter)
         stages.append(transcript.assistant())
+        stages.append(services['context_aggregator'].assistant())
         
         pipeline = Pipeline(stages)
         self._services_cache['pipeline'] = pipeline
@@ -436,6 +446,9 @@ class VoiceAgentFactory:
 
     def create_pipeline(self, transport: SmallWebRTCTransport, services: Dict[str, Any]) -> Pipeline:
         """Create the main voice agent pipeline with optional audio intelligence."""
+
+        # Get memory backend for pipeline configuration
+        memory_backend = os.getenv("MEMORY_BACKEND", "hotpath").lower()
 
         # Use intro-aware pipeline if enabled
         if self.config.enable_intro_pipeline and services.get('audio_intelligence'):
@@ -474,6 +487,9 @@ class VoiceAgentFactory:
 
         # Create transcript processor for UI display
         transcript = TranscriptProcessor()
+
+        # Create filter to block tool call TextFrames from reaching assistant transcript
+        assistant_tool_call_filter2 = create_tool_call_filter()
 
         # Add event handler to log all conversation content with context visibility
         @transcript.event_handler("on_transcript_update")
@@ -518,16 +534,34 @@ class VoiceAgentFactory:
                 logger.warning("📹 Video enabled but context not available - skipping vision injection")
 
         # Continue with rest of pipeline
-        stages.extend([
-            services['memory'],
-            services['context_aggregator'].user(),
-            services['llm'],
+        # Different pipeline order for different memory backends
+        if memory_backend == "hotmem":
+            # HotMemService needs to process context frames, so place it after context_aggregator
+            stages.extend([
+                services['context_aggregator'].user(),
+                services['memory'],  # HotMemService processes OpenAILLMContextFrame
+                services['llm'],
             services['text_aggregator'],  # Intelligent sentence boundary detection
-            services['tts'],
-            # Output audio then capture assistant transcripts (per Pipecat docs)
-            transport.output(),
-            transcript.assistant(),
-            services['context_aggregator'].assistant()
+                services['tts'],
+                # Output audio then capture assistant transcripts (per Pipecat docs)
+                transport.output(),
+                assistant_tool_call_filter2,  # Filter tool calls before transcript
+                transcript.assistant(),
+                services['context_aggregator'].assistant()
+            ])
+        else:
+            # Original order for hotpath backend
+            stages.extend([
+                services['memory'],  # HotPathMemoryProcessor processes TranscriptionFrame
+                services['context_aggregator'].user(),
+                services['llm'],
+                services['text_aggregator'],  # Intelligent sentence boundary detection
+                services['tts'],
+                # Output audio then capture assistant transcripts (per Pipecat docs)
+                transport.output(),
+                assistant_tool_call_filter2,  # Filter tool calls before transcript
+                transcript.assistant(),
+                services['context_aggregator'].assistant()
             ])
 
         pipeline = Pipeline(stages)
@@ -607,9 +641,14 @@ class VoiceAgentFactory:
         logger.debug(f"[Factory] MEMORY_BACKEND from env: '{memory_backend}'")
 
         if memory_backend == "hotmem":
+            # DEPRECATED: HotMemService is legacy - use HotPath instead
+            logger.warning("⚠️  DEPRECATED: HotMemService is legacy and will be removed in a future release")
+            logger.warning("⚠️  Please set MEMORY_BACKEND=hotpath for the unified memory solution")
+            logger.warning("✅ HotPath now provides the same tools with superior performance")
             # Use HotMemService (Pipecat-compatible service)
-            memory = self.create_hotmem_service(session_tracker)
-            logger.info("Using HotMemService (Pipecat-compatible memory)")
+            memory = self.create_hotmem_service(context_aggregator, session_tracker)
+            logger.info("Using HotMemService (legacy - migration to HotPath recommended)")
+
         else:
             # Use HotPathMemoryProcessor (current processor)
             memory = self.create_memory_processor(context_aggregator, session_tracker)
@@ -649,6 +688,63 @@ class VoiceAgentFactory:
             'text_aggregator': text_aggregator,  # Token-aware text aggregator for sentence boundaries
         }
 
+        # PHASE 1: Enable memory tools in LLM service (HotMemService or HotPathMemoryProcessor)
+        # This gives the LLM explicit memory search capabilities when automatic retrieval fails
+        if memory_backend in ["hotmem", "hotpath"]:
+            try:
+                if memory_backend == "hotmem":
+                    from core.memory.hotmem_tool_integration import create_hotmem_tool_integration
+                    memory_integration = create_hotmem_tool_integration(memory)
+                    logger.info("✅ HotMemService tools created")
+                else:  # hotpath
+                    from core.memory.hotpath_tool_integration import create_hotpath_tool_integration
+                    memory_integration = create_hotpath_tool_integration(memory)
+                    logger.info("✅ HotPathMemoryProcessor tools created")
+
+                # Register tools with LLM service
+                memory_integration.register_tools_with_llm(llm)
+
+                # Store integration for potential future use
+                services['memory_integration'] = memory_integration
+                logger.info(f"✅ {memory_backend.title()}Service tools registered with LLM service")
+
+                # Set tools in the context aggregator so they're available to the LLM
+                if context_ref and hasattr(context_ref, 'set_tools'):
+                    try:
+                        tools_schema = memory_integration.get_tools_schema()
+                        logger.debug(f"[Factory] Attempting to set {len(tools_schema.standard_tools)} tools on context_ref")
+                        context_ref.set_tools(tools_schema)
+                        logger.info(f"✅ {memory_backend.title()}Service tools set in context aggregator")
+                        logger.debug(f"[Factory] Tools set: {[tool.name for tool in tools_schema.standard_tools]}")
+                    except Exception as e:
+                        logger.warning(f"Failed to set tools in context: {e}")
+                        import traceback
+                        logger.debug(f"[Factory] Tool setting error: {traceback.format_exc()}")
+                elif context_aggregator and hasattr(context_aggregator, 'context') and hasattr(context_aggregator.context, 'set_tools'):
+                    try:
+                        tools_schema = memory_integration.get_tools_schema()
+                        logger.debug(f"[Factory] Attempting to set {len(tools_schema.standard_tools)} tools on aggregator.context")
+                        context_aggregator.context.set_tools(tools_schema)
+                        logger.info(f"✅ {memory_backend.title()}Service tools set in context via aggregator")
+                        logger.debug(f"[Factory] Tools set: {[tool.name for tool in tools_schema.standard_tools]}")
+                    except Exception as e:
+                        logger.warning(f"Failed to set tools via aggregator: {e}")
+                        import traceback
+                        logger.debug(f"[Factory] Tool setting error: {traceback.format_exc()}")
+                else:
+                    logger.warning(f"[Factory] No context with set_tools available. context_ref={context_ref}, context_aggregator={context_aggregator}")
+                    if context_ref:
+                        logger.debug(f"[Factory] context_ref type: {type(context_ref)}, methods: {[m for m in dir(context_ref) if 'tool' in m.lower()]}")
+                    if context_aggregator:
+                        logger.debug(f"[Factory] context_aggregator type: {type(context_aggregator)}")
+                        if hasattr(context_aggregator, 'context'):
+                            logger.debug(f"[Factory] context_aggregator.context type: {type(context_aggregator.context)}")
+
+            except ImportError as e:
+                logger.warning(f"HotMem tool integration not available: {e}")
+            except Exception as e:
+                logger.error(f"Failed to register HotMem tools with LLM: {e}")
+
         # Create pipeline
         pipeline = self.create_pipeline(transport, services)
 
@@ -685,7 +781,7 @@ class VoiceAgentFactory:
         sections = []
 
         # Identity
-        sections.append("You are Locat, a locally-run AI voice assistant.")
+        sections.append("You are Locat, a locally-run AI voice assistant. /no_think")
 
         # Memory capabilities (if enabled AND not skipped for anonymous mode)
         if self.config.memory_enabled and not skip_memory:
@@ -708,7 +804,8 @@ class VoiceAgentFactory:
         lines = ["MEMORY SYSTEM:"]
         lines.append("- You have access to conversation history and learned facts")
         lines.append(f"- Memory context appears with header: \"{self.config.memory_inject_header}\"")
-        lines.append("- Use memory context when relevant to provide personalized responses")
+        lines.append("- Memory facts are verified and should be stated confidently without disclaimers")
+        lines.append("- Answer directly using facts from memory when asked about personal information")
 
         # List active sources
         sources = self.config.memory_sources.split(',')
