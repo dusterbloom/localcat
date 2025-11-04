@@ -30,15 +30,15 @@ async def filter_tool_call_text_frames(frame: Frame) -> bool:
         True to allow frame through, False to block it
     """
     # Log every frame that comes through for debugging
-    logger.trace(f"[ToolCallFilter] Processing frame type: {type(frame).__name__}")
+    logger.debug(f"[ToolCallFilter] Processing frame type: {type(frame).__name__}")
 
     # Only filter TextFrame and LLMTextFrame types
     if not isinstance(frame, (TextFrame, LLMTextFrame)):
-        logger.trace(f"[ToolCallFilter] Allowing non-text frame: {type(frame).__name__}")
+        logger.debug(f"[ToolCallFilter] Allowing non-text frame: {type(frame).__name__}")
         return True  # Allow all non-text frames through
 
     text = frame.text
-    logger.trace(f"[ToolCallFilter] Checking text: '{text[:100]}...' (len={len(text)})")
+    logger.debug(f"[ToolCallFilter] Checking text: '{text[:100]}...' (len={len(text)})")
 
     # Tool call patterns to detect and block
     tool_call_patterns = [
@@ -62,17 +62,17 @@ async def filter_tool_call_text_frames(frame: Frame) -> bool:
     if stripped.startswith('{') and stripped.endswith('}'):
         # Check if it looks like a JSON object with quotes
         if '"' in stripped:
-            logger.trace(f"[ToolCallFilter] ✅ BLOCKING JSON object TextFrame: '{text[:50]}'")
+            logger.debug(f"[ToolCallFilter] ✅ BLOCKING JSON object TextFrame: '{text[:50]}'")
             return False
 
     # Check if text contains any tool call pattern
     for i, pattern in enumerate(tool_call_patterns):
         if re.search(pattern, text, re.IGNORECASE | re.DOTALL):
-            logger.trace(f"[ToolCallFilter] ✅ BLOCKING tool call TextFrame (pattern {i}): '{text[:50]}'")
+            logger.debug(f"[ToolCallFilter] ✅ BLOCKING tool call TextFrame (pattern {i}): '{text[:50]}'")
             return False  # Block this frame
 
     # Allow frame through
-    logger.trace(f"[ToolCallFilter] ✓ Allowing text through: '{text[:50]}'")
+    logger.debug(f"[ToolCallFilter] ✓ Allowing text through: '{text[:50]}'")
     return True
 
 
