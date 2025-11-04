@@ -194,6 +194,13 @@ from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.frames.frames import TextFrame
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection, IceServer
+from pipecat.transports.network.fastapi_websocket import (
+    FastAPIWebsocketTransport,
+    FastAPIWebsocketParams
+)
+from pipecat.serializers.protobuf import ProtobufFrameSerializer
+from pipecat.audio.vad.silero import SileroVADAnalyzer
+from fastapi import WebSocket
 from core.audio.enrollment_state import EnrollmentState
 
 
@@ -287,7 +294,12 @@ ice_servers = []
 # LocalSmartTurnAnalyzerV3 includes model weights bundled with Pipecat
 
 
-async def run_bot(webrtc_connection: SmallWebRTCConnection):
+async def run_bot(transport_or_connection):
+    """Run bot with either WebSocket transport or WebRTC connection.
+
+    Args:
+        transport_or_connection: Either FastAPIWebsocketTransport or SmallWebRTCConnection
+    """
     # Load centralized configuration
     config = VoiceAgentConfig.from_env()
     logger.info(f"Configuration loaded:\n{config.summary()}")
@@ -300,7 +312,7 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection):
     logger.debug(f"Generated system prompt:\n{system_instruction}")
 
     # Create all services using factory
-    services = factory.create_voice_agent(webrtc_connection, system_instruction)
+    services = factory.create_voice_agent(transport_or_connection, system_instruction)
 
     # Extract services for event handlers
     transport = services['transport']
@@ -366,10 +378,43 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection):
             pass
         raise
     finally:
-        # Ensure transport is disconnected on exit
+        # Ensure transport/connection is disconnected on exit
         try:
-            await webrtc_connection.disconnect()
+            # WebRTC connection has disconnect()
+            if hasattr(transport_or_connection, 'disconnect'):
+                await transport_or_connection.disconnect()
         except Exception:
+            pass
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for voice agent connection."""
+    await websocket.accept()
+    logger.info("🔌 WebSocket connection accepted")
+
+    try:
+        # Create WebSocket transport with protobuf serialization and VAD
+        transport = FastAPIWebsocketTransport(
+            websocket=websocket,
+            params=FastAPIWebsocketParams(
+                audio_out_enabled=True,
+                add_wav_header=False,  # Not needed for WebSocket
+                vad_enabled=True,
+                vad_analyzer=SileroVADAnalyzer(),  # Enable voice activity detection for STT
+                vad_audio_passthrough=True,
+                serializer=ProtobufFrameSerializer()
+            )
+        )
+
+        # Run bot with WebSocket transport
+        await run_bot(transport)
+
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        try:
+            await websocket.close()
+        except:
             pass
 
 

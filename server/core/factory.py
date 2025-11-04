@@ -604,14 +604,25 @@ class VoiceAgentFactory:
         """Clear the services cache."""
         self._services_cache.clear()
 
-    def create_voice_agent(self, webrtc_connection: SmallWebRTCConnection, system_instruction: str) -> Dict[str, Any]:
+    def create_voice_agent(self, transport_or_connection, system_instruction: str) -> Dict[str, Any]:
         """Create complete voice agent with all services configured.
 
         This is the main entry point that assembles all components.
         Returns a dictionary with all created services and the pipeline task.
+
+        Args:
+            transport_or_connection: Either a pre-configured transport (FastAPIWebsocketTransport)
+                                   or a WebRTC connection (SmallWebRTCConnection)
         """
-        # Create transport
-        transport = self.create_transport(webrtc_connection)
+        # Check if we received a transport or a connection
+        from pipecat.transports.network.fastapi_websocket import FastAPIWebsocketTransport
+
+        if isinstance(transport_or_connection, FastAPIWebsocketTransport):
+            # Already a configured transport - use it directly
+            transport = transport_or_connection
+        else:
+            # It's a WebRTC connection - wrap it in SmallWebRTC transport
+            transport = self.create_transport(transport_or_connection)
 
         # Create STT service
         stt = self.create_stt_service()

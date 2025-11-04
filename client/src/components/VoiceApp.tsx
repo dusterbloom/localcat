@@ -11,7 +11,7 @@ import {
   PipecatClientAudio
 } from '@pipecat-ai/client-react';
 import { PipecatClient } from '@pipecat-ai/client-js';
-import { SmallWebRTCTransport } from '@pipecat-ai/small-webrtc-transport';
+import { WebSocketTransport } from '@pipecat-ai/websocket-transport';
 import { VoiceReactivePlasma } from './VoiceReactivePlasma';
 import { StreamingText } from './StreamingText';
 
@@ -132,7 +132,7 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
 
     // Initialize PipecatClient
     const initClient = async () => {
-      const transport = new SmallWebRTCTransport();
+      const transport = new WebSocketTransport();
       const pcClient = new PipecatClient({
         enableCam: false, // Start with camera disabled
         enableMic: true,  // Mic enabled by default
@@ -487,8 +487,9 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
       console.log("📞 Initiating connection to server...");
 
       const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL || "http://127.0.0.1:7860";
+      const wsUrl = serverUrl.replace(/^http/, 'ws'); // Convert http:// to ws://
       await client.connect({
-        connectionUrl: `${serverUrl}/api/offer`,
+        wsUrl: `${wsUrl}/ws`,
       });
 
       console.log("✅ Connection request completed");
@@ -554,6 +555,7 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
   if (showDebugUI && client) {
     // Debug/dev mode - use shared client to preserve connection
     const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL || "http://127.0.0.1:7860";
+    const wsUrl = serverUrl.replace(/^http/, 'ws');
     return (
       <PipecatClientProvider client={client}>
         <FullScreenContainer>
@@ -567,9 +569,9 @@ export function VoiceApp({ videoEnabled, useClientTTS = false }: VoiceAppProps) 
             </button>
 
             <ConsoleTemplate
-              transportType="smallwebrtc"
+              transportType="websocket"
               connectParams={{
-                connectionUrl: `${serverUrl}/api/offer`,
+                wsUrl: `${wsUrl}/ws`,
               }}
               noUserVideo={!videoEnabled}
             />
