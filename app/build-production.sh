@@ -34,13 +34,13 @@ echo "  Build profile: $BUILD_PROFILE"
 
 # Step 1: Build the Tauri .app bundle
 # Note: Client build happens automatically via beforeBuildCommand in tauri.conf.json
-echo "📦 Step 1/5: Building Tauri .app bundle..."
+echo "📦 Step 1/8: Building Tauri .app bundle..."
 echo "  Client will be built automatically by Tauri's beforeBuildCommand"
 export NEXT_PUBLIC_SERVER_URL=${NEXT_PUBLIC_SERVER_URL:-"http://127.0.0.1:7860"}
 echo "  Using NEXT_PUBLIC_SERVER_URL=$NEXT_PUBLIC_SERVER_URL"
 
 # Step 2: Run Tauri build
-echo "📦 Step 2/6: Building Tauri .app..."
+echo "📦 Step 2/8: Building Tauri .app..."
 
 # Clean Python bytecode from source to avoid bundling stale caches
 echo "  Cleaning Python bytecode from source (../server)..."
@@ -187,7 +187,7 @@ if [ $RESTORE_VENV -eq 1 ]; then
 fi
 
 # Step 3: Copy server files to the .app bundle
-echo "📂 Step 3/6: Copying server files and sidecars to bundle..."
+echo "📂 Step 3/8: Copying server files and sidecars to bundle..."
 
 # Ensure Tauri server dir exists (Tauri places ../../server under Resources/_up_/_up_/server)
 mkdir -p "$TAURI_SERVER_DIR"
@@ -278,7 +278,8 @@ if [ "$LIGHTWEIGHT" != "1" ]; then
         if python3 "$(dirname "$0")/patch-espeak-dylib.py" "$ESPEAK_DYLIB"; then
           echo "  ✅ eSpeak dylib patched successfully"
           echo "  🔐 Signing patched eSpeak dylib for production bundle..."
-          if codesign --force --deep --sign - "$ESPEAK_DYLIB" 2>/dev/null; then
+          SIGNING_IDENTITY="Developer ID Application: Giuseppe Littera (LB4S6GSBK9)"
+          if codesign --force --deep --sign "$SIGNING_IDENTITY" --timestamp "$ESPEAK_DYLIB" 2>/dev/null; then
             echo "  ✅ eSpeak dylib signed successfully"
           else
             echo "  ⚠️  Failed to sign eSpeak dylib (continuing, may cause runtime issues)"
@@ -328,13 +329,18 @@ PY
         fi
 
         # All platforms: remove unused heavy ML frameworks
-        echo "     Removing unused ML frameworks..."
-        for pkg in torch torchvision torchaudio tensorflow jax flax opt_einsum opencv_python cv2 speechbrain; do
+        # CRITICAL: Preserve memory-critical and speaker recognition packages
+        # Memory system requires: lmdb, msgpack, rapidfuzz, tiktoken, spacy, numpy
+        # Speaker recognition (SPEAKER_RECOGNITION=enroll in .env) requires: torch, torchaudio, speechbrain
+        echo "     Removing unused ML frameworks (preserving memory + speaker recognition)..."
+        for pkg in tensorflow jax flax opt_einsum opencv_python cv2; do
           if [ -d "$VENV_SITE/$pkg" ] || ls "$VENV_SITE" 2>/dev/null | grep -q "^$pkg[-_]"; then
             echo "       - Removing $pkg"
             rm -rf "$VENV_SITE/$pkg" "$VENV_SITE/${pkg}-"* 2>/dev/null || true
           fi
         done
+        echo "     ✅ Preserved torch, torchaudio, speechbrain (speaker recognition)"
+        echo "     ✅ Preserved lmdb, msgpack, rapidfuzz, tiktoken, spacy (memory system)"
 
         echo "  ✅ venv slimming complete for $BUILD_TARGET"
       fi
@@ -381,19 +387,8 @@ echo "  Copying required models (profile-aware bundling)..."
   echo "    Preparing HuggingFace cache root..."
   mkdir -p "$TAURI_SERVER_DIR/models/hf_cache/hub"
 
-  if [ "$BUILD_PROFILE" = "full" ]; then
-    # Copy Parakeet STT model (~2.3GB)
-    if [ -d "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3" ]; then
-      if rsync -aL --exclude='.cache' "../server/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/" \
-        "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--parakeet-tdt-0.6b-v3/"; then
-        echo "      ✅ Parakeet STT (~2.3GB)"
-      else
-        echo "      ❌ Failed to copy Parakeet STT model"; exit 1
-      fi
-    fi
-  else
-    echo "    Skipping Parakeet STT (light profile)"
-  fi
+  # Skip Parakeet STT for all profiles (saves 2.3GB, Whisper MLX is sufficient)
+  echo "    Skipping Parakeet STT (using Whisper MLX instead, saves 2.3GB)"
 
   # Copy Smart-turn model (~362MB - required for all platforms)
   if [ -d "../server/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2" ]; then
@@ -512,29 +507,74 @@ echo "  Copying required models (profile-aware bundling)..."
     fi
   fi
 
-  # Copy LLM model (LFM2-1.2B-4bit for fast local inference)
+  # Copy LLM model (dynamically based on .env configuration)
   echo "    Copying LLM model for Direct MLX-LM..."
-  LLM_MODEL_DIR="../server/models/hf_cache/hub/models--mlx-community--LFM2-1.2B-4bit"
-  ALT_LLM_DIR="$HOME/AI-Models/shared/huggingface/hub/models--mlx-community--LFM2-1.2B-4bit"
 
+  # Read LLM_MODEL from .env
+  ENV_LLM_MODEL=$(grep "^LLM_MODEL=" "../server/.env" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d ' "' || echo "mlx-community/LFM2-1.2B-4bit")
+
+  # Convert model ID to HuggingFace cache format (e.g., mlx-community/Qwen3-1.7B-4bit-DWQ-053125 → models--mlx-community--Qwen3-1.7B-4bit-DWQ-053125)
+  LLM_CACHE_NAME=$(echo "$ENV_LLM_MODEL" | sed 's|/|--|g' | sed 's|^|models--|')
+  echo "      Looking for: $ENV_LLM_MODEL → $LLM_CACHE_NAME"
+
+  # Search in multiple locations
   FOUND_LLM=false
-  if [ -d "$LLM_MODEL_DIR" ]; then
-    if rsync -aL --exclude='.cache' "$LLM_MODEL_DIR/" \
-      "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--LFM2-1.2B-4bit/"; then
-      echo "      ✅ LFM2-1.2B-4bit (~1.2GB)"
-      FOUND_LLM=true
+  LLM_SEARCH_PATHS=(
+    "../server/models/hf_cache/hub/$LLM_CACHE_NAME"
+    "$HOME/AI-Models/shared/huggingface/hub/$LLM_CACHE_NAME"
+    "$HOME/.cache/huggingface/hub/$LLM_CACHE_NAME"
+    "$HOME/.cache/lm-studio/models/mlx-community/$(echo "$ENV_LLM_MODEL" | sed 's|mlx-community/||')"
+  )
+
+  for LLM_SOURCE_DIR in "${LLM_SEARCH_PATHS[@]}"; do
+    if [ -d "$LLM_SOURCE_DIR" ]; then
+      echo "      Found LLM at: $LLM_SOURCE_DIR"
+
+      # Check if source has proper HF structure (snapshots/) or flat structure
+      if [ -d "$LLM_SOURCE_DIR/snapshots" ]; then
+        # Proper HF cache structure - copy as-is
+        echo "      Copying HF cache structure (with snapshots/)..."
+        if rsync -aL --exclude='.cache' --exclude='*.lock' "$LLM_SOURCE_DIR/" \
+          "$TAURI_SERVER_DIR/models/hf_cache/hub/$LLM_CACHE_NAME/"; then
+          LLM_SIZE=$(du -sh "$TAURI_SERVER_DIR/models/hf_cache/hub/$LLM_CACHE_NAME" | cut -f1)
+          echo "      ✅ $(basename "$ENV_LLM_MODEL") ($LLM_SIZE)"
+          FOUND_LLM=true
+          break
+        fi
+      else
+        # Flat structure - need to convert to HF format
+        echo "      Converting flat structure to HF cache format..."
+
+        # Create fake snapshot hash (use "main" as revision)
+        SNAPSHOT_HASH="main"
+        DEST_DIR="$TAURI_SERVER_DIR/models/hf_cache/hub/$LLM_CACHE_NAME"
+
+        # Create HF directory structure
+        mkdir -p "$DEST_DIR/snapshots/$SNAPSHOT_HASH"
+        mkdir -p "$DEST_DIR/refs"
+        mkdir -p "$DEST_DIR/blobs"
+
+        # Copy model files to snapshot directory
+        if rsync -aL --exclude='.cache' --exclude='*.lock' --exclude='.git' \
+          "$LLM_SOURCE_DIR/" "$DEST_DIR/snapshots/$SNAPSHOT_HASH/"; then
+
+          # Create refs structure (HF expects refs/main AND refs/HEAD for default resolution)
+          echo "$SNAPSHOT_HASH" > "$DEST_DIR/refs/main"
+          echo "ref: refs/main" > "$DEST_DIR/refs/HEAD"  # Point HEAD to main branch
+
+          LLM_SIZE=$(du -sh "$DEST_DIR" | cut -f1)
+          echo "      ✅ $(basename "$ENV_LLM_MODEL") ($LLM_SIZE) [converted to HF format]"
+          FOUND_LLM=true
+          break
+        fi
+      fi
     fi
-  elif [ -d "$ALT_LLM_DIR" ]; then
-    if rsync -aL --exclude='.cache' "$ALT_LLM_DIR/" \
-      "$TAURI_SERVER_DIR/models/hf_cache/hub/models--mlx-community--LFM2-1.2B-4bit/"; then
-      echo "      ✅ LFM2-1.2B-4bit from AI-Models (~1.2GB)"
-      FOUND_LLM=true
-    fi
-  fi
+  done
 
   if [ "$FOUND_LLM" = false ]; then
-    echo "      ⚠️  LFM2-1.2B-4bit not found; app will fail without LLM"
-    echo "         Run: cd server && uv run python -c 'from mlx_lm import load; load(\"mlx-community/LFM2-1.2B-4bit\")'"
+    echo "      ⚠️  $ENV_LLM_MODEL not found in any cache location!"
+    echo "         Searched: server/models, AI-Models, ~/.cache, ~/.cache/lm-studio"
+    echo "         Run: cd server && uv run python -c 'from mlx_lm import load; load(\"$ENV_LLM_MODEL\")'"
   fi
 
   # Platform-specific TTS models
@@ -582,6 +622,135 @@ echo "  Copying required models (profile-aware bundling)..."
 # No need to copy it post-build (signed .app is read-only anyway)
 echo "  ✅ .env bundled via tauri.conf.json (preserving engine selections from .env)"
 
+# Step 3.7: Verify memory system dependencies
+echo "📝 Step 3.7/6: Verifying memory system dependencies..."
+
+if [ -x "$TAURI_SERVER_DIR/.venv/bin/python3" ]; then
+  # Check critical memory packages
+  VENV_PYTHON="$TAURI_SERVER_DIR/.venv/bin/python3"
+
+  echo "  Checking memory-critical packages..."
+  MEMORY_PKGS="lmdb msgpack rapidfuzz tiktoken spacy"
+  MISSING_PKGS=""
+
+  for pkg in $MEMORY_PKGS; do
+    if $VENV_PYTHON -c "import $pkg" 2>/dev/null; then
+      echo "    ✅ $pkg"
+    else
+      echo "    ❌ $pkg MISSING"
+      MISSING_PKGS="$MISSING_PKGS $pkg"
+    fi
+  done
+
+  # Check spaCy model
+  if $VENV_PYTHON -c "import spacy; spacy.load('en_core_web_sm')" 2>/dev/null; then
+    echo "    ✅ en_core_web_sm (spaCy model)"
+  else
+    echo "    ⚠️  en_core_web_sm (spaCy model) missing - memory NLP will use basic mode"
+  fi
+
+  if [ -n "$MISSING_PKGS" ]; then
+    echo "  ❌ Critical memory packages missing:$MISSING_PKGS"
+    echo "     Memory system will not function! Install with: pip install$MISSING_PKGS"
+    exit 1
+  fi
+
+  # Verify LMDB native extension
+  LMDB_SO=$(find "$TAURI_SERVER_DIR/.venv" -name "*lmdb*.so" -o -name "*lmdb*.dylib" 2>/dev/null | head -1)
+  if [ -n "$LMDB_SO" ]; then
+    echo "    ✅ LMDB native extension: $(basename "$LMDB_SO")"
+  else
+    echo "    ⚠️  LMDB native extension not found - may cause performance issues"
+  fi
+
+  # Check for hardcoded paths in memory modules
+  echo "  Checking for hardcoded paths in memory modules..."
+  if grep -r "/Users/[^/]*/" "$TAURI_SERVER_DIR/core/memory/" 2>/dev/null | grep -v ".pyc" | grep -v "__pycache__" | head -1 >/dev/null; then
+    echo "    ⚠️  Found hardcoded user paths in memory modules"
+    echo "       These should use environment variables or platformdirs"
+  else
+    echo "    ✅ No hardcoded user paths detected"
+  fi
+
+  echo "  ✅ Memory system verification complete"
+else
+  echo "  ⚠️  Cannot verify memory dependencies (venv python not found)"
+fi
+
+# Step 3.8: Verify .env-configured models are bundled
+echo "📦 Step 3.8/6: Verifying .env-configured models..."
+
+# Parse .env to get configured models
+ENV_FILE="$TAURI_SERVER_DIR/.env"
+if [ -f "$ENV_FILE" ]; then
+  echo "  Reading model configuration from .env..."
+
+  # Extract configured models (grep for uncommented lines, strip comments)
+  STT_MODEL=$(grep "^STT_MODEL=" "$ENV_FILE" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d ' "' || echo "")
+  LLM_MODEL=$(grep "^LLM_MODEL=" "$ENV_FILE" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d ' "' || echo "")
+  TTS_ENGINE=$(grep "^TTS_ENGINE=" "$ENV_FILE" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d ' "' || echo "")
+  SPEAKER_RECOG=$(grep "^SPEAKER_RECOGNITION=" "$ENV_FILE" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d ' "' || echo "off")
+
+  echo "    Configured models:"
+  echo "      STT: $STT_MODEL"
+  echo "      LLM: $LLM_MODEL"
+  echo "      TTS: $TTS_ENGINE"
+  echo "      Speaker Recognition: $SPEAKER_RECOG"
+
+  # Verify STT model
+  if [ -n "$STT_MODEL" ]; then
+    # Convert model ID to HF cache format (e.g., mlx-community/whisper-small.en-mlx-q4 → models--mlx-community--whisper-small.en-mlx-q4)
+    STT_CACHE_NAME=$(echo "$STT_MODEL" | sed 's|/|--|g' | sed 's|^|models--|')
+    if [ -d "$TAURI_SERVER_DIR/models/hf_cache/hub/$STT_CACHE_NAME" ]; then
+      echo "      ✅ STT model bundled: $STT_CACHE_NAME"
+    else
+      echo "      ⚠️  STT model NOT found: $STT_CACHE_NAME"
+      echo "         App will need network on first run to download model"
+    fi
+  fi
+
+  # Verify LLM model
+  if [ -n "$LLM_MODEL" ]; then
+    LLM_CACHE_NAME=$(echo "$LLM_MODEL" | sed 's|/|--|g' | sed 's|^|models--|')
+    if [ -d "$TAURI_SERVER_DIR/models/hf_cache/hub/$LLM_CACHE_NAME" ]; then
+      echo "      ✅ LLM model bundled: $LLM_CACHE_NAME"
+    else
+      echo "      ⚠️  LLM model NOT found: $LLM_CACHE_NAME"
+      echo "         App will fail without LLM! Ensure model is downloaded:"
+      echo "         cd server && uv run python -c 'from mlx_lm import load; load(\"$LLM_MODEL\")'"
+    fi
+  fi
+
+  # Verify TTS engine files
+  if [ "$TTS_ENGINE" = "kokoro_professional" ] || [ "$TTS_ENGINE" = "kokoro_mlx" ]; then
+    if [ -f "$TAURI_SERVER_DIR/models/kokoro/kokoro-v1.0.onnx" ]; then
+      echo "      ✅ Kokoro ONNX model bundled"
+    else
+      echo "      ⚠️  Kokoro ONNX model missing (required for $TTS_ENGINE)"
+    fi
+  fi
+
+  # Verify Smart-turn model (always required)
+  if [ -d "$TAURI_SERVER_DIR/models/hf_cache/hub/models--pipecat-ai--smart-turn-v2" ]; then
+    echo "      ✅ Smart-turn model bundled"
+  else
+    echo "      ⚠️  Smart-turn model missing (required for conversation management)"
+  fi
+
+  # Verify speaker recognition model (if enabled)
+  if [ "$SPEAKER_RECOG" != "off" ]; then
+    if [ -d "$TAURI_SERVER_DIR/models/hf_cache/hub/models--speechbrain--spkrec-ecapa-voxceleb" ]; then
+      echo "      ✅ Speaker recognition model bundled"
+    else
+      echo "      ⚠️  Speaker recognition model missing (required for SPEAKER_RECOGNITION=$SPEAKER_RECOG)"
+    fi
+  fi
+
+  echo "  ✅ Model configuration verification complete"
+else
+  echo "  ⚠️  .env not found in bundle, skipping model verification"
+fi
+
 # Using Pipecat LocalSmartTurnAnalyzerV3 (bundled) — no external SmartTurn ONNX bundled
 
 # Quick verification summary
@@ -608,7 +777,7 @@ else
 fi
 
 # Step 3.9: Sign all dylibs and .so files in bundle (CRITICAL for macOS security)
-echo "🔐 Step 3.9/6: Signing all dylib and .so files in bundle..."
+echo "🔐 Step 3.9/8: Signing all dylib and .so files in bundle..."
 APP_PATH="$TARGET_DIR/bundle/macos/LocalCat.app"
 SIGNING_IDENTITY="Developer ID Application: Giuseppe Littera (LB4S6GSBK9)"
 
@@ -642,7 +811,7 @@ else
 fi
 
 # Step 4: Verify the bundle
-echo "✅ Step 4/5: Verifying bundle..."
+echo "✅ Step 4/8: Verifying bundle..."
 if [ -x "$TAURI_SERVER_DIR/.venv/bin/python3" ]; then
     echo "  ✅ Python interpreter found in server venv"
 else
@@ -656,7 +825,7 @@ else
 fi
 
 # Step 5: Create DMG from the complete .app
-echo "📦 Step 5/6: Creating DMG installer..."
+echo "📦 Step 5/8: Creating DMG installer..."
 DMG_DIR="$TARGET_DIR/bundle/dmg"
 DMG_PATH="$DMG_DIR/LocalCat_1.0.0_aarch64.dmg"
 mkdir -p "$DMG_DIR"
@@ -668,35 +837,70 @@ rm -f "$DMG_PATH"
 TMP_DMG="/tmp/LocalCat_temp_$$.dmg"  # Use PID to avoid conflicts
 rm -f "$TMP_DMG"
 
-# Create DMG with the complete .app (calculate size with 15% headroom for filesystem overhead)
+# Create DMG with the complete .app
 echo "  Creating disk image..."
 
-# Calculate required DMG size with overhead
+# Calculate app size for logging
 APP_SIZE_KB=$(du -sk "$TARGET_DIR/bundle/macos/LocalCat.app" | cut -f1)
-DMG_SIZE_KB=$((APP_SIZE_KB * 150 / 100))  # Add 50% overhead
-DMG_SIZE_MB=$((DMG_SIZE_KB / 1024))
-echo "    App size: $((APP_SIZE_KB / 1024))MB, DMG size with overhead: ${DMG_SIZE_MB}MB"
+echo "    App size: $((APP_SIZE_KB / 1024))MB"
 
-# Try creating DMG with explicit size (prevents "no space left" errors)
-if hdiutil create -volname "LocalCat_Install" \
+# Create DMG using two-step process to avoid space issues:
+# Step 1: Create uncompressed read-write DMG with generous overhead
+# Step 2: Convert to compressed UDZO format
+echo "    Creating DMG (step 1/2: uncompressed image with 120% overhead)..."
+APP_SIZE_KB=$(du -sk "$TARGET_DIR/bundle/macos/LocalCat.app" | cut -f1)
+DMG_SIZE_KB=$((APP_SIZE_KB * 220 / 100))  # 120% overhead for filesystem + metadata
+DMG_SIZE_MB=$((DMG_SIZE_KB / 1024))
+
+# Temporarily disable 'set -e' so DMG failure doesn't kill the script
+set +e
+
+# Step 1: Create uncompressed read-write image
+TMP_RW_DMG="/tmp/LocalCat_rw_$$.dmg"
+DMG_ERROR=$(hdiutil create -volname "LocalCat_Install" \
     -srcfolder "$TARGET_DIR/bundle/macos/LocalCat.app" \
     -size "${DMG_SIZE_MB}m" \
-    -ov -format UDZO -imagekey zlib-level=9 "$TMP_DMG" 2>/dev/null; then
+    -ov -format UDRW "$TMP_RW_DMG" 2>&1)
+DMG_EXIT_CODE=$?
+
+if [ $DMG_EXIT_CODE -eq 0 ]; then
+  echo "    Creating DMG (step 2/2: compressing image - this may take 2-3 minutes)..."
+  # Step 2: Convert to compressed format
+  DMG_ERROR=$(hdiutil convert "$TMP_RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$TMP_DMG" 2>&1)
+  DMG_EXIT_CODE=$?
+  rm -f "$TMP_RW_DMG"  # Clean up temp read-write image
+fi
+
+set -e  # Re-enable exit on error
+
+if [ $DMG_EXIT_CODE -eq 0 ]; then
   echo "  ✅ Created compressed DMG"
   mv -f "$TMP_DMG" "$DMG_PATH"
 else
-  echo "  ⚠️  DMG creation failed (permission issue)"
-  echo "  This is usually due to missing Full Disk Access for Terminal/iTerm."
+  echo "  ❌ DMG creation failed with error:"
+  echo "     $DMG_ERROR"
   echo ""
-  echo "  To fix:"
-  echo "    1. Open System Settings → Privacy & Security → Full Disk Access"
-  echo "    2. Add Terminal.app or iTerm.app"
-  echo "    3. Restart your terminal and run this script again"
+
+  # Check for specific error types
+  if echo "$DMG_ERROR" | grep -q "Permission denied\|Operation not permitted"; then
+    echo "  💡 This appears to be a permission issue."
+    echo "     Solution: Grant Full Disk Access to your terminal:"
+    echo "     1. System Settings → Privacy & Security → Full Disk Access"
+    echo "     2. Add Terminal.app or iTerm.app"
+    echo "     3. Restart terminal and re-run this script"
+  elif echo "$DMG_ERROR" | grep -q "Resource busy\|already exists"; then
+    echo "  💡 DMG file or mount point is busy."
+    echo "     Solution: Run 'hdiutil detach /Volumes/LocalCat_Install' and try again"
+  elif echo "$DMG_ERROR" | grep -q "No space left"; then
+    echo "  💡 Insufficient disk space."
+    echo "     Current DMG size: ${DMG_SIZE_MB}MB (app: $((APP_SIZE_KB / 1024))MB + 50% overhead)"
+  fi
+
   echo ""
-  echo "  Or create DMG manually after build:"
+  echo "  Alternatively, create DMG manually:"
   echo "    hdiutil create -volname LocalCat_Install -srcfolder $TARGET_DIR/bundle/macos/LocalCat.app -ov -format UDZO LocalCat.dmg"
   echo ""
-  echo "  ℹ️  The .app bundle is ready and can be distributed without DMG"
+  echo "  ⚠️  Build continuing without DMG - .app bundle is functional"
   DMG_PATH=""  # Clear DMG path so we don't show it in summary
 fi
 
