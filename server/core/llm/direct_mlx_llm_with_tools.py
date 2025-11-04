@@ -76,9 +76,10 @@ class DirectMLXLLMServiceWithTools(DirectMLXLLMService):
         )
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, preloaded_model=None, preloaded_tokenizer=None, **kwargs):
         """Initialize enhanced Direct MLX-LM service with tool support."""
-        super().__init__(*args, **kwargs)
+        # Forward preloaded model/tokenizer to parent DirectMLXLLMService
+        super().__init__(*args, preloaded_model=preloaded_model, preloaded_tokenizer=preloaded_tokenizer, **kwargs)
 
         # Check if model supports tool calling
         self._supports_tools = self._check_tool_support()

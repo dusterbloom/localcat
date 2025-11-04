@@ -91,6 +91,8 @@ class DirectMLXLLMService(LLMService):
         model: str = "mlx-community/Qwen3-VL-4B-Instruct-4bit",
         max_tokens: int = 256,
         temperature: float = 0.7,
+        preloaded_model: Any = None,
+        preloaded_tokenizer: Any = None,
         **kwargs
     ):
         """
@@ -100,6 +102,8 @@ class DirectMLXLLMService(LLMService):
             model: HuggingFace model ID (must be MLX-compatible)
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
+            preloaded_model: Optional preloaded MLX model (for instant startup)
+            preloaded_tokenizer: Optional preloaded tokenizer (for instant startup)
             **kwargs: Additional Pipecat LLMService arguments
         """
         super().__init__(**kwargs)
@@ -119,17 +123,46 @@ class DirectMLXLLMService(LLMService):
         self._model_name = model
         self.set_model_name(model)  # Register with metrics system
 
-        # Load MLX model and tokenizer
-        logger.info(f"🔥 Loading Direct MLX-LM: {model}")
-        start_time = time.time()
+        # Use preloaded model if available, otherwise load from disk
+        if preloaded_model is not None and preloaded_tokenizer is not None:
+            logger.info(f"🚀 Using PRELOADED MLX-LM: {model}")
+            self._model = preloaded_model
+            self._tokenizer = preloaded_tokenizer
+            logger.info(f"✅ Direct MLX-LM ready (INSTANT - preloaded)")
+        else:
+            # Fallback: Load from disk with snapshot path conversion
+            logger.info(f"🔥 Loading Direct MLX-LM from disk: {model}")
+            start_time = time.time()
 
-        try:
-            self._model, self._tokenizer = mlx_lm.load(model)
-            load_time = (time.time() - start_time) * 1000
-            logger.info(f"✅ Direct MLX-LM loaded in {load_time:.1f}ms")
-        except Exception as e:
-            logger.error(f"❌ Failed to load Direct MLX-LM model '{model}': {e}")
-            raise
+            try:
+                # Convert model ID to snapshot path to avoid HuggingFace API calls
+                # This mirrors the logic in bot.py preload() function
+                hf_home = os.getenv("HF_HOME") or os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
+                model_cache_name = model.replace("/", "--")
+                cache_dir = os.path.join(hf_home, "hub", f"models--{model_cache_name}")
+
+                # Try to find snapshot directory (either hash or "main")
+                snapshot_path = None
+                if os.path.exists(cache_dir):
+                    snapshots_dir = os.path.join(cache_dir, "snapshots")
+                    if os.path.exists(snapshots_dir):
+                        # Get first snapshot directory (usually there's only one, or use "main")
+                        snapshots = [d for d in os.listdir(snapshots_dir) if os.path.isdir(os.path.join(snapshots_dir, d))]
+                        if snapshots:
+                            # Prefer "main" if it exists, otherwise use first snapshot
+                            snapshot = "main" if "main" in snapshots else snapshots[0]
+                            snapshot_path = os.path.join(snapshots_dir, snapshot)
+
+                # Use snapshot path if found, otherwise use model_id (will trigger download)
+                model_path = snapshot_path if snapshot_path and os.path.exists(snapshot_path) else model
+                logger.debug(f"Loading LLM from: {model_path}")
+
+                self._model, self._tokenizer = mlx_lm.load(model_path)
+                load_time = (time.time() - start_time) * 1000
+                logger.info(f"✅ Direct MLX-LM loaded in {load_time:.1f}ms")
+            except Exception as e:
+                logger.error(f"❌ Failed to load Direct MLX-LM model '{model}': {e}")
+                raise
 
         # NOTE: Using MLX_GLOBAL_LOCK (imported at top) for Metal coordination.
         # No per-instance lock needed - the global lock synchronizes all MLX operations

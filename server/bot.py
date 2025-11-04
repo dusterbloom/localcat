@@ -140,7 +140,31 @@ class PreloadedModels:
                 mlx_start = time.time()
 
                 import mlx_lm
-                model_path = llm_config.get("model", "mlx-community/Qwen3-1.7B-8bit")
+                # Read model directly from env vars (VOICE_AGENT_LLM_MODEL or LLM_MODEL)
+                model_id = os.getenv("VOICE_AGENT_LLM_MODEL") or os.getenv("LLM_MODEL") or llm_config.get("model")
+
+                # CRITICAL FIX: mlx_lm.load() tries to call snapshot_download() even with HF_HUB_OFFLINE=1
+                # To avoid this, check if model exists in local HF cache and pass absolute path
+                hf_home = os.getenv("HF_HOME") or os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
+                model_cache_name = model_id.replace("/", "--")
+                cache_dir = os.path.join(hf_home, "hub", f"models--{model_cache_name}")
+
+                # Try to find snapshot directory (either hash or "main")
+                snapshot_path = None
+                if os.path.exists(cache_dir):
+                    snapshots_dir = os.path.join(cache_dir, "snapshots")
+                    if os.path.exists(snapshots_dir):
+                        # Get first snapshot directory (usually there's only one, or use "main")
+                        snapshots = [d for d in os.listdir(snapshots_dir) if os.path.isdir(os.path.join(snapshots_dir, d))]
+                        if snapshots:
+                            # Prefer "main" if it exists, otherwise use first snapshot
+                            snapshot = "main" if "main" in snapshots else snapshots[0]
+                            snapshot_path = os.path.join(snapshots_dir, snapshot)
+
+                # Use snapshot path if found, otherwise use model_id (will trigger download)
+                model_path = snapshot_path if snapshot_path and os.path.exists(snapshot_path) else model_id
+                logger.debug(f"Loading LLM from: {model_path}")
+
                 models.mlx_llm_model, models.mlx_llm_tokenizer = mlx_lm.load(model_path)
 
                 mlx_time = time.time() - mlx_start

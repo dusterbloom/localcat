@@ -262,7 +262,8 @@ class ServiceFactory:
         # Always create a fresh LLM service per session/pipeline
         with self._llm_lock:
             logger.debug("Creating new LLM service via builder")
-            llm = LLMServiceBuilder(self.config).build()
+            # Pass preloaded_models to builder so it can use them for instant startup
+            llm = LLMServiceBuilder(self.config, self.preloaded_models).build()
 
             # Prewarm HTTP-based models to avoid cold start; Direct MLX doesn't need it
             llm_config = self.config.get_component_config("llm")
