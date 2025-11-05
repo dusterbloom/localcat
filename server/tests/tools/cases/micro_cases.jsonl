@@ -15,3 +15,23 @@
 {"id":"episodic_hike","setup":["Last weekend I hiked Mount Tam"],"query":"what did I say about hiking?","gold":["hike","mount tam"]}
 {"id":"negation_food","setup":["I like pizza","I don't like pizza"],"query":"do I like pizza?","gold":["pizza"]}
 {"id":"update_city","setup":["I live in Seattle","I live in Portland"],"query":"where do I live now?","gold":["portland"]}
+{"id":"paraphrase_name_alias","setup":["People call me Ali"],"query":"what's my name?","gold":["ali"]}
+{"id":"paraphrase_live_settle","setup":["I settled down in Austin"],"query":"where do I live?","gold":["austin"]}
+{"id":"paraphrase_live_based","setup":["I'm based in Berlin"],"query":"where do I live?","gold":["berlin"]}
+{"id":"paraphrase_work_employed","setup":["I'm employed by Microsoft"],"query":"where do I work?","gold":["microsoft"]}
+{"id":"paraphrase_work_at_company","setup":["I joined Nvidia"],"query":"where do I work?","gold":["nvidia"]}
+{"id":"paraphrase_color_hue","setup":["green is my preferred color"],"query":"what color do I like?","gold":["green","color"]}
+{"id":"paraphrase_color_shade","setup":["my favorite shade is teal"],"query":"what color do I like?","gold":["teal"]}
+{"id":"paraphrase_food_cuisine","setup":["I’m into Italian cuisine"],"query":"what food do I like?","gold":["italian"]}
+{"id":"paraphrase_food_dish","setup":["ramen is my go-to"],"query":"what food do I like?","gold":["ramen"]}
+{"id":"paraphrase_pets_dogs","setup":["I’m a dog person"],"query":"Do I like dogs?","gold":["dog"]}
+{"id":"paraphrase_pets_cats","setup":["I’m fond of felines"],"query":"Do I like cats?","gold":["cat","feline"]}
+{"id":"episodic_concert","setup":["Yesterday I caught a Radiohead gig","It blew my mind"],"query":"what did I say about the concert?","gold":["gig","radiohead"]}
+{"id":"episodic_trip","setup":["I flew to Tokyo last month","The sushi was unreal"],"query":"what did I say about Tokyo?","gold":["tokyo","sushi"]}
+{"id":"episodic_meeting","setup":["Met Sarah at the coffee shop","We discussed the launch"],"query":"what did I say about meeting Sarah?","gold":["sarah","coffee"]}
+{"id":"update_pref_color","setup":["I love red","Actually, I prefer purple"],"query":"what color do I like now?","gold":["purple"]}
+{"id":"update_company","setup":["I work at Shopify","I now work at Stripe"],"query":"where do I work now?","gold":["stripe"]}
+{"id":"negation_pets","setup":["I like snakes","I don't like snakes"],"query":"do I like snakes?","gold":["snakes"]}
+{"id":"paraphrase_origin_from","setup":["I'm from Barcelona"],"query":"where am I from?","gold":["barcelona"]}
+{"id":"paraphrase_origin_hail","setup":["I hail from Dublin"],"query":"where am I from?","gold":["dublin"]}
+{"id":"paraphrase_lives_residing","setup":["I’m residing in Vancouver"],"query":"where do I live?","gold":["vancouver"]}

@@ -107,6 +107,13 @@ class MemoryConfiguration(BaseConfiguration):
     sqlite_path: Optional[str] = None
     lmdb_dir: Optional[str] = None
 
+    # Feature flags (recommended defaults)
+    profiles_enabled: bool = True
+    semantic_enabled: bool = False
+    fts_enhanced_only: bool = True
+    slot_catalog_enabled: bool = False
+    slot_min_score: float = 0.85
+
     def __post_init__(self):
         """Post-initialization processing"""
         # Ensure lists are properly initialized
@@ -254,6 +261,13 @@ class MemoryConfiguration(BaseConfiguration):
         sqlite_path = get_env("SQLITE_PATH", "SQLITE")
         lmdb_dir = get_env("LMDB_DIR", "LMDB_DIR")
 
+        # Feature flags (env has priority; otherwise use recommended defaults)
+        profiles_enabled = _parse_bool(os.getenv("MEMORY_PROFILES_ENABLED") or "true")
+        semantic_enabled = _parse_bool(os.getenv("MEMORY_SEMANTIC_ENABLED") or "false")
+        fts_enhanced_only = _parse_bool(os.getenv("MEMORY_FTS_ENHANCED_ONLY") or "true")
+        slot_catalog_enabled = _parse_bool(os.getenv("MEMORY_SLOT_CATALOG") or "false")
+        slot_min_score = _parse_float(os.getenv("MEMORY_SLOT_MIN_SCORE"), default=0.85)
+
         return cls(
             # Core settings
             enabled=enabled,
@@ -329,7 +343,14 @@ class MemoryConfiguration(BaseConfiguration):
 
             # Storage paths
             sqlite_path=sqlite_path,
-            lmdb_dir=lmdb_dir
+            lmdb_dir=lmdb_dir,
+
+            # Feature flags
+            profiles_enabled=profiles_enabled,
+            semantic_enabled=semantic_enabled,
+            fts_enhanced_only=fts_enhanced_only,
+            slot_catalog_enabled=slot_catalog_enabled,
+            slot_min_score=slot_min_score
         )
 
     def validate(self) -> List[str]:

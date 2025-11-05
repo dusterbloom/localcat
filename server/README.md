@@ -227,6 +227,13 @@ MEMORY_SOURCES=graph,summary               # Memory retrieval sources
 MEMORY_SUMMARIZER_ENABLED=true             # Turn-based summarization
 MEMORY_SUMMARIZER_TURN_PAIRS=5             # Summary every N turns
 
+# === Memory Retrieval Flags (recommended defaults) ===
+MEMORY_FTS_ENHANCED_ONLY=true             # Use Enhanced FTS only (skip legacy FTS writes)
+MEMORY_PROFILES_ENABLED=true              # Deterministic context planner (slot/question/default quotas)
+MEMORY_SEMANTIC_ENABLED=false             # Semantic sidecar off by default (enable for paraphrase-heavy flows)
+MEMORY_SLOT_CATALOG=false                 # Optional attribute catalog for slots (data-driven)
+MEMORY_SLOT_MIN_SCORE=0.85                # Slot detection threshold for catalog
+
 # === Memory Retrieval Enhancement ===
 MEMORY_WEIGHT_PROSODY=0.0                  # Prosody weight for convo reranking (0.0-1.0)
 MEMORY_INJECTION_MODE=bullets              # Injection mode: bullets, headers

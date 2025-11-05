@@ -349,9 +349,10 @@ class MemoryStore:
         
         start = time.perf_counter()
         # Feature flag: use Enhanced FTS only (skip legacy chunks_fts writes)
-        use_enhanced_fts_only = False
+        # Recommended default: True (env can override)
+        use_enhanced_fts_only = True
         try:
-            use_enhanced_fts_only = os.getenv("MEMORY_FTS_ENHANCED_ONLY", "false").lower() in ("1", "true", "yes")
+            use_enhanced_fts_only = os.getenv("MEMORY_FTS_ENHANCED_ONLY", "true").lower() in ("1", "true", "yes")
         except Exception:
             pass
         

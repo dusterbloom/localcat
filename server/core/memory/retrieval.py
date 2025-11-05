@@ -189,9 +189,14 @@ class Retrieval:
         self._prosody_cache: Dict[Tuple[str, int], Tuple[float, dict]] = {}
         # Profiles toggle (deterministic planner)
         try:
-            self._profiles_enabled = os.getenv("MEMORY_PROFILES_ENABLED", "false").lower() in ("1", "true", "yes")
+            cfg = getattr(self.host, 'config', None)
+            if cfg is not None and hasattr(cfg, 'profiles_enabled'):
+                self._profiles_enabled = bool(getattr(cfg, 'profiles_enabled'))
+            else:
+                # Recommended default: true (env wins if set)
+                self._profiles_enabled = os.getenv("MEMORY_PROFILES_ENABLED", "true").lower() in ("1", "true", "yes")
         except Exception:
-            self._profiles_enabled = False
+            self._profiles_enabled = True
 
     def _check_edge_visibility_impl(self, edge_id: str, user_id: Optional[str], session_id: Optional[str]) -> bool:
         """
@@ -623,6 +628,15 @@ class Retrieval:
 
     def _semantic_collect_candidates(self, query: str, max_bullets: int, seen: set) -> List[Candidate]:
         """Collect semantic candidates from the optional semantic sidecar."""
+        # Global gating: prefer config, else env. Default off.
+        try:
+            cfg = getattr(self.host, 'config', None)
+        except Exception:
+            cfg = None
+        env_sem = os.getenv("MEMORY_SEMANTIC_ENABLED", "false").lower() in ("1", "true", "yes")
+        cfg_sem = bool(getattr(cfg, 'semantic_enabled', False)) if cfg is not None else False
+        if not (env_sem or cfg_sem):
+            return []
         candidates = []
         
         try:
@@ -1171,8 +1185,9 @@ class Retrieval:
         candidates = []
         
         try:
-            use_enhanced_only = os.getenv("MEMORY_FTS_ENHANCED_ONLY", "false").lower() in ("1", "true", "yes")
-            # Try Enhanced FTS first
+            # Recommended default: true (env can override)
+            use_enhanced_only = os.getenv("MEMORY_FTS_ENHANCED_ONLY", "true").lower() in ("1", "true", "yes")
+        # Try Enhanced FTS first
             try:
                 from .enhanced_fts import EnhancedFTS
                 enhanced_fts = EnhancedFTS(self.host.store)
@@ -1822,10 +1837,17 @@ class Retrieval:
             return f"{ds} {r[2:]} {dd}"
         # Common relation fixes (remove underscore)
         if r == "lives_in":
+            # Fix agreement for second person
+            if ds.lower() == "you":
+                return f"you live in {dd}"
             return f"{ds} lives in {dd}"
         if r == "works_at":
+            if ds.lower() == "you":
+                return f"you work at {dd}"
             return f"{ds} works at {dd}"
         if r == "works_in":
+            if ds.lower() == "you":
+                return f"you work in {dd}"
             return f"{ds} works in {dd}"
 
         return f"{ds} {r.replace('_', ' ')} {dd}"

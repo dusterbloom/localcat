@@ -30,6 +30,15 @@ def main():
     per_src_counts = defaultdict(list)
     per_src_selected = defaultdict(list)
 
+    # Per-variant grouping
+    by_variant = defaultdict(lambda: {
+        'plans': Counter(),
+        'cand_src': Counter(),
+        'sel_src': Counter(),
+        'cand_len': [],
+        'sel_len': []
+    })
+
     with open(path, 'r', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
@@ -40,23 +49,29 @@ def main():
             except Exception:
                 continue
             plan = j.get('plan') or {}
+            variant = j.get('variant') or 'unknown'
             if plan:
                 # Normalize plan signature as a tuple for counting
                 sig = tuple(sorted((k, int(v)) for k, v in plan.items()))
                 plans[sig] += 1
+                by_variant[variant]['plans'][sig] += 1
             cands = j.get('candidates') or []
             selected = j.get('selected') or []
             cand_len.append(len(cands))
             sel_len.append(len(selected))
+            by_variant[variant]['cand_len'].append(len(cands))
+            by_variant[variant]['sel_len'].append(len(selected))
             # Count sources
             src_counts = Counter(x.get('source') for x in cands)
             for s, c in src_counts.items():
                 cand_src[s] += c
                 per_src_counts[s].append(c)
+                by_variant[variant]['cand_src'][s] += c
             sel_counts = Counter(x.get('source') for x in selected)
             for s, c in sel_counts.items():
                 sel_src[s] += c
                 per_src_selected[s].append(c)
+                by_variant[variant]['sel_src'][s] += c
 
     def avg(xs):
         return sum(xs) / max(1, len(xs))
@@ -75,7 +90,25 @@ def main():
     for s, c in sel_src.most_common():
         print(f"  {s}: {c}")
 
+    # Per-variant breakdown
+    if by_variant:
+        print("\n=== Per-Variant Breakdown ===")
+        for variant, agg in by_variant.items():
+            def _avg(xs):
+                return sum(xs) / max(1, len(xs))
+            print(f"Variant: {variant}")
+            if agg['plans']:
+                print("  Plan usage:")
+                for sig, cnt in agg['plans'].most_common():
+                    print(f"    {dict(sig)} : {cnt}")
+            print(f"  Avg candidates: {_avg(agg['cand_len']):.2f} | Avg selected: {_avg(agg['sel_len']):.2f}")
+            print("  Candidate source totals:")
+            for s, c in agg['cand_src'].most_common():
+                print(f"    {s}: {c}")
+            print("  Selected source totals:")
+            for s, c in agg['sel_src'].most_common():
+                print(f"    {s}: {c}")
+
 
 if __name__ == '__main__':
     main()
-
