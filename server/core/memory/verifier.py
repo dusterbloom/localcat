@@ -37,8 +37,19 @@ class AnswerabilityVerifier:
     def _try_load_hf(self) -> None:
         try:
             from transformers import AutoTokenizer, AutoModelForSequenceClassification
-            self._hf_tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=True)
-            self._hf_model = AutoModelForSequenceClassification.from_pretrained(self.model_name, local_files_only=True)
+            # Allow remote code for custom reranker implementations (e.g., Jina v3)
+            trust_remote = os.getenv("MEMORY_VERIFIER_TRUST_REMOTE_CODE", "true").lower() in ("1", "true", "yes")
+            local_only = os.getenv("TRANSFORMERS_OFFLINE", "").strip() != ""
+            self._hf_tokenizer = AutoTokenizer.from_pretrained(
+                self.model_name,
+                local_files_only=local_only,
+                trust_remote_code=trust_remote,
+            )
+            self._hf_model = AutoModelForSequenceClassification.from_pretrained(
+                self.model_name,
+                local_files_only=local_only,
+                trust_remote_code=trust_remote,
+            )
             self.backend = "hf"
             logger.info(f"[Verifier] Loaded verifier model: {self.model_name}")
         except Exception as e:
@@ -51,23 +62,40 @@ class AnswerabilityVerifier:
         try:
             import torch
             pairs = [(query, t) for t in texts]
-            enc = self._hf_tokenizer([q for q, _ in pairs], [t for _, t in pairs], return_tensors="pt", truncation=True, max_length=256, padding=True)
+            enc = self._hf_tokenizer(
+                [q for q, _ in pairs],
+                [t for _, t in pairs],
+                return_tensors="pt",
+                truncation=True,
+                max_length=256,
+                padding=True,
+            )
             with torch.no_grad():
                 out = self._hf_model(**enc)
-            logits = out.logits
+            # Try multiple conventions from remote-code rerankers
+            logits = getattr(out, 'logits', None)
+            scores_attr = getattr(out, 'scores', None)
+            if scores_attr is not None:
+                # Some rerankers expose a direct 'scores' tensor
+                s = torch.tensor(scores_attr).view(-1).sigmoid().cpu().tolist()
+                return [(0.0, 1.0 - x, x) for x in s]
+            if logits is None:
+                return [(0.0, 1.0, 0.0) for _ in texts]
+            if logits.ndim == 1:
+                s = logits.sigmoid().cpu().tolist()
+                return [(0.0, 1.0 - x, x) for x in s]
             if logits.shape[-1] == 1:
-                # Single logit similarity
                 s = logits.squeeze(-1).sigmoid().cpu().tolist()
                 return [(0.0, 1.0 - x, x) for x in s]
-            else:
-                probs = logits.softmax(dim=-1).cpu().tolist()
-                res = []
-                for p in probs:
-                    p_ent = float(p[self._ent_idx]) if self._ent_idx < len(p) else 0.0
-                    p_con = float(p[self._con_idx]) if self._con_idx < len(p) else 0.0
-                    p_neu = max(0.0, 1.0 - p_ent - p_con)
-                    res.append((p_con, p_neu, p_ent))
-                return res
+            # Assume 3-class NLI distribution
+            probs = logits.softmax(dim=-1).cpu().tolist()
+            res = []
+            for p in probs:
+                p_ent = float(p[self._ent_idx]) if self._ent_idx < len(p) else 0.0
+                p_con = float(p[self._con_idx]) if self._con_idx < len(p) else 0.0
+                p_neu = max(0.0, 1.0 - p_ent - p_con)
+                res.append((p_con, p_neu, p_ent))
+            return res
         except Exception as e:
             logger.debug(f"[Verifier] HF inference failed: {e}")
             return [(0.0, 1.0, 0.0) for _ in texts]
@@ -108,4 +136,3 @@ class AnswerabilityVerifier:
             return out
         # Fallback rules
         return [{"text": t, **dict(zip(["status", "score"], self._rules_status(query, t)))} for t in texts]
-
