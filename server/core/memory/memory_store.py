@@ -348,6 +348,12 @@ class MemoryStore:
             return
         
         start = time.perf_counter()
+        # Feature flag: use Enhanced FTS only (skip legacy chunks_fts writes)
+        use_enhanced_fts_only = False
+        try:
+            use_enhanced_fts_only = os.getenv("MEMORY_FTS_ENHANCED_ONLY", "false").lower() in ("1", "true", "yes")
+        except Exception:
+            pass
         
         try:
             with contextlib.ExitStack() as stack:
@@ -413,11 +419,28 @@ class MemoryStore:
                         "VALUES(?, ?, ?, ?, ?, ?)",
                         (mid, eid, text, int(ts), sid, tid)
                     )
-                    # Update FTS index
-                    cur.execute(
-                        "INSERT INTO chunks_fts(text, eid, rel, dst, ts) VALUES(?, ?, ?, ?, ?)",
-                        (text, eid, "", "", int(ts))
-                    )
+                    # Skip legacy chunks_fts when Enhanced FTS-only is enabled
+                    if not use_enhanced_fts_only:
+                        # Update legacy FTS index
+                        cur.execute(
+                            "INSERT INTO chunks_fts(text, eid, rel, dst, ts) VALUES(?, ?, ?, ?, ?)",
+                            (text, eid, "", "", int(ts))
+                        )
+                    else:
+                        # Index mentions into Enhanced FTS content table so enhanced-only covers all text
+                        try:
+                            terms = (text or "").lower().split()
+                            term_freq = (len([t for t in terms if t]) / max(len(terms), 1)) if terms else 0.0
+                            doc_length = len(text or "")
+                            cur.execute(
+                                "INSERT OR REPLACE INTO chunks_content "
+                                "(text, eid, ts, session_id, turn_id, term_frequency, document_length, entity_boost, slot) "
+                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                (text, str(eid), int(ts), str(sid), int(tid), float(term_freq), int(doc_length), 1.0, None)
+                            )
+                        except Exception:
+                            # Content table may not exist; enhanced fts optional
+                            pass
 
                 # Batch process conversation turns
                 for tid, text, sid, turn_num, ts in self._turns:
@@ -426,11 +449,12 @@ class MemoryStore:
                         "VALUES(?, ?, ?, ?, ?)",
                         (tid, text, sid, turn_num, ts)
                     )
-                    # Index conversation in FTS for convo retrieval
-                    cur.execute(
-                        "INSERT INTO chunks_fts(text, eid, rel, dst, ts) VALUES(?, ?, ?, ?, ?)",
-                        (text, "conversation", "", "", ts)
-                    )
+                    # Index into legacy chunks_fts only when Enhanced FTS-only is disabled
+                    if not use_enhanced_fts_only:
+                        cur.execute(
+                            "INSERT INTO chunks_fts(text, eid, rel, dst, ts) VALUES(?, ?, ?, ?, ?)",
+                            (text, "conversation", "", "", ts)
+                        )
                     # Also index in Enhanced FTS content table (if present)
                     try:
                         # Slot tagging (lightweight): detect slot for this conversation text

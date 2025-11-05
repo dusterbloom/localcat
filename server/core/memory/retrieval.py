@@ -187,6 +187,11 @@ class Retrieval:
         
         # Per-retrieve prosody cache to avoid repeated store hits for convo candidates
         self._prosody_cache: Dict[Tuple[str, int], Tuple[float, dict]] = {}
+        # Profiles toggle (deterministic planner)
+        try:
+            self._profiles_enabled = os.getenv("MEMORY_PROFILES_ENABLED", "false").lower() in ("1", "true", "yes")
+        except Exception:
+            self._profiles_enabled = False
 
     def _check_edge_visibility_impl(self, edge_id: str, user_id: Optional[str], session_id: Optional[str]) -> bool:
         """
@@ -285,6 +290,7 @@ class Retrieval:
                 },
                 "sources": enabled_sources,
                 "candidates": [],
+                "variant": os.getenv("MEMORY_TRACE_VARIANT") or None,
             }
 
         # Strengthened intent gating for greetings - suppress memory unless name is relevant
@@ -453,6 +459,13 @@ class Retrieval:
         # Sort by composite score
         scored_candidates.sort(key=lambda x: x[0], reverse=True)
 
+        # Deterministic Context Planner (optional)
+        if self._profiles_enabled:
+            plan = self._plan_context(query=query, slot_id=slot_id, slot_conf=slot_conf, enabled_sources=enabled_sources)
+            if do_trace and trace is not None:
+                trace["plan"] = plan
+            scored_candidates = self._apply_quotas(scored_candidates, plan, max_candidates=max_bullets * 4)
+
         # Optional: restrict to top-priority source for simpler context, useful for small LMs
         try:
             single_source = os.getenv("MEMORY_SINGLE_SOURCE", "false").lower() in ("1", "true", "yes")
@@ -508,6 +521,105 @@ class Retrieval:
         logger.debug(f"[Retrieval] final_bullets={len(final_bullets)} source_counts={source_counts}")
 
         return final_bullets[:max_bullets]
+
+    # ---------------- Deterministic Context Planner ----------------
+    def _is_question(self, text: str) -> bool:
+        if not text:
+            return False
+        t = text.strip().lower()
+        if not t:
+            return False
+        if t.endswith('?'):
+            return True
+        starters = ("who", "what", "when", "where", "why", "how", "which")
+        return any(t.startswith(w + ' ') for w in starters)
+
+    def _plan_context(self, query: str, slot_id: Optional[str], slot_conf: float, enabled_sources: List[str]) -> Dict[str, int]:
+        """Return per-source quotas for a deterministic plan.
+
+        Sources: graph, convo, summary, semantic.
+        """
+        # Defaults
+        quotas = {"graph": 1, "convo": 1, "summary": 0, "semantic": 0}
+
+        # Environment overrides
+        def _get_int(name: str, default: int) -> int:
+            try:
+                return int(os.getenv(name, str(default)))
+            except Exception:
+                return default
+
+        is_question = self._is_question(query)
+        min_slot = 0.8
+        try:
+            min_slot = float(os.getenv("MEMORY_SLOT_MIN_SCORE", str(min_slot)))
+        except Exception:
+            pass
+
+        # Profile P1: Slot-Exact
+        if slot_id and slot_conf >= min_slot:
+            quotas = {"graph": 2, "convo": 1, "summary": 0, "semantic": 0}
+        # Profile P2: Question
+        elif is_question:
+            quotas = {"convo": 2, "graph": 1, "summary": 0, "semantic": 0}
+        # Profile P5: Starvation handled later if needed
+
+        # Limit quotas to enabled sources
+        quotas = {src: quotas.get(src, 0) if src in enabled_sources else 0 for src in ["graph", "convo", "summary", "semantic"]}
+
+        # Allow env tuning
+        quotas["graph"] = _get_int("MEMORY_QUOTA_GRAPH", quotas.get("graph", 0))
+        quotas["convo"] = _get_int("MEMORY_QUOTA_CONVO", quotas.get("convo", 0))
+        quotas["summary"] = _get_int("MEMORY_QUOTA_SUMMARY", quotas.get("summary", 0))
+        quotas["semantic"] = _get_int("MEMORY_QUOTA_SEMANTIC", quotas.get("semantic", 0))
+
+        return quotas
+
+    def _apply_quotas(
+        self,
+        scored: List[Tuple[float, Candidate, Dict[str, float]]],
+        quotas: Dict[str, int],
+        max_candidates: int = 8,
+    ) -> List[Tuple[float, Candidate, Dict[str, float]]]:
+        """Return a subset of scored candidates respecting per-source quotas.
+
+        Keeps stable ordering (by score desc) within each group.
+        Fills remaining capacity with next best across all sources to avoid starvation.
+        """
+        if not scored:
+            return scored
+
+        # Group by source
+        by_src: Dict[str, List[Tuple[float, Candidate, Dict[str, float]]]] = {"graph": [], "convo": [], "summary": [], "semantic": []}
+        for item in scored:
+            src = item[1].source
+            if src in by_src:
+                by_src[src].append(item)
+
+        selected: List[Tuple[float, Candidate, Dict[str, float]]] = []
+        # First pass: per-source quotas
+        for src in ["graph", "convo", "summary", "semantic"]:
+            cap = max(0, int(quotas.get(src, 0)))
+            if not cap:
+                continue
+            pool = by_src.get(src, [])
+            for itm in pool[:cap]:
+                selected.append(itm)
+                if len(selected) >= max_candidates:
+                    return selected
+
+        # Second pass: fill remaining capacity with next best overall to reach max_candidates
+        if len(selected) < max_candidates:
+            # Build a set for quick membership
+            seen = set(id(x[1]) for x in selected)
+            for itm in scored:
+                if id(itm[1]) in seen:
+                    continue
+                selected.append(itm)
+                if len(selected) >= max_candidates:
+                    break
+
+        return selected
 
     def _semantic_collect_candidates(self, query: str, max_bullets: int, seen: set) -> List[Candidate]:
         """Collect semantic candidates from the optional semantic sidecar."""
@@ -609,6 +721,7 @@ class Retrieval:
             logger.debug(f"[Retrieval] Suppressing memory injection for query: '{query[:50]}...'")
             return [], []
         
+        seen_graph_rels = set()
         for score, candidate, components in scored_candidates:
             # Enhanced cross-source deduplication:
             # 1. Exact match on normalized text
@@ -638,6 +751,13 @@ class Retrieval:
             if is_duplicate:
                 continue
                 
+            # Enforce relation uniqueness for graph facts (avoid conflicting siblings)
+            if candidate.source == "graph":
+                rel = candidate.meta.get("rel") if isinstance(candidate.meta, dict) else None
+                if rel and rel in seen_graph_rels:
+                    logger.debug(f"[Retrieval] Skipping duplicate relation '{rel}' for graph candidate")
+                    continue
+
             # Format the bullet based on metadata format setting (for A/B testing)
             metadata_format = os.getenv("MEMORY_METADATA_FORMAT", "technical").lower()
             injection_mode = os.getenv("MEMORY_INJECTION_MODE", "bullets").lower()
@@ -678,6 +798,11 @@ class Retrieval:
             # Accept this candidate
             final_bullets.append(bullet)
             selected_candidates.append(candidate)
+            # Track seen relations
+            if candidate.source == "graph" and isinstance(candidate.meta, dict):
+                rel = candidate.meta.get("rel")
+                if rel:
+                    seen_graph_rels.add(rel)
             seen_normalized_texts.add(normalized_text)
             used_tokens += estimated_tokens
             
@@ -1003,7 +1128,10 @@ class Retrieval:
                             "pos": pos,
                             "neg": neg,
                             "priority": pri,
-                            "support": support
+                            "support": support,
+                            "rel": r,
+                            "s": s,
+                            "d": d,
                         }
                     ))
                     
@@ -1024,7 +1152,12 @@ class Retrieval:
                     source="graph",
                     score_hint=0.0,
                     ts=ts,
-                    meta={"edge_id": self.host.store.edge_id(item.s, item.r, item.d)}
+                    meta={
+                        "edge_id": self.host.store.edge_id(item.s, item.r, item.d),
+                        "rel": item.r,
+                        "s": item.s,
+                        "d": item.d,
+                    }
                 ))
                 
                 seen.add(human)
@@ -1038,6 +1171,7 @@ class Retrieval:
         candidates = []
         
         try:
+            use_enhanced_only = os.getenv("MEMORY_FTS_ENHANCED_ONLY", "false").lower() in ("1", "true", "yes")
             # Try Enhanced FTS first
             try:
                 from .enhanced_fts import EnhancedFTS
@@ -1066,29 +1200,36 @@ class Retrieval:
                     sanitized = ' '.join(sanitized.split())
                     if not sanitized.strip():
                         return []
-                    if session_id and hasattr(self.host.store, 'search_fts_scoped'):
-                        # Note: basic FTS scopes by eid; conversation turns are stored with eid='conversation'.
-                        # As a conservative fallback, use global search to avoid scoping everything away.
-                        hits = [(0.0, text, eid, ts, None) for text, eid, ts in self.host.store.search_fts(sanitized, limit=max_bullets * 2)]
+                    if not use_enhanced_only:
+                        if session_id and hasattr(self.host.store, 'search_fts_scoped'):
+                            # Basic FTS fallback (legacy)
+                            hits = [(0.0, text, eid, ts, None) for text, eid, ts in self.host.store.search_fts(sanitized, limit=max_bullets * 2)]
+                        else:
+                            hits = [(0.0, text, eid, ts, None) for text, eid, ts in self.host.store.search_fts(sanitized, limit=max_bullets * 2)]
                     else:
-                        hits = [(0.0, text, eid, ts, None) for text, eid, ts in self.host.store.search_fts(sanitized, limit=max_bullets * 2)]
-                
+                        # Enhanced-only: no legacy fallback
+                        hits = []
+            
             except ImportError:
                 logger.debug("[Retrieval._convo_collect] Enhanced FTS not available")
-                import re
-                sanitized = re.sub(r'[^\w\s]', ' ', query)
-                sanitized = ' '.join(sanitized.split())
-
-                if not sanitized.strip():
-                    return []
-
-                user_id = getattr(self.host, 'current_user_id', None)
-                session_id = getattr(self.host, 'current_session_id', None)
-                allowed = [e for e in [user_id, session_id] if e]
-                if allowed and hasattr(self.host.store, 'search_fts_scoped'):
-                    hits = [(0.0, text, eid, ts, None) for text, eid, ts in self.host.store.search_fts_scoped(sanitized, allowed, limit=max_bullets * 2)]
+                if use_enhanced_only:
+                    # No legacy path; return empty
+                    hits = []
                 else:
-                    hits = [(0.0, text, eid, ts, None) for text, eid, ts in self.host.store.search_fts(sanitized, limit=max_bullets * 2)]
+                    import re
+                    sanitized = re.sub(r'[^\w\s]', ' ', query)
+                    sanitized = ' '.join(sanitized.split())
+
+                    if not sanitized.strip():
+                        return []
+
+                    user_id = getattr(self.host, 'current_user_id', None)
+                    session_id = getattr(self.host, 'current_session_id', None)
+                    allowed = [e for e in [user_id, session_id] if e]
+                    if allowed and hasattr(self.host.store, 'search_fts_scoped'):
+                        hits = [(0.0, text, eid, ts, None) for text, eid, ts in self.host.store.search_fts_scoped(sanitized, allowed, limit=max_bullets * 2)]
+                    else:
+                        hits = [(0.0, text, eid, ts, None) for text, eid, ts in self.host.store.search_fts(sanitized, limit=max_bullets * 2)]
             
         except Exception as e:
             logger.warning(f"[Retrieval._convo_collect] FTS search failed: {e}")
@@ -1659,8 +1800,12 @@ class Retrieval:
             return ""
 
         if r == "name":
+            if ds.lower() == "you":
+                return f"your name is {dd}"
             return f"{ds} is named {dd}"
         if r == "has":
+            if ds.lower() == "you":
+                return f"you have {dd}"
             return f"{ds} has {dd}"
         if r == "also_known_as":
             # Only meaningful for user identity
@@ -1670,6 +1815,8 @@ class Retrieval:
         if r == "is":
             if ds.lower() in meaningless_entities or dd.lower().startswith("what "):
                 return ""
+            if ds.lower() == "you":
+                return f"you are {dd}"
             return f"{ds} is {dd}"
         if r.startswith("v:"):
             return f"{ds} {r[2:]} {dd}"
