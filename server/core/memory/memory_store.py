@@ -399,8 +399,8 @@ class MemoryStore:
                         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(id) DO UPDATE SET
                             weight=excluded.weight,
-                            pos=excluded.pos,
-                            neg=excluded.neg,
+                            pos=pos + excluded.pos,
+                            neg=neg + excluded.neg,
                             status=excluded.status,
                             updated_at=excluded.updated_at
                     """, (eid, s, r, d, w, pos, neg, status, int(ts)))
@@ -562,91 +562,21 @@ class MemoryStore:
     
     def observe_edge(self, s: str, r: str, d: str, conf: float, now_ts: int) -> None:
         """Create/reinforce (s,r,d) with positive evidence."""
-        if self.lenv is not None:
-            # For immediate updates, we write directly to LMDB
-            with self.lenv.begin(write=True) as txn:
-                key = f"adj:{s}|{r}".encode()
-                old = txn.get(key, db=self.db_adj)
-                arr = msgpack.loads(old) if old else []
-
-                found = False
-                w = conf
-                pos = 1
-                neg = 0
-
-                # Scan for existing edge
-                for i in range(0, len(arr), 6):
-                    if arr[i] == d:
-                        # Exponential weighted average toward 1.0
-                        a = self._alpha(conf, base=0.15)
-                        w = (1 - a) * float(arr[i+1]) + a * 1.0
-                        arr[i+1] = w
-                        arr[i+2] = now_ts
-                        pos = int(arr[i+3]) + 1
-                        arr[i+3] = pos
-                        arr[i+5] = self._status_from_weight(w)
-                        found = True
-                        break
-
-                if not found:
-                    # New edge
-                    w = min(MAX_CONF_CAP, conf)
-                    arr.extend([d, w, now_ts, 1, 0, 1])
-
-                txn.put(key, msgpack.dumps(arr), db=self.db_adj, overwrite=True)
-
-            # Enqueue for SQLite persistence
-            self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts)
-            self.flush_if_needed()
-        else:
-            # LMDB disabled: enqueue a conservative SQLite update only
-            w = min(MAX_CONF_CAP, conf)
-            pos = 1
-            neg = 0
-            self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts)
-            self.flush_if_needed()
+        # Avoid direct LMDB mutation to prevent split-brain. Enqueue only; flush() will
+        # apply LMDB + SQLite updates atomically.
+        w = min(MAX_CONF_CAP, conf)
+        pos = 1
+        neg = 0
+        self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts)
+        self.flush_if_needed()
     
     def negate_edge(self, s: str, r: str, d: str, conf: float, now_ts: int) -> None:
         """Demote (s,r,d) with negative/contradicting evidence."""
-        if self.lenv is not None:
-            with self.lenv.begin(write=True) as txn:
-                key = f"adj:{s}|{r}".encode()
-                old = txn.get(key, db=self.db_adj)
-                arr = msgpack.loads(old) if old else []
-
-                found = False
-                w = 0.1
-                pos = 0
-                neg = 1
-
-                for i in range(0, len(arr), 6):
-                    if arr[i] == d:
-                        # Exponential weighted average toward 0.0
-                        a = self._alpha(conf, base=0.20, hi=0.50)
-                        w = (1 - a) * float(arr[i+1]) + a * 0.0
-                        arr[i+1] = w
-                        arr[i+2] = now_ts
-                        neg = int(arr[i+4]) + 1
-                        arr[i+4] = neg
-                        pos = int(arr[i+3])
-                        arr[i+5] = self._status_from_weight(w)
-                        found = True
-                        break
-
-                if not found:
-                    arr.extend([d, WEIGHT_MIN_WEAK, now_ts, 0, 1, 0])  # Weak & stale
-
-                txn.put(key, msgpack.dumps(arr), db=self.db_adj, overwrite=True)
-
-            self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts)
-            self.flush_if_needed()
-        else:
-            # LMDB disabled: conservative SQLite update only
-            w = WEIGHT_MIN_WEAK
-            pos = 0
-            neg = 1
-            self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts)
-            self.flush_if_needed()
+        w = WEIGHT_MIN_WEAK
+        pos = 0
+        neg = 1
+        self.enqueue_edge_row(s, r, d, w, pos, neg, self._status_from_weight(w), now_ts)
+        self.flush_if_needed()
     
     def hard_forget(self, s: str, r: str = None, d: str = None) -> None:
         """Explicit user forget (purge from LMDB + tombstone in SQLite)."""

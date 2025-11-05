@@ -145,6 +145,11 @@ class HotPathMemoryProcessor(BaseProcessor):
         self.hot.agent_eid = f"agent:{self.config.agent_id}"
         self.hot.current_user_id = self.config.user_id
         self.hot.current_session_id = self.session_id
+        # Make configuration available to retrieval logic
+        try:
+            self.hot.config = self.config  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
         self.session_manager = SessionManager(
             session_id=self.session_id,

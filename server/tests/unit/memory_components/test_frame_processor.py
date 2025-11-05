@@ -64,7 +64,7 @@ class StubHotMemory:
         self.store = StubStore()
         self.processed = []
 
-    def process_turn(self, text, session_id, turn_id, focus="standard", intent=None):
+    def process_turn(self, text, session_id, turn_id, focus="standard", intent=None, prosody_features=None):
         self.processed.append((text, session_id, turn_id, focus))
         return ["Likes pizza"], [("alice", "likes", "pizza")]
 

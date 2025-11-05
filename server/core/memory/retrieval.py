@@ -252,8 +252,21 @@ class Retrieval:
         except Exception:
             slot_id, slot_conf = (None, 0.0)
 
-        # Source control via env (defaults to graph only for backward compatibility)
-        enabled_sources = [s.strip() for s in os.getenv("MEMORY_SOURCES", "graph").split(",") if s.strip()]
+        # Source control via MemoryConfiguration if available, else env, else default
+        enabled_sources = None
+        try:
+            cfg = getattr(self.host, 'config', None)
+            if cfg and getattr(cfg, 'sources', None):
+                enabled_sources = list(cfg.sources)
+        except Exception:
+            enabled_sources = None
+        if not enabled_sources:
+            try:
+                enabled_sources = [s.strip() for s in os.getenv("MEMORY_SOURCES", "graph").split(",") if s.strip()]
+            except Exception:
+                enabled_sources = ["graph"]
+        if not enabled_sources:
+            enabled_sources = ["graph"]
         logger.info(f"[Retrieval] Searching memory sources={enabled_sources} for query='{query[:50]}...'")
         logger.debug(f"[Retrieval] enabled_sources={enabled_sources} query='{query[:50]}'")
 
@@ -442,9 +455,8 @@ class Retrieval:
                 if f"[{src}]" in bullet:
                     source_counts[src] = source_counts.get(src, 0) + 1
         if not final_bullets:
-            logger.warning(f"[Retrieval] No memory context found for query - returning diagnostic")
-            # Return diagnostic bullet to prevent silent failures that lead to hallucination
-            return ["[diag] No relevant memories found for this query. The system may need more conversation history or the information hasn't been stored yet."]
+            logger.warning(f"[Retrieval] No memory context found for query")
+            return []
         else:
             logger.info(f"[Retrieval] Returning {len(final_bullets)} memory bullets from sources: {source_counts}")
         logger.debug(f"[Retrieval] final_bullets={len(final_bullets)} source_counts={source_counts}")
@@ -1646,41 +1658,58 @@ class Retrieval:
         return any(ind in q for ind in semantic_indicators)
 
     def _load_composite_weights(self) -> Dict[str, float]:
-        """Load composite scoring weights from environment or use defaults."""
+        """Load composite scoring weights from configuration (preferred) or env defaults."""
+        cfg = getattr(self.host, 'config', None)
         default_weights = {
-            "wsrc": 0.1,      # Source bias
-            "wconf": 0.35,    # Confidence/support
-            "wrec": 0.25,     # Recency
-            "wuse": 0.1,      # Usage boost
-            "wsim": 0.15,     # Semantic similarity
-            "wdiv": 0.05      # Diversity penalty (negative weight)
+            "wsrc": 0.1,
+            "wconf": 0.35,
+            "wrec": 0.25,
+            "wuse": 0.1,
+            "wsim": 0.15,
+            "wdiv": 0.05,
         }
-        
-        # Allow individual source weight configuration via environment
+        # Overlay from config.rerank_weights when available
+        try:
+            if cfg and getattr(cfg, 'rerank_weights', None):
+                for k, v in cfg.rerank_weights.items():
+                    if k in default_weights and isinstance(v, (int, float)):
+                        default_weights[k] = float(v)
+        except Exception:
+            pass
+
+        # Source weights: prefer configuration, else env defaults
         source_weights = {
             "MEMORY_WEIGHT_GRAPH": 0.3,
-            "MEMORY_WEIGHT_CONVO": 0.4, 
+            "MEMORY_WEIGHT_CONVO": 0.4,
             "MEMORY_WEIGHT_SUMMARY": 0.2,
-            "MEMORY_WEIGHT_SEMANTIC": 0.1
+            "MEMORY_WEIGHT_SEMANTIC": 0.1,
         }
-        
         try:
-            # Load JSON composite weights first
-            weights_json = os.getenv("MEMORY_RERANK_WEIGHTS")
-            if weights_json:
-                custom_weights = json.loads(weights_json)
-                for key, value in custom_weights.items():
-                    if key in default_weights and isinstance(value, (int, float)):
-                        default_weights[key] = float(value)
-                        
-            # Load individual source weights
-            for env_key, default_val in source_weights.items():
+            if cfg is not None:
+                source_weights = {
+                    "MEMORY_WEIGHT_GRAPH": float(getattr(cfg, 'weight_graph', 0.3)),
+                    "MEMORY_WEIGHT_CONVO": float(getattr(cfg, 'weight_convo', 0.4)),
+                    "MEMORY_WEIGHT_SUMMARY": float(getattr(cfg, 'weight_summary', 0.2)),
+                    "MEMORY_WEIGHT_SEMANTIC": float(getattr(cfg, 'weight_semantic', 0.1)),
+                }
+        except Exception:
+            # Fallback to environment if config not usable
+            for env_key in list(source_weights.keys()):
                 env_val = os.getenv(env_key)
                 if env_val is not None:
                     try:
                         source_weights[env_key] = float(env_val)
                     except ValueError:
                         logger.warning(f"[Retrieval] Invalid {env_key}: {env_val}, using default")
+        
+        try:
+            # Load JSON composite weights first (env override only when no config provided)
+            weights_json = os.getenv("MEMORY_RERANK_WEIGHTS")
+            if weights_json:
+                custom_weights = json.loads(weights_json)
+                for key, value in custom_weights.items():
+                    if key in default_weights and isinstance(value, (int, float)):
+                        default_weights[key] = float(value)
                         
             logger.debug(f"[Retrieval] Using composite weights: {default_weights}")
             logger.debug(f"[Retrieval] Using source weights: {source_weights}")
