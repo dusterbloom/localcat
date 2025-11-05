@@ -58,6 +58,29 @@ class SlotRouter:
         if not t:
             return None, 0.0
 
+        # Optional: data-driven detection via AttributeCatalog
+        try:
+            import os
+            use_catalog = os.getenv("MEMORY_SLOT_CATALOG", "false").lower() in ("1", "true", "yes")
+            # The catalog needs access to the store via a global host; we expose
+            # it via an adapter on SlotRouter for now.
+            if use_catalog and hasattr(cls, '_store') and cls._store is not None:
+                from .attribute_catalog import AttributeCatalog
+                user_id = getattr(cls, '_user_id', None)
+                if user_id:
+                    cat = AttributeCatalog(cls._store)
+                    try:
+                        # Build or refresh top attributes opportunistically
+                        cat.build_for_user(user_id, limit=100, min_support=1)
+                    except Exception:
+                        pass
+                    rel, score = cat.detect_slot(t, user_id)
+                    if rel and score:
+                        return rel, score
+        except Exception:
+            # Fall back to regex-only
+            pass
+
         # Order matters: more specific slots first
         for rx in cls._FAV_COLOR_PATTERNS:
             if rx.search(t):
@@ -72,6 +95,15 @@ class SlotRouter:
                 return "favorite_music", 0.8
 
         return None, 0.0
+
+    # Simple hooks to provide store/user context for catalog-backed detection
+    _store = None
+    _user_id = None
+
+    @classmethod
+    def set_context(cls, store, user_id: Optional[str]):
+        cls._store = store
+        cls._user_id = user_id
 
     @classmethod
     def is_slot_aligned(cls, text: str, slot_id: Optional[str]) -> bool:
@@ -94,4 +126,3 @@ class SlotRouter:
         if slot_id == "favorite_music":
             return any(rx.search(t) for rx in cls._FAV_MUSIC_PATTERNS)
         return False
-

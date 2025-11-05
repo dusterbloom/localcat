@@ -270,6 +270,23 @@ class Retrieval:
         logger.info(f"[Retrieval] Searching memory sources={enabled_sources} for query='{query[:50]}...'")
         logger.debug(f"[Retrieval] enabled_sources={enabled_sources} query='{query[:50]}'")
 
+        # Optional trace collection
+        trace_file = os.getenv("MEMORY_TRACE_FILE", "").strip()
+        do_trace = bool(trace_file)
+        trace = None
+        if do_trace:
+            trace = {
+                "query": query,
+                "entities": list(entities or []),
+                "turn_id": turn_id,
+                "signals": {
+                    "slot_id": slot_id,
+                    "slot_conf": float(slot_conf),
+                },
+                "sources": enabled_sources,
+                "candidates": [],
+            }
+
         # Strengthened intent gating for greetings - suppress memory unless name is relevant
         q = (query or "").strip().lower()
         greeting_terms = ("hello", "hi", "hey", "good morning", "good afternoon", "good evening", "top of the morning", "howdy", "greetings", "yo")
@@ -366,6 +383,18 @@ class Retrieval:
                 all_candidates.extend(semantic_candidates)
                 logger.debug(f"[Retrieval] semantic_candidates count={len(semantic_candidates)}")
 
+        if do_trace and trace is not None:
+            try:
+                for c in all_candidates:
+                    trace["candidates"].append({
+                        "text": c.text,
+                        "source": c.source,
+                        "ts": c.ts,
+                        "meta": c.meta,
+                    })
+            except Exception:
+                pass
+
         # If a slot is detected, prefer aligned candidates only
         # (Already filtered per-source, this extra guard avoids any leakage).
         if slot_id:
@@ -454,6 +483,23 @@ class Retrieval:
             for src in ["graph", "convo", "summary"]:
                 if f"[{src}]" in bullet:
                     source_counts[src] = source_counts.get(src, 0) + 1
+        if do_trace and trace is not None:
+            try:
+                trace["selected"] = [
+                    {
+                        "text": c.text,
+                        "source": c.source,
+                        "ts": c.ts,
+                        "meta": c.meta,
+                    } for c in selected_candidates
+                ]
+                trace["bullets"] = list(final_bullets)
+                with open(trace_file, 'a', encoding='utf-8') as f:
+                    import json as _json
+                    f.write(_json.dumps(trace, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+
         if not final_bullets:
             logger.warning(f"[Retrieval] No memory context found for query")
             return []

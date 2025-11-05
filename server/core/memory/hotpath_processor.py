@@ -150,6 +150,12 @@ class HotPathMemoryProcessor(BaseProcessor):
             self.hot.config = self.config  # type: ignore[attr-defined]
         except Exception:
             pass
+        # Provide store/user context to SlotRouter for catalog-backed detection
+        try:
+            from .slot_router import SlotRouter
+            SlotRouter.set_context(self.store, self.config.user_id)
+        except Exception:
+            pass
 
         self.session_manager = SessionManager(
             session_id=self.session_id,
