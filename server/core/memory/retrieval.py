@@ -22,6 +22,9 @@ from functools import lru_cache
 from .memory_constants import WEIGHT_MIN_ACTIVE, RECENCY_HALF_LIFE_MS
 from loguru import logger
 from .quality_filter import QualityFilter
+from .relation_stats import RelationStats
+from .verifier import AnswerabilityVerifier
+from .question_type import QuestionTypeClassifier
 
 import os
 
@@ -197,6 +200,20 @@ class Retrieval:
                 self._profiles_enabled = os.getenv("MEMORY_PROFILES_ENABLED", "true").lower() in ("1", "true", "yes")
         except Exception:
             self._profiles_enabled = True
+        # Verifier and relation stats
+        try:
+            self._relation_stats = RelationStats(self.host.store)
+        except Exception:
+            self._relation_stats = None
+        try:
+            self._verifier = AnswerabilityVerifier(self.host)
+        except Exception as e:
+            logger.debug(f"[Retrieval] Verifier init failed: {e}")
+            self._verifier = None
+        try:
+            self._qtype = QuestionTypeClassifier()
+        except Exception:
+            self._qtype = None
 
     def _check_edge_visibility_impl(self, edge_id: str, user_id: Optional[str], session_id: Optional[str]) -> bool:
         """
@@ -470,6 +487,9 @@ class Retrieval:
             if do_trace and trace is not None:
                 trace["plan"] = plan
             scored_candidates = self._apply_quotas(scored_candidates, plan, max_candidates=max_bullets * 4)
+
+        # Query-conditioned verification filter (drop contradicts, keep entailed)
+        scored_candidates = self._verify_and_filter(query, scored_candidates, max_candidates=max_bullets * 4)
 
         # Optional: restrict to top-priority source for simpler context, useful for small LMs
         try:
@@ -827,6 +847,50 @@ class Retrieval:
         logger.debug(f"[Retrieval] Token budget: {used_tokens}/{max_tokens}, Bullets: {len(final_bullets)}/{bullet_cap}")
         
         return final_bullets, selected_candidates
+
+    def _verify_and_filter(
+        self,
+        query: str,
+        scored_candidates: List[Tuple[float, Candidate, Dict[str, float]]],
+        max_candidates: int = 8,
+    ) -> List[Tuple[float, Candidate, Dict[str, float]]]:
+        try:
+            if not scored_candidates:
+                return scored_candidates
+            if not getattr(self, '_verifier', None):
+                return scored_candidates
+            # Prepare top-K texts for verification
+            K = min(max_candidates, len(scored_candidates))
+            texts = [scored_candidates[i][1].text for i in range(K)]
+            decisions = self._verifier.verify(query, texts)
+            # Map decisions by normalized text
+            dec_map = {(d.get('text') or ''): d for d in decisions}
+            keep: List[Tuple[float, Candidate, Dict[str, float]]] = []
+            entailed_boost = float(os.getenv("MEMORY_VERIFIER_BOOST", "0.5"))
+            allow_unknown = int(os.getenv("MEMORY_VERIFIER_ALLOW_UNKNOWN", "1"))
+            unknown_used = 0
+            for score, cand, comps in scored_candidates:
+                d = dec_map.get(cand.text)
+                if not d:
+                    keep.append((score, cand, comps))
+                    continue
+                status = d.get('status')
+                if status == 'contradicts':
+                    # Drop
+                    continue
+                if status == 'entailed':
+                    # Boost
+                    keep.append((score + entailed_boost, cand, comps))
+                else:
+                    if unknown_used < allow_unknown:
+                        keep.append((score, cand, comps))
+                        unknown_used += 1
+            # Preserve ordering by score after boosts
+            keep.sort(key=lambda x: x[0], reverse=True)
+            return keep[:max_candidates]
+        except Exception as e:
+            logger.debug(f"[Retrieval] verify_and_filter failed: {e}")
+            return scored_candidates
     
     def _normalize_candidate_text(self, text: str) -> str:
         """

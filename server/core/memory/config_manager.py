@@ -113,6 +113,11 @@ class MemoryConfiguration(BaseConfiguration):
     fts_enhanced_only: bool = True
     slot_catalog_enabled: bool = False
     slot_min_score: float = 0.85
+    # Verifier
+    verifier_enabled: bool = True
+    verifier_model: Optional[str] = None
+    verifier_ent_thresh: float = 0.6
+    verifier_con_thresh: float = 0.6
 
     def __post_init__(self):
         """Post-initialization processing"""
@@ -267,6 +272,11 @@ class MemoryConfiguration(BaseConfiguration):
         fts_enhanced_only = _parse_bool(os.getenv("MEMORY_FTS_ENHANCED_ONLY") or "true")
         slot_catalog_enabled = _parse_bool(os.getenv("MEMORY_SLOT_CATALOG") or "false")
         slot_min_score = _parse_float(os.getenv("MEMORY_SLOT_MIN_SCORE"), default=0.85)
+        # Verifier flags
+        verifier_enabled = _parse_bool(os.getenv("MEMORY_VERIFIER_ENABLED") or "true")
+        verifier_model = os.getenv("MEMORY_VERIFIER_MODEL")
+        verifier_ent_thresh = _parse_float(os.getenv("MEMORY_VERIFIER_ENT_T"), default=0.6)
+        verifier_con_thresh = _parse_float(os.getenv("MEMORY_VERIFIER_CON_T"), default=0.6)
 
         return cls(
             # Core settings
@@ -351,6 +361,11 @@ class MemoryConfiguration(BaseConfiguration):
             fts_enhanced_only=fts_enhanced_only,
             slot_catalog_enabled=slot_catalog_enabled,
             slot_min_score=slot_min_score
+            ,
+            verifier_enabled=verifier_enabled,
+            verifier_model=verifier_model,
+            verifier_ent_thresh=verifier_ent_thresh,
+            verifier_con_thresh=verifier_con_thresh
         )
 
     def validate(self) -> List[str]:

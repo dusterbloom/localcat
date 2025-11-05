@@ -233,6 +233,13 @@ MEMORY_PROFILES_ENABLED=true              # Deterministic context planner (slot/
 MEMORY_SEMANTIC_ENABLED=false             # Semantic sidecar off by default (enable for paraphrase-heavy flows)
 MEMORY_SLOT_CATALOG=false                 # Optional attribute catalog for slots (data-driven)
 MEMORY_SLOT_MIN_SCORE=0.85                # Slot detection threshold for catalog
+MEMORY_VERIFIER_ENABLED=true              # Query-conditioned verifier (answerability / NLI)
+# Optionally set a local verifier model (HF local cache):
+# MEMORY_VERIFIER_MODEL=mxbai/rerank-xsmall-v1
+# MEMORY_VERIFIER_ENT_T=0.6               # Entailment threshold (3-class)
+# MEMORY_VERIFIER_CON_T=0.6               # Contradiction threshold (3-class)
+# MEMORY_VERIFIER_BOOST=0.5               # Score boost for entailed items
+# MEMORY_VERIFIER_ALLOW_UNKNOWN=1         # Allow up to N unknowns if no entailed
 
 # === Memory Retrieval Enhancement ===
 MEMORY_WEIGHT_PROSODY=0.0                  # Prosody weight for convo reranking (0.0-1.0)
