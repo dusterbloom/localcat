@@ -1,0 +1,26 @@
+{
+  "sem_noise": {
+    "flags": {
+      "MEMORY_PROFILES_ENABLED": "true",
+      "MEMORY_SEMANTIC_ENABLED": "true",
+      "MEMORY_SOURCES": "graph,convo,summary,semantic",
+      "MEMORY_FILTER_QUALITY": "false",
+      "MEMORY_MAX_BULLETS": "3"
+    },
+    "n": 300,
+    "has_gold_rate": 0.17666666666666667,
+    "avg_latency_ms": 1.10257344339819,
+    "p95_latency_ms": 2.0823955244850367,
+    "p99_latency_ms": 3.15480173449032,
+    "elapsed_ms": 351.85258398996666,
+    "mrr": 0.11611111111111112,
+    "hit@1": 0.1,
+    "p@1": 0.1,
+    "hit@3": 0.14,
+    "p@3": 0.08222222222222217,
+    "hit@5": 0.14,
+    "p@5": 0.08222222222222217,
+    "hit@10": 0.14,
+    "p@10": 0.08222222222222217
+  }
+}

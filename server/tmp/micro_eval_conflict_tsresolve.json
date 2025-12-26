@@ -1,0 +1,700 @@
+{
+  "baseline": {
+    "flags": {},
+    "cases": [
+      {
+        "case_id": "live_conflict_now",
+        "bullets": [
+          "• [graph] you live in berlin (0s ago)",
+          "• [graph] you use live in paris (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.338583002507221,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "live_conflict_used_to",
+        "bullets": [
+          "• [graph] you use live in london (0s ago)",
+          "• [graph] you live in lisbon (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.5287499991245568,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "work_conflict_switch",
+        "bullets": [
+          "• [graph] you work at google (0s ago)",
+          "• [graph] you join anthropic (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.213166004163213,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "work_conflict_backtrack",
+        "bullets": [
+          "• [graph] you work at spacex (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.255000002856832,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "pref_flip_food",
+        "bullets": [
+          "• [graph] you like sushi (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3092910012346692,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "pref_flip_drink",
+        "bullets": [
+          "• [graph] you like coffee (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2453750023269095,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "color_conflict",
+        "bullets": [
+          "• [graph] favorite color is blue (0s ago)",
+          "• [graph] you have favorite color (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.3778749998891726,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "alias_name_conflict",
+        "bullets": [
+          "• [graph] your name is elizabeth (0s ago)",
+          "• [graph] people call you (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.2682910019066185,
+        "k": 3,
+        "hurt": false
+      },
+      {
+        "case_id": "reside_vs_travel",
+        "bullets": [
+          "• [graph] you live in kyoto (0s ago)",
+          "• [graph] you travel in july (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.2255830006324686,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "reside_vs_based",
+        "bullets": [
+          "• [graph] you base in austin (0s ago)",
+          "• [graph] you use base in dallas (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3822910041199066,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "multi_lang_skill",
+        "bullets": [
+          "• [graph] you speak english (0s ago)",
+          "• [graph] you learn japanese (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.439250001567416,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "multi_lang_conflict",
+        "bullets": [
+          "• [graph] you use speak (0s ago)",
+          "• [graph] you speak english (0s ago)"
+        ],
+        "precision_at_k": 0.3333333333333333,
+        "has_gold": true,
+        "latency_ms": 1.3000000035390258,
+        "k": 3,
+        "hurt": false
+      },
+      {
+        "case_id": "job_role_change",
+        "bullets": [
+          "• [graph] you are engineer (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2915000042994507,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "team_support_flip",
+        "bullets": [
+          "• [graph] you use support (0s ago)",
+          "• [graph] you support fc barcelona (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2803330027963966,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "city_move_graph_convo",
+        "bullets": [
+          "• [graph] you live in seattle (0s ago)",
+          "• [graph] you have friend (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.3082500008749776,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "company_alias_conflict",
+        "bullets": [
+          "• [graph] you work at openai (0s ago)",
+          "• [graph] you join anthropic (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2925000046379864,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_skill",
+        "bullets": [
+          "• [graph] you code in go (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.1914159986190498,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "device_change",
+        "bullets": [
+          "• [graph] you have phone (0s ago)",
+          "• [graph] you switch to pixel (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2669580028159544,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "laptop_change",
+        "bullets": [
+          "• [graph] you have laptop (0s ago)",
+          "• [graph] you use thinkpad (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3043750004726462,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "music_preference_conflict",
+        "bullets": [
+          "• [graph] you dislike jazz (0s ago)",
+          "• [graph] you enjoy jazz (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2962909968337044,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "location_three_way",
+        "bullets": [
+          "• [graph] you live in nyc (0s ago)",
+          "• [graph] you move to boston (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.2053750033373944,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "work_three_way",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.120708002417814,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "reside_vs_travel_conflict",
+        "bullets": [
+          "• [graph] you live in berlin (0s ago)",
+          "• [graph] you travel to paris (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.1657499999273568,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "reside_ambiguous_semantic",
+        "bullets": [
+          "• [graph] you mention in chat (0s ago)",
+          "• [graph] you reference in notes (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.225416999659501,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "work_semantic_noise",
+        "bullets": [
+          "• [graph] you work at openai (0s ago)",
+          "• [graph] you discuss anthropic research (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.373166000121273,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "role_semantic_noise",
+        "bullets": [
+          "• [graph] you are engineer (0s ago)",
+          "• [graph] you mention design thinking (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.2657919942284934,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_food_conflict",
+        "bullets": [
+          "• [graph] you like sushi (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2589999969350174,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "sport_alias_noise",
+        "bullets": [
+          "• [graph] you reference lakers game (0s ago)",
+          "• [graph] you root for warriors (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2363339992589317,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "speaker_noise_identity",
+        "bullets": [
+          "• [graph] people call you (0s ago)",
+          "• [graph] your name is alice (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 2.0338749964139424,
+        "k": 3,
+        "hurt": false
+      }
+    ],
+    "avg_precision_at_k": 0.5287356321839081,
+    "avg_latency_ms": 1.3103618975006173,
+    "has_gold_rate": 0.8275862068965517,
+    "hurt_rate": 0.13793103448275862
+  },
+  "enhanced": {
+    "flags": {
+      "MEMORY_FTS_ENHANCED_ONLY": "true"
+    },
+    "cases": [
+      {
+        "case_id": "live_conflict_now",
+        "bullets": [
+          "• [graph] you live in berlin (0s ago)",
+          "• [graph] you use live in paris (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.246166997589171,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "live_conflict_used_to",
+        "bullets": [
+          "• [graph] you use live in london (0s ago)",
+          "• [graph] you live in lisbon (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.1549159971764311,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "work_conflict_switch",
+        "bullets": [
+          "• [graph] you work at google (0s ago)",
+          "• [graph] you join anthropic (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.189999995403923,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "work_conflict_backtrack",
+        "bullets": [
+          "• [graph] you work at spacex (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.1910409957636148,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "pref_flip_food",
+        "bullets": [
+          "• [graph] you like sushi (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2121660038246773,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "pref_flip_drink",
+        "bullets": [
+          "• [graph] you like coffee (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2197079995530657,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "color_conflict",
+        "bullets": [
+          "• [graph] favorite color is blue (0s ago)",
+          "• [graph] you have favorite color (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.3227919989731163,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "alias_name_conflict",
+        "bullets": [
+          "• [graph] your name is elizabeth (0s ago)",
+          "• [graph] people call you (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.173791999462992,
+        "k": 3,
+        "hurt": false
+      },
+      {
+        "case_id": "reside_vs_travel",
+        "bullets": [
+          "• [graph] you live in kyoto (0s ago)",
+          "• [graph] you travel in july (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.2452500013750978,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "reside_vs_based",
+        "bullets": [
+          "• [graph] you base in austin (0s ago)",
+          "• [graph] you use base in dallas (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.2231670043547638,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "multi_lang_skill",
+        "bullets": [
+          "• [graph] you speak english (0s ago)",
+          "• [graph] you learn japanese (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2194590017315932,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "multi_lang_conflict",
+        "bullets": [
+          "• [graph] you use speak (0s ago)",
+          "• [graph] you speak english (0s ago)"
+        ],
+        "precision_at_k": 0.3333333333333333,
+        "has_gold": true,
+        "latency_ms": 1.3382920005824417,
+        "k": 3,
+        "hurt": false
+      },
+      {
+        "case_id": "job_role_change",
+        "bullets": [
+          "• [graph] you are engineer (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2496249983087182,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "team_support_flip",
+        "bullets": [
+          "• [graph] you use support (0s ago)",
+          "• [graph] you support fc barcelona (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3987499987706542,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "city_move_graph_convo",
+        "bullets": [
+          "• [graph] you live in seattle (0s ago)",
+          "• [graph] you have friend (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.2396250021993183,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "company_alias_conflict",
+        "bullets": [
+          "• [graph] you work at openai (0s ago)",
+          "• [graph] you join anthropic (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.4176249969750643,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_skill",
+        "bullets": [
+          "• [graph] you code in go (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2142920022597536,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "device_change",
+        "bullets": [
+          "• [graph] you have phone (0s ago)",
+          "• [graph] you switch to pixel (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2809579930035397,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "laptop_change",
+        "bullets": [
+          "• [graph] you have laptop (0s ago)",
+          "• [graph] you use thinkpad (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3157909997971728,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "music_preference_conflict",
+        "bullets": [
+          "• [graph] you dislike jazz (0s ago)",
+          "• [graph] you enjoy jazz (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.219083002069965,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "location_three_way",
+        "bullets": [
+          "• [graph] you live in nyc (0s ago)",
+          "• [graph] you move to boston (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.185875000373926,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "work_three_way",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.0813749977387488,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "reside_vs_travel_conflict",
+        "bullets": [
+          "• [graph] you live in berlin (0s ago)",
+          "• [graph] you travel to paris (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.2319999950705096,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "reside_ambiguous_semantic",
+        "bullets": [
+          "• [graph] you mention in chat (0s ago)",
+          "• [graph] you reference in notes (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.3658750031027012,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "work_semantic_noise",
+        "bullets": [
+          "• [graph] you work at openai (0s ago)",
+          "• [graph] you discuss anthropic research (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.2707919959211722,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "role_semantic_noise",
+        "bullets": [
+          "• [graph] you are engineer (0s ago)",
+          "• [graph] you mention design thinking (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3562500025727786,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_food_conflict",
+        "bullets": [
+          "• [graph] you like sushi (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.2460409998311661,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "sport_alias_noise",
+        "bullets": [
+          "• [graph] you reference lakers game (0s ago)",
+          "• [graph] you root for warriors (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.1986669996986166,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "speaker_noise_identity",
+        "bullets": [
+          "• [graph] people call you (0s ago)",
+          "• [graph] your name is alice (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.2949160009156913,
+        "k": 3,
+        "hurt": false
+      }
+    ],
+    "avg_precision_at_k": 0.5287356321839081,
+    "avg_latency_ms": 1.2518720684275995,
+    "has_gold_rate": 0.8275862068965517,
+    "hurt_rate": 0.13793103448275862
+  }
+}

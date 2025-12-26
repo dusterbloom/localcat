@@ -1,0 +1,22 @@
+{
+  "sem_noise": {
+    "flags": {
+      "MEMORY_PROFILES_ENABLED": "true",
+      "MEMORY_SEMANTIC_ENABLED": "true",
+      "MEMORY_SOURCES": "graph,convo,summary,semantic",
+      "MEMORY_FILTER_QUALITY": "false",
+      "MEMORY_MAX_BULLETS": "3"
+    },
+    "n": 300,
+    "has_gold_rate": 0.01,
+    "avg_latency_ms": 5.295564156937568,
+    "elapsed_ms": 1589.6368749963585
+  },
+  "baseline": {
+    "flags": {},
+    "n": 300,
+    "has_gold_rate": 0.0,
+    "avg_latency_ms": 1.4336004200352666,
+    "elapsed_ms": 430.5305000016233
+  }
+}
