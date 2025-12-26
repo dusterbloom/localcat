@@ -45,13 +45,17 @@ mlx_lm = _MLXStub()  # Will be replaced by real module on demand or by tests
 def _ensure_mlx():
     """Lazily import mlx_lm and attach sample_utils helpers.
 
-    Avoids importing MLX at module import time, which can crash on systems
-    without Metal/MLX configured and breaks unit tests.
+    Avoids importing MLX at module import time. Only short‑circuits when the
+    module is already the real mlx_lm, not when the local test stub is active.
     """
     global mlx_lm
-    # If tests patched mlx_lm (e.g., providing .load/.stream_generate), respect it
-    if hasattr(mlx_lm, "load") and hasattr(mlx_lm, "stream_generate"):
-        return
+    # If the module is already the real mlx_lm (not our stub), skip
+    try:
+        if not isinstance(mlx_lm, _MLXStub):
+            return
+    except Exception:
+        # If type check fails, attempt import anyway
+        pass
     try:
         import importlib
         real = importlib.import_module("mlx_lm")

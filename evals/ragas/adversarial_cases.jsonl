@@ -1,0 +1,15 @@
+{"id":"empty_context","setup":[],"query":"What's my name?","gold":[],"expect":"no_retrieval","category":"hallucination"}
+{"id":"contradiction_latest","setup":["I live in NYC","I moved to San Francisco"],"query":"Where do I live?","gold":["san francisco"],"expect":"latest_only","category":"contradiction"}
+{"id":"contradiction_explicit","setup":["I like pizza","Actually I don't like pizza"],"query":"Do I like pizza?","gold":["don't","not"],"expect":"negation","category":"contradiction"}
+{"id":"negation_simple","setup":["I'm not a vegetarian"],"query":"What do I eat?","gold":[],"expect":"no_specific_food","category":"negation"}
+{"id":"temporal_update","setup":["I worked at Google in 2020","Now I work at Meta"],"query":"Where do I work?","gold":["meta"],"expect":"latest_only","category":"temporal"}
+{"id":"temporal_past_tense","setup":["I lived in Paris","I moved to Tokyo"],"query":"Where did I live before?","gold":["paris"],"expect":"historical","category":"temporal"}
+{"id":"multi_hop_simple","setup":["My sister is Alice","Alice lives in Seattle"],"query":"Where does my sister live?","gold":["seattle","alice"],"expect":"transitive","category":"multi_hop"}
+{"id":"multi_hop_complex","setup":["My manager is Bob","Bob reports to the CEO","The CEO is named Sarah"],"query":"Who is my manager's boss?","gold":["sarah","ceo"],"expect":"two_hop","category":"multi_hop"}
+{"id":"ambiguous_pronoun","setup":["My brother and my dad both like basketball","My dad is a coach"],"query":"Who coaches basketball?","gold":["dad"],"expect":"resolve_pronoun","category":"coreference"}
+{"id":"partial_info","setup":["I have a dog","His name is Max"],"query":"What pets do I have?","gold":["dog","max"],"expect":"combine_facts","category":"multi_fact"}
+{"id":"implicit_negation","setup":["I only eat fish and vegetables"],"query":"Do I eat chicken?","gold":[],"expect":"implicit_no","category":"negation"}
+{"id":"update_attribute","setup":["My favorite color is blue","Actually my favorite color is green"],"query":"What's my favorite color?","gold":["green"],"expect":"latest_update","category":"update"}
+{"id":"conflicting_relations","setup":["I work at Microsoft","I work at Amazon"],"query":"Where do I work?","gold":["amazon"],"expect":"latest_relation","category":"conflict"}
+{"id":"deleted_fact","setup":["I'm allergic to peanuts","Never mind, I'm not allergic to peanuts"],"query":"What am I allergic to?","gold":[],"expect":"retraction","category":"deletion"}
+{"id":"future_intent","setup":["I'm planning to visit Japan next year"],"query":"Where am I going?","gold":["japan"],"expect":"future_plan","category":"temporal"}

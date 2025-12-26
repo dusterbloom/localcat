@@ -1,0 +1,20 @@
+{"id":"slot_name","setup":["My name is Alice"],"query":"what's my name?","gold":["name","alice"]}
+{"id":"slot_works","setup":["I work at Google"],"query":"where do I work?","gold":["google"]}
+{"id":"slot_live","setup":["I live in San Francisco"],"query":"where do I live?","gold":["san francisco"]}
+{"id":"slot_pref_color","setup":["I love blue"],"query":"what color do I like?","gold":["blue"]}
+{"id":"update_live","setup":["I live in New York","I live in Denver"],"query":"where do I live now?","gold":["denver"]}
+{"id":"update_work","setup":["I work at Tesla","I work at SpaceX"],"query":"where do I work?","gold":["spacex"]}
+{"id":"negation_like","setup":["I like tea","I don't like tea"],"query":"do I like tea?","gold":["tea"]}
+{"id":"episodic_jazz","setup":["I went to the jazz club on Saturday","It was amazing"],"query":"what did I say about the jazz club?","gold":["jazz club"]}
+{"id":"paraphrase_live","setup":["I reside in San Jose"],"query":"where do I live?","gold":["san jose"]}
+{"id":"paraphrase_color","setup":["blue is my favorite hue"],"query":"what color do I like?","gold":["blue"]}
+{"id":"paraphrase_dogs","setup":["I adore canines"],"query":"Do I like dogs?","gold":["dog","canine"]}
+{"id":"pref_food","setup":["My favorite food is sushi"],"query":"what food do I like?","gold":["sushi"]}
+{"id":"paraphrase_home","setup":["My hometown is Kyoto"],"query":"where am I from?","gold":["kyoto"]}
+{"id":"paraphrase_company","setup":["I'm employed at OpenAI"],"query":"where do I work?","gold":["openai"]}
+{"id":"episodic_hike","setup":["Last weekend I hiked Mount Tam"],"query":"what did I say about hiking?","gold":["hike","mount tam"]}
+{"id":"negation_food","setup":["I like pizza","I don't like pizza"],"query":"do I like pizza?","gold":["pizza"]}
+{"id":"update_city","setup":["I live in Seattle","I live in Portland"],"query":"where do I live now?","gold":["portland"]}
+{"id":"paraphrase_name_alias","setup":["People call me Ali"],"query":"what's my name?","gold":["ali"]}
+{"id":"paraphrase_live_settle","setup":["I settled down in Austin"],"query":"where do I live?","gold":["austin"]}
+{"id":"paraphrase_live_based","setup":["I'm based in Berlin"],"query":"where do I live?","gold":["berlin"]}

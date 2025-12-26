@@ -1,0 +1,59 @@
+{"id":"name_alias_1","setup":["People call me Liz","My name is Elizabeth"],"query":"what's my name?","gold":["elizabeth","liz","name"]}
+{"id":"name_alias_2","setup":["They call me Bob","My name is Robert"],"query":"who am I?","gold":["robert","bob"]}
+{"id":"live_update_1","setup":["I live in Paris","I live in Lyon"],"query":"where do I live now?","gold":["lyon"]}
+{"id":"live_update_2","setup":["I'm based in Berlin","I'm based in Munich"],"query":"where am I based?","gold":["munich"]}
+{"id":"work_update_1","setup":["I work at Google","I work at DeepMind"],"query":"where do I work?","gold":["deepmind"]}
+{"id":"work_update_2","setup":["I'm employed at Tesla","I'm employed at SpaceX"],"query":"who do I work for?","gold":["spacex"]}
+{"id":"pref_color_1","setup":["Blue is my favorite color"],"query":"what color do I like?","gold":["blue"]}
+{"id":"pref_color_2","setup":["I love the color green"],"query":"what's my favorite color?","gold":["green"]}
+{"id":"pref_food_1","setup":["My favorite food is sushi"],"query":"what food do I like?","gold":["sushi"]}
+{"id":"pref_food_2","setup":["I adore pizza"],"query":"do I like pizza?","gold":["pizza"]}
+{"id":"negation_food_1","setup":["I like tea","I don't like tea"],"query":"do I like tea?","gold":["tea"]}
+{"id":"negation_drink_1","setup":["I don't like coffee","I like coffee now"],"query":"do I like coffee?","gold":["coffee","now"]}
+{"id":"paraphrase_live_1","setup":["I reside in San Jose"],"query":"where do I live?","gold":["san jose","reside"]}
+{"id":"paraphrase_live_2","setup":["I'm based in Austin"],"query":"where am I living?","gold":["austin","based"]}
+{"id":"paraphrase_company_1","setup":["I'm employed at OpenAI"],"query":"where do I work?","gold":["openai","employed"]}
+{"id":"paraphrase_company_2","setup":["I joined Anthropic"],"query":"who do I work for?","gold":["anthropic","joined"]}
+{"id":"number_update_1","setup":["I ran 5 km yesterday","I ran 8 km today"],"query":"how far did I run today?","gold":["8","km"]}
+{"id":"number_update_2","setup":["I read 10 books last year","I read 12 books this year"],"query":"how many books did I read this year?","gold":["12","books"]}
+{"id":"date_birthday_1","setup":["My birthday is on May 12"],"query":"when is my birthday?","gold":["may","12"]}
+{"id":"date_anniv_1","setup":["My anniversary is on 2021-09-30"],"query":"when is my anniversary?","gold":["2021","09","30"]}
+{"id":"hobby_1","setup":["On weekends I cycle"],"query":"what do I do on weekends?","gold":["cycle"]}
+{"id":"hobby_2","setup":["I like hiking in the mountains"],"query":"what outdoor activity do I like?","gold":["hiking"]}
+{"id":"pet_like_1","setup":["I love dogs"],"query":"do I like dogs?","gold":["dog"]}
+{"id":"pet_like_2","setup":["I adore canines"],"query":"do I like dogs?","gold":["canine","dog"]}
+{"id":"spouse_pref_1","setup":["My wife Ana likes sushi"],"query":"who likes sushi?","gold":["ana","sushi"]}
+{"id":"spouse_pref_2","setup":["My husband Tom hates broccoli"],"query":"who hates broccoli?","gold":["tom","broccoli"]}
+{"id":"multi_fact_1","setup":["At work I use Python and Go"],"query":"what languages do I use at work?","gold":["python","go"]}
+{"id":"multi_fact_2","setup":["I speak English and Spanish"],"query":"what languages do I speak?","gold":["english","spanish"]}
+{"id":"travel_last_1","setup":["I traveled to Tokyo in June","I traveled to Kyoto in July"],"query":"where did I travel most recently?","gold":["kyoto","july"]}
+{"id":"travel_last_2","setup":["I visited Rome in 2022","I visited Milan in 2024"],"query":"which city did I visit last?","gold":["milan","2024"]}
+{"id":"school_grad_1","setup":["I graduated from MIT"],"query":"where did I graduate from?","gold":["mit"]}
+{"id":"school_grad_2","setup":["I studied at Stanford"],"query":"where did I study?","gold":["stanford"]}
+{"id":"tool_use_1","setup":["I use VS Code for coding"],"query":"what editor do I use?","gold":["vs code","editor"]}
+{"id":"tool_use_2","setup":["I use JetBrains PyCharm at work"],"query":"which IDE do I use at work?","gold":["pycharm","jetbrains"]}
+{"id":"negation_music_1","setup":["I used to dislike jazz","Now I enjoy jazz"],"query":"do I like jazz?","gold":["jazz","now"]}
+{"id":"negation_music_2","setup":["I don't like metal","I like metal now"],"query":"do I like metal?","gold":["metal","now"]}
+{"id":"age_1","setup":["I'm 29 years old"],"query":"how old am I?","gold":["29"]}
+{"id":"height_1","setup":["I'm 180 cm tall"],"query":"how tall am I?","gold":["180","cm"]}
+{"id":"weight_1","setup":["I weigh 75 kg"],"query":"what's my weight?","gold":["75","kg"]}
+{"id":"time_pref_1","setup":["I usually wake up at 6 am"],"query":"when do I wake up?","gold":["6","am"]}
+{"id":"device_pref_1","setup":["I use an iPhone"],"query":"what phone do I use?","gold":["iphone"]}
+{"id":"device_pref_2","setup":["My laptop is a MacBook Pro"],"query":"what laptop do I have?","gold":["macbook","pro"]}
+{"id":"movie_pref_1","setup":["My favorite movie is Inception"],"query":"what's my favorite movie?","gold":["inception"]}
+{"id":"book_pref_1","setup":["My favorite book is Dune"],"query":"what book do I like?","gold":["dune"]}
+{"id":"sport_team_1","setup":["I support FC Barcelona"],"query":"which team do I support?","gold":["barcelona"]}
+{"id":"sport_team_2","setup":["I root for the Warriors"],"query":"which team do I root for?","gold":["warriors"]}
+{"id":"city_move_1","setup":["I lived in Seattle","I live in Portland now"],"query":"where do I live now?","gold":["portland","now"]}
+{"id":"city_move_2","setup":["I used to live in NYC","I live in Boston now"],"query":"where do I live currently?","gold":["boston","now"]}
+{"id":"job_change_1","setup":["I was at Facebook","I'm at Stripe now"],"query":"where do I work now?","gold":["stripe","now"]}
+{"id":"job_change_2","setup":["I was a PM","I'm an engineer now"],"query":"what's my role now?","gold":["engineer","now"]}
+{"id":"music_pref_1","setup":["I like classical music"],"query":"what music do I like?","gold":["classical"]}
+{"id":"music_pref_2","setup":["I enjoy indie rock"],"query":"what genre do I enjoy?","gold":["indie","rock"]}
+{"id":"family_kids_1","setup":["I have two kids"],"query":"how many kids do I have?","gold":["two","2"]}
+{"id":"lang_learn_1","setup":["I'm learning Japanese"],"query":"which language am I learning?","gold":["japanese"]}
+{"id":"travel_pref_1","setup":["I prefer window seats on planes"],"query":"what seats do I prefer on planes?","gold":["window"]}
+{"id":"diet_pref_1","setup":["I'm vegetarian"],"query":"what's my diet?","gold":["vegetarian"]}
+{"id":"allergy_1","setup":["I'm allergic to peanuts"],"query":"what am I allergic to?","gold":["peanut"]}
+{"id":"timezone_1","setup":["I'm in Pacific Time"],"query":"what timezone am I in?","gold":["pacific"]}
+{"id":"car_1","setup":["I drive a Tesla Model 3"],"query":"what car do I drive?","gold":["tesla","model 3"]}

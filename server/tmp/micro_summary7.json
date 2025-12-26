@@ -1,0 +1,1675 @@
+{
+  "baseline": {
+    "flags": {
+      "MEMORY_TRACE_VARIANT": "baseline"
+    },
+    "cases": [
+      {
+        "case_id": "slot_name",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 2335.311000002548,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "slot_works",
+        "bullets": [
+          "• [graph] you work at google (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 128.9394999621436,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "slot_live",
+        "bullets": [
+          "• [graph] you live in san francisco (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 127.67433293629438,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "slot_pref_color",
+        "bullets": [
+          "• [graph] you are blue (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 118.70862497016788,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_live",
+        "bullets": [
+          "• [graph] you live in denver (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 121.56058300752193,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_work",
+        "bullets": [
+          "• [graph] you work at spacex (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 121.52437504846603,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_like",
+        "bullets": [
+          "• [graph] you like tea (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 51.37579201254994,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_jazz",
+        "bullets": [
+          "• [graph] you go on saturday (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 76.36712491512299,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_live",
+        "bullets": [
+          "• [graph] you reside in san jose (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 127.89158395025879,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_color",
+        "bullets": [
+          "• [graph] you have favorite hue (0s ago)",
+          "• [graph] blue is favorite hue (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 127.52124993130565,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_dogs",
+        "bullets": [
+          "• [graph] you adore canine (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 135.0366669939831,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "pref_food",
+        "bullets": [
+          "• [graph] you have favorite food (0s ago)",
+          "• [graph] favorite food is sushi (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 125.8304170332849,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_home",
+        "bullets": [
+          "• [graph] you have hometown (0s ago)",
+          "• [graph] hometown is kyoto (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 120.54570799227804,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_company",
+        "bullets": [
+          "• [graph] you employ at openai (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 115.81012490205467,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_hike",
+        "bullets": [
+          "• [graph] you hike mount tam (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 115.6038329936564,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_food",
+        "bullets": [
+          "• [graph] you like pizza (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 50.98724993877113,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_city",
+        "bullets": [
+          "• [graph] you live in portland (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 114.96304196771234,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_name_alias",
+        "bullets": [
+          "• [graph] people call you (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 114.38962502870709,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_live_settle",
+        "bullets": [
+          "• [graph] you settle in austin (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 135.5709999334067,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_live_based",
+        "bullets": [
+          "• [graph] you base in berlin (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 133.99845804087818,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_work_employed",
+        "bullets": [
+          "• [graph] by performed employ (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 127.86558398511261,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_work_at_company",
+        "bullets": [
+          "• [graph] you join nvidia (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 133.09758401010185,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_color_hue",
+        "bullets": [
+          "• [graph] you have preferred color (0s ago)",
+          "• [graph] green is preferred color (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 130.25500008370727,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_color_shade",
+        "bullets": [
+          "• [graph] you have favorite shade (0s ago)",
+          "• [graph] favorite shade is teal (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 124.86329197417945,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_food_cuisine",
+        "bullets": [
+          "• [graph] you ’m into italian cuisine (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 115.17616698984057,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_food_dish",
+        "bullets": [
+          "• [graph] you have go (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 133.15633300226182,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_pets_dogs",
+        "bullets": [
+          "• [graph] you ’m dog person (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 115.60391599778086,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_pets_cats",
+        "bullets": [
+          "• [graph] you are fond of felines (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 116.55337503179908,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_concert",
+        "bullets": [
+          "• [graph] you catch radiohead gig (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 69.38416592311114,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_trip",
+        "bullets": [
+          "• [graph] sushi is unreal (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 132.29183305520564,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_meeting",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 116.70195905026048,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "update_pref_color",
+        "bullets": [
+          "• [graph] you prefer purple (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 54.88149996381253,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_company",
+        "bullets": [
+          "• [graph] you work at stripe (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 122.08312505390495,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_pets",
+        "bullets": [
+          "• [graph] you like snake (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 51.136374939233065,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_origin_from",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 4.352041985839605,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_origin_hail",
+        "bullets": [
+          "• [graph] you hail from dublin (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 119.7218329180032,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_lives_residing",
+        "bullets": [
+          "• [graph] you reside in vancouver (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 115.30229193158448,
+        "k": 1,
+        "hurt": false
+      }
+    ],
+    "avg_precision_at_k": 0.7432432432432432,
+    "avg_latency_ms": 169.7847747961311,
+    "has_gold_rate": 0.7837837837837838,
+    "hurt_rate": 0.1891891891891892
+  },
+  "enhanced": {
+    "flags": {
+      "MEMORY_FTS_ENHANCED_ONLY": "true",
+      "MEMORY_TRACE_VARIANT": "enhanced"
+    },
+    "cases": [
+      {
+        "case_id": "slot_name",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 114.81304198969156,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "slot_works",
+        "bullets": [
+          "• [graph] you work at google (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 113.45008295029402,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "slot_live",
+        "bullets": [
+          "• [graph] you live in san francisco (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 131.60075002815574,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "slot_pref_color",
+        "bullets": [
+          "• [graph] you are blue (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 114.6596249891445,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_live",
+        "bullets": [
+          "• [graph] you live in denver (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 116.25974997878075,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_work",
+        "bullets": [
+          "• [graph] you work at spacex (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 114.45829109288752,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_like",
+        "bullets": [
+          "• [graph] you like tea (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 51.37704196386039,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_jazz",
+        "bullets": [
+          "• [graph] you go on saturday (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 69.25412500277162,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_live",
+        "bullets": [
+          "• [graph] you reside in san jose (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 121.2022079853341,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_color",
+        "bullets": [
+          "• [graph] you have favorite hue (0s ago)",
+          "• [graph] blue is favorite hue (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 122.32420803047717,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_dogs",
+        "bullets": [
+          "• [graph] you adore canine (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 117.88416700437665,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "pref_food",
+        "bullets": [
+          "• [graph] you have favorite food (0s ago)",
+          "• [graph] favorite food is sushi (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 120.67229102831334,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_home",
+        "bullets": [
+          "• [graph] you have hometown (0s ago)",
+          "• [graph] hometown is kyoto (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 117.8069170564413,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_company",
+        "bullets": [
+          "• [graph] you employ at openai (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 115.89479201938957,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_hike",
+        "bullets": [
+          "• [graph] you hike mount tam (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 115.75800005812198,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_food",
+        "bullets": [
+          "• [graph] you like pizza (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 51.830042037181556,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_city",
+        "bullets": [
+          "• [graph] you live in portland (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 114.73112495150417,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_name_alias",
+        "bullets": [
+          "• [graph] people call you (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 115.50229194108397,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_live_settle",
+        "bullets": [
+          "• [graph] you settle in austin (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 113.88508300296962,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_live_based",
+        "bullets": [
+          "• [graph] you base in berlin (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 115.9040000056848,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_work_employed",
+        "bullets": [
+          "• [graph] by performed employ (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 125.97341695800424,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_work_at_company",
+        "bullets": [
+          "• [graph] you join nvidia (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 142.16649997979403,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_color_hue",
+        "bullets": [
+          "• [graph] you have preferred color (0s ago)",
+          "• [graph] green is preferred color (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 133.5870421025902,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_color_shade",
+        "bullets": [
+          "• [graph] you have favorite shade (0s ago)",
+          "• [graph] favorite shade is teal (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 134.1158750001341,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_food_cuisine",
+        "bullets": [
+          "• [graph] you ’m into italian cuisine (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 131.230374914594,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_food_dish",
+        "bullets": [
+          "• [graph] you have go (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 132.68449995666742,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_pets_dogs",
+        "bullets": [
+          "• [graph] you ’m dog person (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 116.39158299658448,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_pets_cats",
+        "bullets": [
+          "• [graph] you are fond of felines (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 114.91299991030246,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_concert",
+        "bullets": [
+          "• [graph] you catch radiohead gig (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 69.1805409733206,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_trip",
+        "bullets": [
+          "• [graph] sushi is unreal (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 129.81433304958045,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_meeting",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 122.10916599724442,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "update_pref_color",
+        "bullets": [
+          "• [graph] you prefer purple (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 54.50508405920118,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_company",
+        "bullets": [
+          "• [graph] you work at stripe (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 120.67608302459121,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_pets",
+        "bullets": [
+          "• [graph] you like snake (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 52.73520899936557,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_origin_from",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 4.6752908965572715,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_origin_hail",
+        "bullets": [
+          "• [graph] you hail from dublin (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 113.65050007589161,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_lives_residing",
+        "bullets": [
+          "• [graph] you reside in vancouver (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 120.30075001530349,
+        "k": 1,
+        "hurt": false
+      }
+    ],
+    "avg_precision_at_k": 0.7432432432432432,
+    "avg_latency_ms": 107.78316437908624,
+    "has_gold_rate": 0.7837837837837838,
+    "hurt_rate": 0.1891891891891892
+  },
+  "profiles": {
+    "flags": {
+      "MEMORY_PROFILES_ENABLED": "true",
+      "MEMORY_TRACE_VARIANT": "profiles"
+    },
+    "cases": [
+      {
+        "case_id": "slot_name",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 120.72037498001009,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "slot_works",
+        "bullets": [
+          "• [graph] you work at google (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 119.83045900706202,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "slot_live",
+        "bullets": [
+          "• [graph] you live in san francisco (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 121.78699998185039,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "slot_pref_color",
+        "bullets": [
+          "• [graph] you are blue (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 129.13641694467515,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_live",
+        "bullets": [
+          "• [graph] you live in denver (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 129.22250002156943,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_work",
+        "bullets": [
+          "• [graph] you work at spacex (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 136.42570795491338,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_like",
+        "bullets": [
+          "• [graph] you like tea (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 58.59529098961502,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_jazz",
+        "bullets": [
+          "• [graph] you go on saturday (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 69.42262500524521,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_live",
+        "bullets": [
+          "• [graph] you reside in san jose (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 132.44570791721344,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_color",
+        "bullets": [
+          "• [graph] you have favorite hue (0s ago)",
+          "• [graph] blue is favorite hue (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 118.72429202776402,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_dogs",
+        "bullets": [
+          "• [graph] you adore canine (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 116.62562494166195,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "pref_food",
+        "bullets": [
+          "• [graph] you have favorite food (0s ago)",
+          "• [graph] favorite food is sushi (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 122.01008293777704,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_home",
+        "bullets": [
+          "• [graph] you have hometown (0s ago)",
+          "• [graph] hometown is kyoto (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 142.2968750121072,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_company",
+        "bullets": [
+          "• [graph] you employ at openai (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 132.3150839889422,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_hike",
+        "bullets": [
+          "• [graph] you hike mount tam (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 135.03012503497303,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_food",
+        "bullets": [
+          "• [graph] you like pizza (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 56.68600008357316,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_city",
+        "bullets": [
+          "• [graph] you live in portland (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 129.98045806307346,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_name_alias",
+        "bullets": [
+          "• [graph] people call you (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 116.59504100680351,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_live_settle",
+        "bullets": [
+          "• [graph] you settle in austin (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 122.75745801161975,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_live_based",
+        "bullets": [
+          "• [graph] you base in berlin (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 121.54254200868309,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_work_employed",
+        "bullets": [
+          "• [graph] by performed employ (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 126.71099998988211,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_work_at_company",
+        "bullets": [
+          "• [graph] you join nvidia (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 126.64854200556874,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_color_hue",
+        "bullets": [
+          "• [graph] you have preferred color (0s ago)",
+          "• [graph] green is preferred color (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 132.6255830936134,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_color_shade",
+        "bullets": [
+          "• [graph] you have favorite shade (0s ago)",
+          "• [graph] favorite shade is teal (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 132.65287491958588,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_food_cuisine",
+        "bullets": [
+          "• [graph] you ’m into italian cuisine (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 118.81333298515528,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_food_dish",
+        "bullets": [
+          "• [graph] you have go (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 137.1643750462681,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_pets_dogs",
+        "bullets": [
+          "• [graph] you ’m dog person (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 121.82024994399399,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_pets_cats",
+        "bullets": [
+          "• [graph] you are fond of felines (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 119.355957955122,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_concert",
+        "bullets": [
+          "• [graph] you catch radiohead gig (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 68.7787919305265,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_trip",
+        "bullets": [
+          "• [graph] sushi is unreal (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 131.51504192501307,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_meeting",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 117.94579203706235,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "update_pref_color",
+        "bullets": [
+          "• [graph] you prefer purple (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 58.67745901923627,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_company",
+        "bullets": [
+          "• [graph] you work at stripe (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 118.17037500441074,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_pets",
+        "bullets": [
+          "• [graph] you like snake (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 52.61425010394305,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_origin_from",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 4.678042023442686,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_origin_hail",
+        "bullets": [
+          "• [graph] you hail from dublin (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 123.75337502453476,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_lives_residing",
+        "bullets": [
+          "• [graph] you reside in vancouver (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 120.34000002313405,
+        "k": 1,
+        "hurt": false
+      }
+    ],
+    "avg_precision_at_k": 0.7432432432432432,
+    "avg_latency_ms": 112.01120834998987,
+    "has_gold_rate": 0.7837837837837838,
+    "hurt_rate": 0.1891891891891892
+  },
+  "profiles_sem": {
+    "flags": {
+      "MEMORY_PROFILES_ENABLED": "true",
+      "MEMORY_SEMANTIC_ENABLED": "true",
+      "MEMORY_SOURCES": "graph,convo,summary,semantic",
+      "MEMORY_TRACE_VARIANT": "profiles_sem"
+    },
+    "cases": [
+      {
+        "case_id": "slot_name",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 136.27495791297406,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "slot_works",
+        "bullets": [
+          "• [graph] you work at google (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 66.61566696129739,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "slot_live",
+        "bullets": [
+          "• [graph] you live in san francisco (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 76.43287489190698,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "slot_pref_color",
+        "bullets": [
+          "• [graph] you are blue (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 140.24641702417284,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_live",
+        "bullets": [
+          "• [graph] you live in denver (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 73.60737503040582,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_work",
+        "bullets": [
+          "• [graph] you work at spacex (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 73.28825001604855,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_like",
+        "bullets": [
+          "• [graph] you like tea (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 58.726832969114184,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_jazz",
+        "bullets": [
+          "• [graph] you go on saturday (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 72.35433289315552,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_live",
+        "bullets": [
+          "• [graph] you reside in san jose (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 118.60041599720716,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_color",
+        "bullets": [
+          "• [graph] you have favorite hue (0s ago)",
+          "• [graph] blue is favorite hue (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 124.33325010351837,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_dogs",
+        "bullets": [
+          "• [graph] you adore canine (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 122.81383306253701,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "pref_food",
+        "bullets": [
+          "• [graph] you have favorite food (0s ago)",
+          "• [graph] favorite food is sushi (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 76.95037499070168,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_home",
+        "bullets": [
+          "• [graph] you have hometown (0s ago)",
+          "• [graph] hometown is kyoto (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 131.02854101452976,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_company",
+        "bullets": [
+          "• [graph] you employ at openai (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 122.56220798008144,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_hike",
+        "bullets": [
+          "• [graph] you hike mount tam (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 121.92166701424867,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_food",
+        "bullets": [
+          "• [graph] you like pizza (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 59.21712494455278,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_city",
+        "bullets": [
+          "• [graph] you live in portland (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 89.1168339876458,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_name_alias",
+        "bullets": [
+          "• [graph] people call you (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 150.0788329867646,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_live_settle",
+        "bullets": [
+          "• [graph] you settle in austin (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 146.29316597711295,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_live_based",
+        "bullets": [
+          "• [graph] you base in berlin (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 129.05391701497138,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_work_employed",
+        "bullets": [
+          "• [graph] by performed employ (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 140.15850005671382,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_work_at_company",
+        "bullets": [
+          "• [graph] you join nvidia (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 143.8875829335302,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_color_hue",
+        "bullets": [
+          "• [graph] you have preferred color (0s ago)",
+          "• [convo] green is my preferred color (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 80.35349997226149,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_color_shade",
+        "bullets": [
+          "• [graph] you have favorite shade (0s ago)",
+          "• [graph] favorite shade is teal (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 124.9134159879759,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_food_cuisine",
+        "bullets": [
+          "• [graph] you ’m into italian cuisine (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 128.69379203766584,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_food_dish",
+        "bullets": [
+          "• [graph] you have go (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 84.1174169909209,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_pets_dogs",
+        "bullets": [
+          "• [graph] you ’m dog person (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 134.2274589696899,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_pets_cats",
+        "bullets": [
+          "• [graph] you are fond of felines (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 137.10420799907297,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_concert",
+        "bullets": [
+          "• [graph] you catch radiohead gig (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 75.75633400119841,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_trip",
+        "bullets": [
+          "• [graph] sushi is unreal (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 157.64495800249279,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "episodic_meeting",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 126.94924999959767,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "update_pref_color",
+        "bullets": [
+          "• [graph] you prefer purple (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 57.481084018945694,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "update_company",
+        "bullets": [
+          "• [graph] you work at stripe (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 73.53170902933925,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_pets",
+        "bullets": [
+          "• [graph] you like snake (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 57.16062500141561,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "paraphrase_origin_from",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 7.003499893471599,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_origin_hail",
+        "bullets": [
+          "• [graph] you hail from dublin (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 123.23200004175305,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_lives_residing",
+        "bullets": [
+          "• [graph] you reside in vancouver (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 118.65658301394433,
+        "k": 1,
+        "hurt": false
+      }
+    ],
+    "avg_precision_at_k": 0.7432432432432432,
+    "avg_latency_ms": 104.33483218170099,
+    "has_gold_rate": 0.7837837837837838,
+    "hurt_rate": 0.1891891891891892
+  }
+}

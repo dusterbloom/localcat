@@ -6,6 +6,7 @@ for Qwen3 and other tool-compatible models.
 """
 
 import asyncio
+import os
 import json
 import re
 import threading
@@ -17,40 +18,25 @@ from loguru import logger
 # Import global MLX lock for Metal operation coordination
 from core.utils.mlx_lock import MLX_GLOBAL_LOCK
 
-# Lazy MLX import: provide a stub object that tests can patch safely.
-class _MLXStub:
-    def load(self, *args, **kwargs):  # type: ignore[no-self-use]
-        raise ImportError("mlx-lm not available in test stub")
+# Reuse the MLX loader and module from the base DirectMLXLLMService to avoid
+# duplicate stubs and ensure consistent import behavior.
+from .direct_mlx_llm import _ensure_mlx as _base_ensure_mlx, mlx_lm as _base_mlx_lm
 
-    def stream_generate(self, *args, **kwargs):  # type: ignore[no-self-use]
-        raise ImportError("mlx-lm not available in test stub")
-
-    def make_sampler(self, *args, **kwargs):  # type: ignore[no-self-use]
-        return None
-
-mlx_lm = _MLXStub()  # Replaced by real module on demand or by tests
+# Alias to base module's symbols so this file and the base service share the
+# same MLX import state (real module or test stub).
+mlx_lm = _base_mlx_lm
 
 def _ensure_mlx():
-    """Lazily import mlx_lm and attach sample_utils helpers."""
-    global mlx_lm
-    if hasattr(mlx_lm, "load") and hasattr(mlx_lm, "stream_generate"):
-        return
-    try:
-        import importlib
-        real = importlib.import_module("mlx_lm")
-        try:
-            su = importlib.import_module("mlx_lm.sample_utils")
-            if not hasattr(real, "make_sampler") and hasattr(su, "make_sampler"):
-                setattr(real, "make_sampler", getattr(su, "make_sampler"))
-            if not hasattr(real, "make_logits_processors") and hasattr(su, "make_logits_processors"):
-                setattr(real, "make_logits_processors", getattr(su, "make_logits_processors"))
-        except Exception:
-            pass
-        mlx_lm = real
-    except Exception as e:
-        raise ImportError(
-            "mlx-lm required for DirectMLXLLMServiceWithTools. Install with: pip install mlx-lm"
-        ) from e
+    """Ensure real MLX module is loaded and sync local alias to base module.
+
+    Important: we must rebind our local mlx_lm reference after the base
+    loader potentially replaces its own global stub with the real module.
+    """
+    _base_ensure_mlx()
+    # Re-import the base symbol to capture its current value (real or stub)
+    from .direct_mlx_llm import mlx_lm as _current
+    globals()['mlx_lm'] = _current
+    return _current
 
 from pipecat.frames.frames import (
     Frame,
@@ -138,15 +124,17 @@ class DirectMLXLLMServiceWithTools(DirectMLXLLMService):
             # Check tokenizer config for tool calling indicators
             if hasattr(self._tokenizer, 'chat_template'):
                 template = str(self._tokenizer.chat_template)
-                tool_indicators = ['tool_calls', 'function_call', 'tools', '<tool']
-                return any(indicator in template.lower() for indicator in tool_indicators)
+                tool_indicators = ['tool_calls', 'function_call', 'tools', '<tool', '<function=']
+                # Only enable tools when the tokenizer template explicitly supports them
+                if any(indicator in template.lower() for indicator in tool_indicators):
+                    return True
+                else:
+                    return False
         except Exception as e:
             logger.warning(f"Could not check tool support: {e}")
 
-        # Check model name for known tool-capable models
-        tool_models = ['qwen3', 'qwen2.5', 'llama-3.1', 'llama-3.2']
-        model_lower = self._model_name.lower()
-        return any(model in model_lower for model in tool_models)
+        # Fallback: allow forcing tool support via env (avoids false positives on models without templates)
+        return (str(os.getenv('LLM_FORCE_TOOL_SUPPORT', 'false')).lower() in ('1','true','yes'))
 
     async def _process_context(
         self, context: OpenAILLMContext | LLMContext
@@ -237,6 +225,12 @@ class DirectMLXLLMServiceWithTools(DirectMLXLLMService):
                 Enhanced to detect and handle tool calls in the response.
                 """
                 try:
+                    # Ensure MLX is available (imports real module if present)
+                    try:
+                        _ensure_mlx()
+                    except Exception as e:
+                        raise ImportError("mlx-lm not available; install mlx-lm or disable Direct MLX backend") from e
+
                     # Create sampler with temperature
                     sampler = mlx_lm.make_sampler(temp=self._settings["temperature"]) if hasattr(mlx_lm, "make_sampler") else None
 
@@ -347,12 +341,10 @@ class DirectMLXLLMServiceWithTools(DirectMLXLLMService):
                     # First time emitting this token
                     self._emitted_text_frames[token] = (frame_id, time.time(), 1)
 
-                # Normalize leading whitespace so tests compare tokens consistently
-                norm_token = token.lstrip() if isinstance(token, str) else token
-                # Track last token text for test assertions
-                if isinstance(norm_token, str):
-                    self._last_generated_text = norm_token
-                yield LLMTextFrame(text=norm_token)
+                # Preserve whitespace emitted by the model to avoid word concatenation
+                if isinstance(token, str):
+                    self._last_generated_text = token
+                yield LLMTextFrame(text=token)
 
             # Log completion
             total_time = (time.time() - start_time) * 1000
@@ -512,12 +504,12 @@ To use a tool, respond with a function call in this format:
         Returns:
             True if tool call pattern detected
         """
-        # Common tool call patterns for Qwen3 and similar models
+        # Common tool call patterns for Qwen3 / OpenAI-style models
         tool_patterns = [
-            r'<function=\w+>',
-            r'<\|im_start\|>assistant\s*\n<function',
-            r'```tool',
-            r'',
+            r'<function=\w+>',                          # Qwen-style XML function tag
+            r'<\|im_start\|>assistant\s*\n<function', # Qwen-style with special tokens
+            r'```tool',                                   # Markdown fenced tool block
+            r'"tool_calls"\s*:',                       # OpenAI JSON tool_calls
         ]
 
         return any(re.search(pattern, text, re.IGNORECASE) for pattern in tool_patterns)

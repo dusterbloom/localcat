@@ -215,6 +215,11 @@ class Retrieval:
         except Exception:
             self._qtype = None
 
+        # Instrumentation file (opt-in via MEMORY_INSTRUMENTATION_FILE)
+        self._instrumentation_file = os.getenv("MEMORY_INSTRUMENTATION_FILE")
+        if self._instrumentation_file:
+            logger.info(f"[Retrieval] Instrumentation enabled: {self._instrumentation_file}")
+
     def _check_edge_visibility_impl(self, edge_id: str, user_id: Optional[str], session_id: Optional[str]) -> bool:
         """
         Internal implementation for checking edge visibility (cached via LRU).
@@ -271,13 +276,23 @@ class Retrieval:
         """
         # Clear per-retrieve prosody cache to avoid cross-retrieve contamination
         self._prosody_cache.clear()
-        
+
+        # Opt-in timing instrumentation
+        track_timing = os.getenv("MEMORY_TRACK_TIMING", "false").lower() in ("1", "true", "yes")
+        if track_timing:
+            from .timing_tracker import TimingTracker
+            tracker = TimingTracker()
+        else:
+            tracker = None
+
         # Detect slot from query (attribute-aware routing)
+        if tracker: tracker.start("slot_detection")
         try:
             from .slot_router import SlotRouter
             slot_id, slot_conf = SlotRouter.detect_slot(query)
         except Exception:
             slot_id, slot_conf = (None, 0.0)
+        if tracker: tracker.end("slot_detection")
 
         # Source control via MemoryConfiguration if available, else env, else default
         enabled_sources = None
@@ -356,9 +371,11 @@ class Retrieval:
 
         for source in enabled_sources:
             if source == "graph" and budget.get("graph", 0) > 0:
+                if tracker: tracker.start("graph_collection")
                 graph_candidates = self._graph_collect_candidates(
                     query, entities, turn_id, budget["graph"], seen_texts.copy(), relation_allowlist
                 )
+                if tracker: tracker.end("graph_collection")
                 pre_counts["graph"] = len(graph_candidates)
                 # Slot alignment filter for graph candidates (post-humanization text)
                 if slot_id:
@@ -372,7 +389,9 @@ class Retrieval:
                 logger.debug(f"[Retrieval] graph_candidates count={len(graph_candidates)}")
 
             elif source == "convo" and budget.get("convo", 0) > 0:
+                if tracker: tracker.start("convo_collection")
                 convo_candidates = self._convo_collect_candidates(query, budget["convo"], seen_texts.copy(), slot_id=slot_id)
+                if tracker: tracker.end("convo_collection")
                 pre_counts["convo"] = len(convo_candidates)
                 if slot_id:
                     try:
@@ -385,7 +404,9 @@ class Retrieval:
                 logger.debug(f"[Retrieval] convo_candidates count={len(convo_candidates)}")
 
             elif source == "summary" and budget.get("summary", 0) > 0:
+                if tracker: tracker.start("summary_collection")
                 summary_candidates = self._summary_collect_candidates(budget["summary"], seen_texts.copy())
+                if tracker: tracker.end("summary_collection")
                 pre_counts["summary"] = len(summary_candidates)
                 # Optional: slot filtering for summaries when slot_id present (conservative)
                 if slot_id:
@@ -399,7 +420,9 @@ class Retrieval:
                 logger.debug(f"[Retrieval] summary_candidates count={len(summary_candidates)}")
 
             elif source == "semantic" and budget.get("semantic", 0) > 0:
+                if tracker: tracker.start("semantic_collection")
                 semantic_candidates = self._semantic_collect_candidates(query, budget["semantic"], seen_texts.copy())
+                if tracker: tracker.end("semantic_collection")
                 pre_counts["semantic"] = len(semantic_candidates)
                 if slot_id:
                     try:
@@ -433,10 +456,52 @@ class Retrieval:
                 pass
 
         # Composite re-rank all candidates
+        if tracker: tracker.start("composite_scoring")
         scored_candidates: List[Tuple[float, Candidate, Dict[str, float]]] = []
         start_time = time.time()
 
         previous_clock = self._scoring_clock_ms
+        # Precompute optional Jina reranker scores in batch for efficiency
+        self._current_jina_scores = None
+        try:
+            use_jina_rerank = os.getenv("MEMORY_RERANK_JINA_ENABLED", "false").lower() in ("1", "true", "yes")
+        except Exception:
+            use_jina_rerank = False
+        if use_jina_rerank and all_candidates:
+            # Optional ambiguity gating: only run Jina when top candidates are bunched
+            amb_only = os.getenv("MEMORY_RERANK_JINA_AMBIGUITY_ONLY", "false").lower() in ("1", "true", "yes")
+            should_run = True
+            if amb_only:
+                try:
+                    topN = min(6, len(all_candidates))
+                    confs: List[float] = []
+                    for i in range(topN):
+                        cand = all_candidates[i]
+                        if cand.source == "convo":
+                            c = cand.meta.get("bm25_score", cand.score_hint)
+                            c = float(c) if isinstance(c, (int, float)) else 0.0
+                            confs.append(min(1.0, max(0.0, c / 10.0)))
+                        elif cand.source == "graph":
+                            w = float(cand.meta.get("weight", 0.0)) if isinstance(cand.meta, dict) else 0.0
+                            pos = int(cand.meta.get("pos", 0)) if isinstance(cand.meta, dict) else 0
+                            support = 1.0 + min(max(pos, 0), 5) * 0.1
+                            confs.append(max(w, 0.01) * support)
+                        else:
+                            confs.append(0.5)
+                    spread = (max(confs) - min(confs)) if confs else 0.0
+                    should_run = spread <= float(os.getenv("MEMORY_RERANK_JINA_AMBIGUITY_SPREAD", "0.15"))
+                except Exception:
+                    should_run = True
+            if should_run:
+                try:
+                    from .rerank_jina import get_jina_reranker
+                    jr = get_jina_reranker()
+                    texts = [c.text for c in all_candidates]
+                    scores = jr.score(query, texts)
+                    self._current_jina_scores = {t: s for t, s in zip(texts, scores)}
+                except Exception as e:
+                    logger.debug(f"[Retrieval] Jina rerank precompute failed: {e}")
+                    self._current_jina_scores = None
         self._scoring_clock_ms = int(time.time()) * 1000
         try:
             for candidate in all_candidates:
@@ -444,6 +509,7 @@ class Retrieval:
                 scored_candidates.append((total_score, candidate, components))
         finally:
             self._scoring_clock_ms = previous_clock
+            self._current_jina_scores = None
 
         # If a slot is detected, boost best graph candidate to guarantee first bullet when present
         if scored_candidates and slot_id:
@@ -466,6 +532,7 @@ class Retrieval:
                 pass
 
         rerank_time_ms = (time.time() - start_time) * 1000
+        if tracker: tracker.end("composite_scoring")
 
         # INFO: slot summary for observability
         try:
@@ -483,13 +550,17 @@ class Retrieval:
 
         # Deterministic Context Planner (optional)
         if self._profiles_enabled:
+            if tracker: tracker.start("context_planning")
             plan = self._plan_context(query=query, slot_id=slot_id, slot_conf=slot_conf, enabled_sources=enabled_sources)
             if do_trace and trace is not None:
                 trace["plan"] = plan
             scored_candidates = self._apply_quotas(scored_candidates, plan, max_candidates=max_bullets * 4)
+            if tracker: tracker.end("context_planning")
 
         # Query-conditioned verification filter (drop contradicts, keep entailed)
+        if tracker: tracker.start("verification")
         scored_candidates = self._verify_and_filter(query, scored_candidates, max_candidates=max_bullets * 4)
+        if tracker: tracker.end("verification")
 
         # Optional: restrict to top-priority source for simpler context, useful for small LMs
         try:
@@ -502,9 +573,11 @@ class Retrieval:
                 scored_candidates = [(s, c, comp) for s, c, comp in scored_candidates if c.source == top_source]
 
         # Apply token budget enforcement and cross-source deduplication
+        if tracker: tracker.start("budget_enforcement")
         final_bullets, selected_candidates = self._apply_token_budget_and_deduplication(
             scored_candidates, max_bullets, query
         )
+        if tracker: tracker.end("budget_enforcement")
 
         # Update usage tracking for selected graph candidates
         current_time = int(time.time() * 1000)
@@ -537,6 +610,15 @@ class Retrieval:
                     f.write(_json.dumps(trace, ensure_ascii=False) + "\n")
             except Exception:
                 pass
+
+        # Log timing breakdown if instrumentation enabled
+        if tracker:
+            timing_data = tracker.to_dict()
+            logger.info(f"[TIMING] retrieve() completed in {timing_data['total_ms']:.1f}ms (budget_remaining={timing_data['budget_remaining_ms']:.1f}ms)", extra=timing_data)
+
+            # Optional: Write to structured instrumentation log
+            if self._instrumentation_file:
+                self._write_instrumentation(query, timing_data, final_bullets)
 
         if not final_bullets:
             logger.warning(f"[Retrieval] No memory context found for query")
@@ -885,7 +967,63 @@ class Retrieval:
                     if unknown_used < allow_unknown:
                         keep.append((score, cand, comps))
                         unknown_used += 1
-            # Preserve ordering by score after boosts
+            # Optional conflict resolution: keep only latest per key
+            # Key defaults to (subject, relation); for preference facts (e.g., favorite color)
+            # we collapse to a canonical (pref, key) so variants like
+            #  - "favorite color is X" and "you have favorite color" group together.
+            try:
+                if os.getenv("MEMORY_CONFLICT_RESOLVE", "false").lower() in ("1", "true", "yes"):
+                    def _pref_key(text: str) -> Optional[str]:
+                        try:
+                            t = (text or "").lower()
+                        except Exception:
+                            return None
+                        # Direct phrases first
+                        if "favorite color" in t or "favourite colour" in t or "favorite hue" in t:
+                            return "color"
+                        if "favorite food" in t or "favourite food" in t:
+                            return "food"
+                        if "favorite movie" in t or "favourite movie" in t:
+                            return "movie"
+                        if "favorite book" in t or "favourite book" in t:
+                            return "book"
+                        # Generic pattern: favorite <token>
+                        import re
+                        m = re.search(r"\b(favorite|favourite)\s+(\w+)", t)
+                        if m:
+                            token = m.group(2)
+                            if token in ("hue", "colour"):
+                                return "color"
+                            return token
+                        return None
+
+                    latest_map: Dict[Tuple[str, str], Tuple[float, Candidate, Dict[str, float]]] = {}
+                    for score, cand, comps in keep:
+                        if cand.source == "graph" and isinstance(cand.meta, dict):
+                            s_val = str(cand.meta.get("s")) if cand.meta.get("s") is not None else ""
+                            r_val = str(cand.meta.get("rel")) if cand.meta.get("rel") is not None else ""
+                            d_val = str(cand.meta.get("d")) if cand.meta.get("d") is not None else ""
+                            # Preference collapsing
+                            pk = _pref_key(s_val) or _pref_key(d_val)
+                            if pk:
+                                key = ("pref", pk)
+                            else:
+                                key = (s_val, r_val)
+                        else:
+                            key = (None, None)
+                        prev = latest_map.get(key)
+                        if prev is None:
+                            latest_map[key] = (score, cand, comps)
+                        else:
+                            prev_ts = prev[1].ts or 0
+                            cand_ts = cand.ts or 0
+                            if cand_ts > prev_ts or (cand_ts == prev_ts and score > prev[0]):
+                                latest_map[key] = (score, cand, comps)
+                    keep = list(latest_map.values())
+            except Exception as e:
+                logger.debug(f"[Retrieval] conflict resolve failed: {e}")
+
+            # Preserve ordering by score after boosts/filters
             keep.sort(key=lambda x: x[0], reverse=True)
             return keep[:max_candidates]
         except Exception as e:
@@ -1256,18 +1394,24 @@ class Retrieval:
                 from .enhanced_fts import EnhancedFTS
                 enhanced_fts = EnhancedFTS(self.host.store)
 
-                # User-wide scope by default: include all sessions owned by current user
-                session_id = getattr(self.host, 'current_session_id', None)
-                user_id = getattr(self.host, 'current_user_id', None)
-                allowed_sessions = []
-                try:
-                    if user_id and hasattr(self.host.store, 'get_sessions_by_user'):
-                        allowed_sessions = list(self.host.store.get_sessions_by_user(user_id) or [])
-                except Exception:
+                # Determine scope for Enhanced FTS search
+                # Eval override: allow explicit session_ids (comma-separated) via env
+                override = os.getenv("MEMORY_EVAL_SESSION_IDS", "").strip()
+                if override:
+                    allowed_sessions = [s.strip() for s in override.split(',') if s.strip()]
+                else:
+                    # User-wide scope by default: include all sessions owned by current user
+                    session_id = getattr(self.host, 'current_session_id', None)
+                    user_id = getattr(self.host, 'current_user_id', None)
                     allowed_sessions = []
-                if not allowed_sessions and session_id:
-                    # Fallback to current session if user mapping not available
-                    allowed_sessions = [session_id]
+                    try:
+                        if user_id and hasattr(self.host.store, 'get_sessions_by_user'):
+                            allowed_sessions = list(self.host.store.get_sessions_by_user(user_id) or [])
+                    except Exception:
+                        allowed_sessions = []
+                    if not allowed_sessions and session_id:
+                        # Fallback to current session if user mapping not available
+                        allowed_sessions = [session_id]
 
                 enhanced_results = enhanced_fts.enhanced_search(query, max_bullets * 2, session_ids=allowed_sessions, slot_id=slot_id)
                 hits = [(score, text, eid, ts, turn_id) for score, text, eid, ts, turn_id in enhanced_results]
@@ -1883,6 +2027,14 @@ class Retrieval:
                 return f"your name is {dd}"
             return f"{ds} is named {dd}"
         if r == "has":
+            # Preference scaffolding like "you have favorite X" isn't useful as an answer → drop it
+            try:
+                if dd and isinstance(dd, str):
+                    dl = dd.lower()
+                    if dl.startswith('favorite ') or dl.startswith('favourite '):
+                        return ""
+            except Exception:
+                pass
             if ds.lower() == "you":
                 return f"you have {dd}"
             return f"{ds} has {dd}"
@@ -1892,6 +2044,27 @@ class Retrieval:
                 return ""
             return f"{ds} aka {dd}"
         if r == "is":
+            # Normalize generic preferences: "favorite X is Y" → "your favorite X is Y"
+            try:
+                if ds and isinstance(ds, str):
+                    sl = ds.lower()
+                else:
+                    sl = ""
+                if dd and isinstance(dd, str):
+                    dl = dd.lower()
+                else:
+                    dl = ""
+                if sl.startswith('favorite ') or sl.startswith('favourite '):
+                    key = sl.split(' ', 1)[1]
+                    key = 'color' if key in ('hue', 'colour') else key
+                    return f"your favorite {key} is {dd}"
+                if dl.startswith('favorite ') or dl.startswith('favourite '):
+                    key = dl.split(' ', 1)[1]
+                    key = 'color' if key in ('hue', 'colour') else key
+                    if ds and ds.lower() != 'you':
+                        return f"your favorite {key} is {ds}"
+            except Exception:
+                pass
             if ds.lower() in meaningless_entities or dd.lower().startswith("what "):
                 return ""
             if ds.lower() == "you":
@@ -1946,6 +2119,8 @@ class Retrieval:
             "wuse": 0.1,
             "wsim": 0.15,
             "wdiv": 0.05,
+            # Optional Jina reranker component (pairwise entailment probability)
+            "wjina": float(os.getenv("MEMORY_RERANK_JINA_WEIGHT", "0.25")),
         }
         # Overlay from config.rerank_weights when available
         try:
@@ -2072,6 +2247,29 @@ class Retrieval:
         age_ms = max(0, now_ms - candidate.ts) if candidate.ts else float('inf')
         recency_factor = (2 ** (-(age_ms / RECENCY_HALF_LIFE_MS))) if candidate.ts else 0.0
         components["wrec"] = recency_factor * self.weights["wrec"]
+
+        # Optional latest-timestamp boost among same (subject, relation)
+        ts_boost = 0.0
+        try:
+            boost_w_raw = os.getenv("MEMORY_TS_BOOST", "0").strip()
+            if boost_w_raw:
+                boost_w = float(boost_w_raw)
+                if boost_w > 0.0 and candidate.source == "graph" and other_candidates:
+                    s = candidate.meta.get("s") if isinstance(candidate.meta, dict) else None
+                    r = candidate.meta.get("rel") if isinstance(candidate.meta, dict) else None
+                    if s and r:
+                        max_ts = candidate.ts or 0
+                        for oc in other_candidates:
+                            if oc.source != "graph" or not isinstance(oc.meta, dict):
+                                continue
+                            if oc.meta.get("s") == s and oc.meta.get("rel") == r:
+                                if oc.ts and oc.ts > max_ts:
+                                    max_ts = oc.ts
+                        if candidate.ts and candidate.ts >= max_ts:
+                            ts_boost = boost_w
+        except Exception:
+            ts_boost = 0.0
+        components["wts"] = ts_boost
         
         # Usage boost (wuse)
         if candidate.source == "graph" and "edge_id" in candidate.meta:
@@ -2091,6 +2289,16 @@ class Retrieval:
             components["wsim"] = wsim * self.weights["wsim"]
         else:
             components["wsim"] = 0.0
+
+        # Jina pairwise entailment (wjina) - optional
+        if getattr(self, "_current_jina_scores", None) is not None and "wjina" in self.weights:
+            try:
+                p_ent = float(self._current_jina_scores.get(candidate.text, 0.0))
+            except Exception:
+                p_ent = 0.0
+            components["wjina"] = p_ent * self.weights["wjina"]
+        else:
+            components["wjina"] = 0.0
         
         # Prosody component (wpro) - for convo candidates only
         wpro = 0.0
@@ -2419,6 +2627,25 @@ class Retrieval:
         else:
             # Compact header only
             return f"• {header}"
+
+    def _write_instrumentation(self, query: str, timing_data: dict, bullets: List[str]):
+        """Write structured timing data to NDJSON instrumentation file."""
+        if not self._instrumentation_file:
+            return
+
+        record = {
+            "timestamp": time.time(),
+            "query": query,
+            "timing": timing_data,
+            "bullet_count": len(bullets),
+            "variant": os.getenv("MEMORY_TRACE_VARIANT", "unknown")
+        }
+
+        try:
+            with open(self._instrumentation_file, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as e:
+            logger.warning(f"[Retrieval] Failed to write instrumentation: {e}")
 
     def _get_source_priority(self, query: str, intent: Optional[Dict] = None) -> List[str]:
         """

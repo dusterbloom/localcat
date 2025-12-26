@@ -21,6 +21,8 @@ class AnswerabilityVerifier:
     def __init__(self, host: Any):
         self.host = host
         self.enabled = os.getenv("MEMORY_VERIFIER_ENABLED", "true").lower() in ("1", "true", "yes")
+        # Backend selection: auto|hf|jina|none
+        self._backend_pref = (os.getenv("MEMORY_VERIFIER_BACKEND") or "auto").strip().lower()
         self.model_name = os.getenv("MEMORY_VERIFIER_MODEL") or ""
         self.backend: Optional[str] = None
         self._hf_tokenizer = None
@@ -31,10 +33,22 @@ class AnswerabilityVerifier:
             self._con_idx = int(os.getenv("MEMORY_VERIFIER_CON_IDX", "0"))
         except Exception:
             self._ent_idx, self._con_idx = 2, 0
-        if self.model_name and self.enabled:
-            self._try_load_hf()
 
-    def _try_load_hf(self) -> None:
+        if not self.enabled:
+            return
+
+        # Auto-detect Jina models if not explicitly set
+        is_jina_model = any(s in (self.model_name or "").lower() for s in ("jinaai/", "jina-reranker", "jina"))
+        if self._backend_pref in ("jina",) or is_jina_model:
+            # Provide a sensible default model for latency/accuracy if unspecified
+            if not self.model_name:
+                # Tiny variant keeps latency small while restoring accuracy vs rules
+                self.model_name = "jinaai/jina-reranker-v3-tiny"
+            self._try_load_hf(backend_hint="jina")
+        elif self.model_name:
+            self._try_load_hf(backend_hint="hf")
+
+    def _try_load_hf(self, backend_hint: Optional[str] = None) -> None:
         try:
             from transformers import AutoTokenizer, AutoModelForSequenceClassification
             # Allow remote code for custom reranker implementations (e.g., Jina v3)
@@ -50,8 +64,12 @@ class AnswerabilityVerifier:
                 local_files_only=local_only,
                 trust_remote_code=trust_remote,
             )
-            self.backend = "hf"
-            logger.info(f"[Verifier] Loaded verifier model: {self.model_name}")
+            # Select backend type
+            if backend_hint == "jina" or any(s in (self.model_name or "").lower() for s in ("jinaai/", "jina-reranker")):
+                self.backend = "jina"
+            else:
+                self.backend = "hf"
+            logger.info(f"[Verifier] Loaded verifier model ({self.backend}): {self.model_name}")
         except Exception as e:
             logger.warning(f"[Verifier] HF load failed for {self.model_name}: {e}; using rules")
             self.backend = None
@@ -62,12 +80,13 @@ class AnswerabilityVerifier:
         try:
             import torch
             pairs = [(query, t) for t in texts]
+            max_len = int(os.getenv("MEMORY_VERIFIER_MAXLEN", "256"))
             enc = self._hf_tokenizer(
                 [q for q, _ in pairs],
                 [t for _, t in pairs],
                 return_tensors="pt",
                 truncation=True,
-                max_length=256,
+                max_length=max_len,
                 padding=True,
             )
             with torch.no_grad():
@@ -77,7 +96,7 @@ class AnswerabilityVerifier:
             scores_attr = getattr(out, 'scores', None)
             if scores_attr is not None:
                 # Some rerankers expose a direct 'scores' tensor
-                s = torch.tensor(scores_attr).view(-1).sigmoid().cpu().tolist()
+                s = torch.as_tensor(scores_attr).view(-1).sigmoid().cpu().tolist()
                 return [(0.0, 1.0 - x, x) for x in s]
             if logits is None:
                 return [(0.0, 1.0, 0.0) for _ in texts]
@@ -98,6 +117,56 @@ class AnswerabilityVerifier:
             return res
         except Exception as e:
             logger.debug(f"[Verifier] HF inference failed: {e}")
+            return [(0.0, 1.0, 0.0) for _ in texts]
+
+    def _jina_scores(self, query: str, texts: List[str]) -> List[Tuple[float, float, float]]:
+        """Jina official pipeline: pair tokenization + score head.
+
+        Uses HF remote code if available (trust_remote_code=true). Falls back to
+        generic pair classification if model does not expose a custom API.
+        Returns (p_contra, p_neutral, p_entail) with single-score mapped via sigmoid.
+        """
+        try:
+            import torch
+            max_len = int(os.getenv("MEMORY_VERIFIER_MAXLEN", "384"))  # slightly higher default for Jina
+            # Standard pair tokenization is the recommended interface for Jina rerankers
+            enc = self._hf_tokenizer(
+                [query] * len(texts),
+                texts,
+                return_tensors="pt",
+                truncation=True,
+                max_length=max_len,
+                padding=True,
+            )
+            with torch.no_grad():
+                out = self._hf_model(**enc)
+
+            # Prefer explicit scores when remote code provides them
+            scores_attr = getattr(out, 'scores', None)
+            if scores_attr is not None:
+                s = torch.as_tensor(scores_attr).view(-1).sigmoid().cpu().tolist()
+                return [(0.0, 1.0 - x, x) for x in s]
+
+            # Otherwise infer from logits (B,) or (B,1) or 3-class style
+            logits = getattr(out, 'logits', None)
+            if logits is None:
+                return [(0.0, 1.0, 0.0) for _ in texts]
+            if logits.ndim == 1:
+                s = logits.sigmoid().cpu().tolist()
+                return [(0.0, 1.0 - x, x) for x in s]
+            if logits.shape[-1] == 1:
+                s = logits.squeeze(-1).sigmoid().cpu().tolist()
+                return [(0.0, 1.0 - x, x) for x in s]
+            probs = logits.softmax(dim=-1).cpu().tolist()
+            res = []
+            for p in probs:
+                p_ent = float(p[self._ent_idx]) if self._ent_idx < len(p) else 0.0
+                p_con = float(p[self._con_idx]) if self._con_idx < len(p) else 0.0
+                p_neu = max(0.0, 1.0 - p_ent - p_con)
+                res.append((p_con, p_neu, p_ent))
+            return res
+        except Exception as e:
+            logger.debug(f"[Verifier] Jina inference failed: {e}")
             return [(0.0, 1.0, 0.0) for _ in texts]
 
     def _rules_status(self, query: str, text: str) -> Tuple[str, float]:
@@ -123,6 +192,19 @@ class AnswerabilityVerifier:
             return [{"text": t, "status": "unknown", "score": 0.5} for t in texts]
         if self.backend == "hf":
             scores = self._hf_scores(query, texts)
+            out = []
+            ent_th = float(os.getenv("MEMORY_VERIFIER_ENT_T", "0.6"))
+            con_th = float(os.getenv("MEMORY_VERIFIER_CON_T", "0.6"))
+            for t, (p_con, p_neu, p_ent) in zip(texts, scores):
+                if p_ent >= ent_th:
+                    out.append({"text": t, "status": "entailed", "score": float(p_ent)})
+                elif p_con >= con_th:
+                    out.append({"text": t, "status": "contradicts", "score": float(p_con)})
+                else:
+                    out.append({"text": t, "status": "unknown", "score": float(p_ent)})
+            return out
+        if self.backend == "jina":
+            scores = self._jina_scores(query, texts)
             out = []
             ent_th = float(os.getenv("MEMORY_VERIFIER_ENT_T", "0.6"))
             con_th = float(os.getenv("MEMORY_VERIFIER_CON_T", "0.6"))

@@ -1,0 +1,47 @@
+{
+  "baseline": {
+    "flags": {
+      "MEMORY_TRACE_VARIANT": "baseline"
+    },
+    "cases": [
+      {
+        "case_id": "case-1",
+        "bullets": [
+          "• [graph] your name is alice (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.9125830003758892,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "case-2",
+        "bullets": [
+          "• [graph] you live in san francisco (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3025419975747354,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "case-3",
+        "bullets": [
+          "• [graph] favorite food is sushi (0s ago)",
+          "• [graph] you have favorite food (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.5126670041354373,
+        "k": 2,
+        "hurt": true
+      }
+    ],
+    "avg_precision_at_k": 1.0,
+    "avg_latency_ms": 1.5759306673620206,
+    "has_gold_rate": 1.0,
+    "hurt_rate": 0.3333333333333333
+  }
+}

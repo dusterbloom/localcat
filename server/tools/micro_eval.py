@@ -29,8 +29,8 @@ environment flags to apply for that run. Default includes:
   - catalog: MEMORY_SLOT_CATALOG=true
 
 Outputs a JSON summary (and prints a table) with per-case metrics and totals:
-  - bullets, precision_at_k, has_gold, latency_ms
-  - per-variant aggregates
+  - bullets, precision_at_k, mrr, hit@k, p@k, latency_ms
+  - aggregates: has_gold_rate, avg_latency_ms, p95_latency_ms, p99_latency_ms, mrr, hit@k, p@k
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 from loguru import logger
 
@@ -55,6 +55,153 @@ VARIANTS: Dict[str, Dict[str, str]] = {
         "MEMORY_PROFILES_ENABLED": "true",
         "MEMORY_SEMANTIC_ENABLED": "true",
         "MEMORY_SOURCES": "graph,convo,summary,semantic"
+    },
+    "sem_noise": {
+        "MEMORY_PROFILES_ENABLED": "true",
+        "MEMORY_SEMANTIC_ENABLED": "true",
+        "MEMORY_SOURCES": "graph,convo,summary,semantic",
+        "MEMORY_FILTER_QUALITY": "false",
+        "MEMORY_MAX_BULLETS": "3",
+    },
+    "sem_jina_best": {
+        "MEMORY_PROFILES_ENABLED": "true",
+        "MEMORY_SEMANTIC_ENABLED": "true",
+        "MEMORY_SOURCES": "graph,convo,summary,semantic",
+        "MEMORY_FILTER_QUALITY": "false",
+        "MEMORY_MAX_BULLETS": "3",
+        "MEMORY_VERIFIER_ENABLED": "true",
+        "MEMORY_VERIFIER_BACKEND": "jina",
+        "MEMORY_VERIFIER_MODEL": "jinaai/jina-reranker-v3-large",
+        "MEMORY_VERIFIER_MAXLEN": "512",
+        "MEMORY_VERIFIER_ENT_T": "0.55",
+    },
+    # Recommendations A/B variants
+    "rec_sem_jina_tiny_rerank025": {
+        # Semantic enabled, small bullet cap
+        "MEMORY_SEMANTIC_ENABLED": "true",
+        "MEMORY_SOURCES": "graph,convo,summary,semantic",
+        "MEMORY_FILTER_QUALITY": "false",
+        "MEMORY_MAX_BULLETS": "2",
+        # Verifier ON (Jina tiny)
+        "MEMORY_VERIFIER_ENABLED": "true",
+        "MEMORY_VERIFIER_BACKEND": "jina",
+        "MEMORY_VERIFIER_MODEL": "jinaai/jina-reranker-v3-tiny",
+        "MEMORY_VERIFIER_MAXLEN": "384",
+        # Jina rerank ON (moderate weight)
+        "MEMORY_RERANK_JINA_ENABLED": "true",
+        "MEMORY_RERANK_JINA_MODEL": "jinaai/jina-reranker-v3-tiny",
+        "MEMORY_RERANK_JINA_MAXLEN": "384",
+        "MEMORY_RERANK_JINA_WEIGHT": "0.25",
+    },
+    "rec_sem_jina_large_rerank025": {
+        # Semantic enabled, small bullet cap
+        "MEMORY_SEMANTIC_ENABLED": "true",
+        "MEMORY_SOURCES": "graph,convo,summary,semantic",
+        "MEMORY_FILTER_QUALITY": "false",
+        "MEMORY_MAX_BULLETS": "2",
+        # Verifier ON (Jina large)
+        "MEMORY_VERIFIER_ENABLED": "true",
+        "MEMORY_VERIFIER_BACKEND": "jina",
+        "MEMORY_VERIFIER_MODEL": "jinaai/jina-reranker-v3-large",
+        "MEMORY_VERIFIER_MAXLEN": "512",
+        # Jina rerank ON (moderate weight)
+        "MEMORY_RERANK_JINA_ENABLED": "true",
+        "MEMORY_RERANK_JINA_MODEL": "jinaai/jina-reranker-v3-large",
+        "MEMORY_RERANK_JINA_MAXLEN": "512",
+        "MEMORY_RERANK_JINA_WEIGHT": "0.25",
+    },
+    # Verifier A/B toggles
+    "verifier_off": {"MEMORY_VERIFIER_ENABLED": "false"},
+    "verifier_hf": {
+        "MEMORY_VERIFIER_ENABLED": "true",
+        "MEMORY_VERIFIER_BACKEND": "hf",
+        # Example HF NLI/reranker model (set your local id/cache)
+        # "MEMORY_VERIFIER_MODEL": "cross-encoder/nli-deberta-v3-base"
+    },
+    "verifier_jina_tiny": {
+        "MEMORY_VERIFIER_ENABLED": "true",
+        "MEMORY_VERIFIER_BACKEND": "jina",
+        "MEMORY_VERIFIER_MODEL": "jinaai/jina-reranker-v3-tiny",
+        "MEMORY_VERIFIER_MAXLEN": "384",
+    },
+    "verifier_jina_base": {
+        "MEMORY_VERIFIER_ENABLED": "true",
+        "MEMORY_VERIFIER_BACKEND": "jina",
+        "MEMORY_VERIFIER_MODEL": "jinaai/jina-reranker-v3-base",
+        "MEMORY_VERIFIER_MAXLEN": "512",
+        "MEMORY_VERIFIER_ENT_T": "0.55",
+    },
+    "verifier_jina_best": {
+        "MEMORY_VERIFIER_ENABLED": "true",
+        "MEMORY_VERIFIER_BACKEND": "jina",
+        "MEMORY_VERIFIER_MODEL": "jinaai/jina-reranker-v3-large",
+        "MEMORY_VERIFIER_MAXLEN": "512",
+        "MEMORY_VERIFIER_ENT_T": "0.55",
+    },
+    "verifier_jina_best_strict": {
+        "MEMORY_VERIFIER_ENABLED": "true",
+        "MEMORY_VERIFIER_BACKEND": "jina",
+        "MEMORY_VERIFIER_MODEL": "jinaai/jina-reranker-v3-large",
+        "MEMORY_VERIFIER_MAXLEN": "512",
+        "MEMORY_VERIFIER_ENT_T": "0.50",
+        "MEMORY_VERIFIER_CON_T": "0.55",
+        "MEMORY_VERIFIER_BOOST": "1.0",
+        "MEMORY_VERIFIER_ALLOW_UNKNOWN": "0",
+    },
+    # Jina reranker variants (pairwise entailment into composite scoring)
+    "jina_rerank_best": {
+        "MEMORY_RERANK_JINA_ENABLED": "true",
+        "MEMORY_RERANK_JINA_MODEL": "jinaai/jina-reranker-v3-large",
+        "MEMORY_RERANK_JINA_MAXLEN": "512",
+        "MEMORY_RERANK_JINA_WEIGHT": "0.25",
+        # keep defaults for other components
+    },
+    "jina_rerank_best_plus_verifier": {
+        "MEMORY_RERANK_JINA_ENABLED": "true",
+        "MEMORY_RERANK_JINA_MODEL": "jinaai/jina-reranker-v3-large",
+        "MEMORY_RERANK_JINA_MAXLEN": "512",
+        "MEMORY_RERANK_JINA_WEIGHT": "0.25",
+        "MEMORY_VERIFIER_ENABLED": "true",
+        "MEMORY_VERIFIER_BACKEND": "jina",
+        "MEMORY_VERIFIER_MODEL": "jinaai/jina-reranker-v3-large",
+        "MEMORY_VERIFIER_MAXLEN": "512",
+        "MEMORY_VERIFIER_ENT_T": "0.55",
+    },
+    # Top-1 stress: limit bullets to 1 to expose ranking differences
+    "top1": {
+        "MEMORY_MAX_BULLETS": "1"
+    },
+    "top1_jina_rerank": {
+        "MEMORY_MAX_BULLETS": "1",
+        "MEMORY_RERANK_JINA_ENABLED": "true",
+        "MEMORY_RERANK_JINA_MODEL": "jinaai/jina-reranker-v3-large",
+        "MEMORY_RERANK_JINA_MAXLEN": "512",
+        "MEMORY_RERANK_JINA_WEIGHT": "0.35",
+    },
+    "top1_jina_rerank_strong": {
+        "MEMORY_MAX_BULLETS": "1",
+        "MEMORY_RERANK_JINA_ENABLED": "true",
+        "MEMORY_RERANK_JINA_MODEL": "jinaai/jina-reranker-v3-large",
+        "MEMORY_RERANK_JINA_MAXLEN": "512",
+        "MEMORY_RERANK_JINA_WEIGHT": "0.6",
+    },
+    "sem_top1": {
+        "MEMORY_PROFILES_ENABLED": "true",
+        "MEMORY_SEMANTIC_ENABLED": "true",
+        "MEMORY_SOURCES": "graph,convo,summary,semantic",
+        "MEMORY_FILTER_QUALITY": "false",
+        "MEMORY_MAX_BULLETS": "1",
+    },
+    "sem_top1_jina_rerank_strong": {
+        "MEMORY_PROFILES_ENABLED": "true",
+        "MEMORY_SEMANTIC_ENABLED": "true",
+        "MEMORY_SOURCES": "graph,convo,summary,semantic",
+        "MEMORY_FILTER_QUALITY": "false",
+        "MEMORY_MAX_BULLETS": "1",
+        "MEMORY_RERANK_JINA_ENABLED": "true",
+        "MEMORY_RERANK_JINA_MODEL": "jinaai/jina-reranker-v3-large",
+        "MEMORY_RERANK_JINA_MAXLEN": "512",
+        "MEMORY_RERANK_JINA_WEIGHT": "0.6",
     },
 }
 
@@ -143,16 +290,29 @@ def case_run(hot, case: Case) -> Dict[str, Any]:
     bullets = hot.retrieve_bullets(case.query, read_only=True)
     latency_ms = (time.perf_counter() - start) * 1000
 
-    # Precision@k where k=len(gold) (substring match)
-    k = max(1, len(case.gold) or 1)
-    hits = 0
-    bl = [b.lower() for b in bullets]
-    for g in case.gold:
-        g2 = (g or "").lower()
-        if any(g2 in b for b in bl):
-            hits += 1
-    precision_at_k = hits / float(k)
-    has_gold = hits > 0
+    # Ranking metrics
+    def norm(s: str) -> str:
+        return (s or "").strip().lower()
+    answers = [norm(a) for a in case.gold if a]
+    rb = [norm(b) for b in bullets]
+    def hit(text: str) -> bool:
+        return any(a and a in text for a in answers)
+    pos_hits = [1 if hit(t) else 0 for t in rb]
+    # legacy precision_at_k (using number of gold slots)
+    k = max(1, len(answers) or 1)
+    precision_at_k = (sum(pos_hits[:k]) / float(min(k, len(pos_hits)) or 1))
+    has_gold = any(pos_hits)
+    # MRR
+    mrr = 0.0
+    for i, h in enumerate(pos_hits, start=1):
+        if h:
+            mrr = 1.0 / i
+            break
+    # hit@k, p@k for common k
+    def p_at(K: int) -> float:
+        return (sum(pos_hits[:K]) / float(min(K, len(pos_hits)) or 1))
+    metrics_k = {f"hit@{K}": 1.0 if any(pos_hits[:K]) else 0.0 for K in (1,3,5)}
+    metrics_k.update({f"p@{K}": p_at(K) for K in (1,3,5)})
 
     # Simple hurt heuristic:
     # - If no gold found but bullets present => hurt
@@ -195,6 +355,8 @@ def case_run(hot, case: Case) -> Dict[str, Any]:
         "case_id": case.id,
         "bullets": bullets,
         "precision_at_k": precision_at_k,
+        "mrr": mrr,
+        **metrics_k,
         "has_gold": has_gold,
         "latency_ms": latency_ms,
         "k": k,
@@ -212,26 +374,93 @@ def run_variants(cases: List[Case], variants: List[str]) -> Dict[str, Any]:
         prev = set_env(flags)
         try:
             per_case = []
+            latencies: List[float] = []
             for case in cases:
                 hot = build_memory()
                 r = case_run(hot, case)
                 per_case.append(r)
+                latencies.append(r["latency_ms"])
             # Aggregate
             avg_prec = sum(c["precision_at_k"] for c in per_case) / max(1, len(per_case))
             avg_latency = sum(c["latency_ms"] for c in per_case) / max(1, len(per_case))
             has_gold_frac = sum(1 for c in per_case if c["has_gold"]) / max(1, len(per_case))
             hurt_frac = sum(1 for c in per_case if c.get("hurt")) / max(1, len(per_case))
-            results[name] = {
+            # Ranking aggregates
+            def pctile(xs: List[float], p: float) -> float:
+                if not xs:
+                    return 0.0
+                xs = sorted(xs)
+                k = (len(xs)-1) * (p/100.0)
+                f = int(k)
+                c = min(f+1, len(xs)-1)
+                if f == c:
+                    return xs[f]
+                return xs[f] + (xs[c] - xs[f]) * (k - f)
+            agg = {
                 "flags": flags,
                 "cases": per_case,
                 "avg_precision_at_k": avg_prec,
                 "avg_latency_ms": avg_latency,
                 "has_gold_rate": has_gold_frac,
                 "hurt_rate": hurt_frac,
+                "p95_latency_ms": pctile(latencies, 95),
+                "p99_latency_ms": pctile(latencies, 99),
+                "mrr": sum(c.get("mrr", 0.0) for c in per_case)/max(1,len(per_case)),
+                "hit@1": sum(c.get("hit@1", 0.0) for c in per_case)/max(1,len(per_case)),
+                "hit@3": sum(c.get("hit@3", 0.0) for c in per_case)/max(1,len(per_case)),
+                "hit@5": sum(c.get("hit@5", 0.0) for c in per_case)/max(1,len(per_case)),
+                "p@1": sum(c.get("p@1", 0.0) for c in per_case)/max(1,len(per_case)),
+                "p@3": sum(c.get("p@3", 0.0) for c in per_case)/max(1,len(per_case)),
+                "p@5": sum(c.get("p@5", 0.0) for c in per_case)/max(1,len(per_case)),
             }
+            results[name] = agg
         finally:
             restore_env(prev)
     return results
+
+
+def check_slo_compliance(results: dict, slo_p95_ms: float = 100.0) -> List[dict]:
+    """
+    Check if variants meet latency SLO.
+
+    Args:
+        results: Results dict from run_variants
+        slo_p95_ms: P95 latency SLO threshold in milliseconds
+
+    Returns:
+        List of violations (empty if all pass)
+    """
+    violations = []
+
+    for variant_name, metrics in results.items():
+        # Try to get P95, fall back to mean if not available
+        p95_latency = metrics.get("latency_p95_ms")
+        if p95_latency is None:
+            p95_latency = metrics.get("avg_latency_ms", 0.0)
+
+        if p95_latency > slo_p95_ms:
+            violations.append({
+                "variant": variant_name,
+                "p95_latency": p95_latency,
+                "slo": slo_p95_ms,
+                "excess_ms": p95_latency - slo_p95_ms
+            })
+
+    if violations:
+        logger.warning("⚠️  SLO VIOLATIONS DETECTED:")
+        for v in violations:
+            logger.warning(
+                f"  {v['variant']}: P95={v['p95_latency']:.1f}ms "
+                f"(exceeds {v['slo']:.0f}ms by {v['excess_ms']:.1f}ms)"
+            )
+
+        # Optionally fail CI
+        if os.getenv("MEMORY_SLO_STRICT", "false").lower() in ("1", "true", "yes"):
+            raise AssertionError(f"SLO violated: {len(violations)} variants over budget")
+    else:
+        logger.info(f"✅ All variants within {slo_p95_ms}ms P95 SLO")
+
+    return violations
 
 
 def main():
@@ -246,6 +475,9 @@ def main():
         raise SystemExit("No cases found")
 
     results = run_variants(cases, args.variants)
+
+    # Check SLO compliance
+    check_slo_compliance(results, slo_p95_ms=100.0)
 
     # Print quick summary
     print("Variant\tAvgPrec@k\tHasGold%\tAvgLatency(ms)")

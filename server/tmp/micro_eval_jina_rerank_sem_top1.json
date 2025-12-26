@@ -1,0 +1,1314 @@
+{
+  "sem_top1": {
+    "flags": {
+      "MEMORY_PROFILES_ENABLED": "true",
+      "MEMORY_SEMANTIC_ENABLED": "true",
+      "MEMORY_SOURCES": "graph,convo,summary,semantic",
+      "MEMORY_FILTER_QUALITY": "false",
+      "MEMORY_MAX_BULLETS": "1"
+    },
+    "cases": [
+      {
+        "case_id": "name_alias_1",
+        "bullets": [
+          "• [graph] people call you (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.479459000620409,
+        "k": 3,
+        "hurt": true
+      },
+      {
+        "case_id": "name_alias_2",
+        "bullets": [
+          "• [graph] your name is robert (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 2.041292000285466,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "live_update_1",
+        "bullets": [
+          "• [graph] you live in lyon (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.478541000324185,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "live_update_2",
+        "bullets": [
+          "• [graph] you base in munich (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3685410012840293,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "work_update_1",
+        "bullets": [
+          "• [graph] you work at deepmind (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.4243339992390247,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "work_update_2",
+        "bullets": [
+          "• [graph] you employ at spacex (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3827500006300397,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "pref_color_1",
+        "bullets": [
+          "• [graph] you have favorite color (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.570874999742955,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "pref_color_2",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.3644999999087304,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "pref_food_1",
+        "bullets": [
+          "• [graph] you have favorite food (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.5341250000346918,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "pref_food_2",
+        "bullets": [
+          "• [graph] you adore pizza (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3775419993180549,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_food_1",
+        "bullets": [
+          "• [convo] I don't like tea (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3616670003102627,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_drink_1",
+        "bullets": [
+          "• [convo] I like coffee now (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.7083750008168863,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_live_1",
+        "bullets": [
+          "• [graph] you reside in san jose (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.4806250001129229,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_live_2",
+        "bullets": [
+          "• [graph] you base in austin (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.5597500005242182,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_company_1",
+        "bullets": [
+          "• [graph] you employ at openai (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.5872089988988591,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_company_2",
+        "bullets": [
+          "• [graph] you join anthropic (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.41112500023155,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "number_update_1",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.6538750005565817,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "number_update_2",
+        "bullets": [
+          "• [convo] I read 10 books last year (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.6694160003680736,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "date_birthday_1",
+        "bullets": [
+          "• [graph] you have birthday (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.4364999988174532,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "date_anniv_1",
+        "bullets": [
+          "• [graph] you time 2021 (0s ago)"
+        ],
+        "precision_at_k": 0.3333333333333333,
+        "has_gold": true,
+        "latency_ms": 1.5684999998484273,
+        "k": 3,
+        "hurt": false
+      },
+      {
+        "case_id": "hobby_1",
+        "bullets": [
+          "• [graph] you cycle on weekends (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.4368339998327428,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "hobby_2",
+        "bullets": [
+          "• [graph] you like hike in mountains (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.5135829999053385,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "pet_like_1",
+        "bullets": [
+          "• [graph] you love dog (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3663750014529796,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "pet_like_2",
+        "bullets": [
+          "• [graph] you adore canine (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3683329998457339,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "spouse_pref_1",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 0.9384160002809949,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "spouse_pref_2",
+        "bullets": [
+          "• [graph] you have husband (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.262499999938882,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "multi_fact_1",
+        "bullets": [
+          "• [graph] you use python (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.7135420002887258,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "multi_fact_2",
+        "bullets": [
+          "• [graph] you speak english (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.5680830001656432,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "travel_last_1",
+        "bullets": [
+          "• [graph] you travel in july (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.4356660012708744,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "travel_last_2",
+        "bullets": [
+          "• [graph] you time 2024 (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.47270799971011,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "school_grad_1",
+        "bullets": [
+          "• [graph] you graduate from mit (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3782910009467741,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "school_grad_2",
+        "bullets": [
+          "• [graph] you study at stanford (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3544590001401957,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "tool_use_1",
+        "bullets": [
+          "• [graph] you use vs code (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3712919990211958,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "tool_use_2",
+        "bullets": [
+          "• [convo] I use JetBrains PyCharm at work (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.4799999989918433,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_music_1",
+        "bullets": [
+          "• [graph] you use dislike (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.543291999041685,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "negation_music_2",
+        "bullets": [
+          "• [graph] you like metal (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.4906670003256295,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "age_1",
+        "bullets": [
+          "• [graph] you are old (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.3405410008999752,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "height_1",
+        "bullets": [
+          "• [graph] you are tall (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.3178749995859107,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "weight_1",
+        "bullets": [
+          "• [graph] you weigh kg (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.5913329989416525,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "time_pref_1",
+        "bullets": [
+          "• [graph] you wake am (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.315707999310689,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "device_pref_1",
+        "bullets": [
+          "• [graph] you use iphone (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.4008329999342095,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "device_pref_2",
+        "bullets": [
+          "• [graph] you have laptop (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.6116249989863718,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "movie_pref_1",
+        "bullets": [
+          "• [convo] My favorite movie is Inception (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.543708998724469,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "book_pref_1",
+        "bullets": [
+          "• [graph] you have favorite book (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.4099170002737083,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "sport_team_1",
+        "bullets": [
+          "• [graph] you support fc barcelona (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3990000006742775,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "sport_team_2",
+        "bullets": [
+          "• [graph] you root for warriors (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.4132500000414439,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "city_move_1",
+        "bullets": [
+          "• [graph] you live in portland (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3868339992768597,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "city_move_2",
+        "bullets": [
+          "• [graph] you live in boston (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.4839580016996479,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "job_change_1",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.2430829992808867,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "job_change_2",
+        "bullets": [
+          "• [graph] you are engineer (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.4357909985847073,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "music_pref_1",
+        "bullets": [
+          "• [graph] you like classical music (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3850420000380836,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "music_pref_2",
+        "bullets": [
+          "• [graph] you enjoy indie rock (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3779999990219949,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "family_kids_1",
+        "bullets": [
+          "• [convo] I have two kids (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.4383750003617024,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "lang_learn_1",
+        "bullets": [
+          "• [graph] you learn japanese (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.53354199937894,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "travel_pref_1",
+        "bullets": [
+          "• [graph] you prefer window seat on planes (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.4160000009724172,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "diet_pref_1",
+        "bullets": [
+          "• [graph] you are vegetarian (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.4717089998157462,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "allergy_1",
+        "bullets": [
+          "• [graph] you are allergic to peanuts (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3344170001801103,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "timezone_1",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.3024580002820585,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "car_1",
+        "bullets": [
+          "• [graph] you drive tesla model (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.435916999980691,
+        "k": 2,
+        "hurt": false
+      }
+    ],
+    "avg_precision_at_k": 0.5649717514124294,
+    "avg_latency_ms": 1.4532535423606563,
+    "has_gold_rate": 0.7288135593220338,
+    "hurt_rate": 0.1864406779661017
+  },
+  "sem_top1_jina_rerank_strong": {
+    "flags": {
+      "MEMORY_PROFILES_ENABLED": "true",
+      "MEMORY_SEMANTIC_ENABLED": "true",
+      "MEMORY_SOURCES": "graph,convo,summary,semantic",
+      "MEMORY_FILTER_QUALITY": "false",
+      "MEMORY_MAX_BULLETS": "1",
+      "MEMORY_RERANK_JINA_ENABLED": "true",
+      "MEMORY_RERANK_JINA_MODEL": "jinaai/jina-reranker-v3-large",
+      "MEMORY_RERANK_JINA_MAXLEN": "512",
+      "MEMORY_RERANK_JINA_WEIGHT": "0.6"
+    },
+    "cases": [
+      {
+        "case_id": "name_alias_1",
+        "bullets": [
+          "• [graph] people call you (1s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 7.344708999880822,
+        "k": 3,
+        "hurt": true
+      },
+      {
+        "case_id": "name_alias_2",
+        "bullets": [
+          "• [graph] your name is robert (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 2.5571250007487833,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "live_update_1",
+        "bullets": [
+          "• [graph] you live in lyon (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 2.413166999758687,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "live_update_2",
+        "bullets": [
+          "• [graph] you base in munich (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.8674579987418838,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "work_update_1",
+        "bullets": [
+          "• [graph] you work at deepmind (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 2.0942920000379672,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "work_update_2",
+        "bullets": [
+          "• [graph] you employ at spacex (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.7378329994244268,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "pref_color_1",
+        "bullets": [
+          "• [graph] you have favorite color (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.6604159991402412,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "pref_color_2",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.661416999922949,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "pref_food_1",
+        "bullets": [
+          "• [graph] you have favorite food (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.6621249997115228,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "pref_food_2",
+        "bullets": [
+          "• [graph] you adore pizza (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.6302499989251373,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_food_1",
+        "bullets": [
+          "• [convo] I don't like tea (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.4497499996650731,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_drink_1",
+        "bullets": [
+          "• [convo] I like coffee now (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.4515000002575107,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_live_1",
+        "bullets": [
+          "• [graph] you reside in san jose (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.5231249999487773,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_live_2",
+        "bullets": [
+          "• [graph] you base in austin (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3318750006874325,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_company_1",
+        "bullets": [
+          "• [graph] you employ at openai (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3017500004934845,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "paraphrase_company_2",
+        "bullets": [
+          "• [graph] you join anthropic (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.567708000948187,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "number_update_1",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.418583000486251,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "number_update_2",
+        "bullets": [
+          "• [convo] I read 10 books last year (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.640708998820628,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "date_birthday_1",
+        "bullets": [
+          "• [graph] you have birthday (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.3511249999282882,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "date_anniv_1",
+        "bullets": [
+          "• [graph] you time 2021 (0s ago)"
+        ],
+        "precision_at_k": 0.3333333333333333,
+        "has_gold": true,
+        "latency_ms": 1.3703750009881333,
+        "k": 3,
+        "hurt": false
+      },
+      {
+        "case_id": "hobby_1",
+        "bullets": [
+          "• [graph] you cycle on weekends (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.403707999998005,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "hobby_2",
+        "bullets": [
+          "• [graph] you like hike in mountains (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.4451670012931572,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "pet_like_1",
+        "bullets": [
+          "• [graph] you love dog (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.33770899992669,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "pet_like_2",
+        "bullets": [
+          "• [graph] you adore canine (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3101670010655653,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "spouse_pref_1",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 0.9508750008535571,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "spouse_pref_2",
+        "bullets": [
+          "• [graph] you have husband (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.2522920005721971,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "multi_fact_1",
+        "bullets": [
+          "• [graph] you use python (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.626500001293607,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "multi_fact_2",
+        "bullets": [
+          "• [graph] you speak english (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.361541999358451,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "travel_last_1",
+        "bullets": [
+          "• [graph] you travel in july (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.4065830000618007,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "travel_last_2",
+        "bullets": [
+          "• [graph] you time 2024 (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.5150420003919862,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "school_grad_1",
+        "bullets": [
+          "• [graph] you graduate from mit (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3219169995863922,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "school_grad_2",
+        "bullets": [
+          "• [graph] you study at stanford (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.2817080005333992,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "tool_use_1",
+        "bullets": [
+          "• [graph] you use vs code (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3898750003136229,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "tool_use_2",
+        "bullets": [
+          "• [convo] I use JetBrains PyCharm at work (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.5037080011097714,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "negation_music_1",
+        "bullets": [
+          "• [graph] you use dislike (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.4302079998742556,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "negation_music_2",
+        "bullets": [
+          "• [graph] you like metal (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.315249999606749,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "age_1",
+        "bullets": [
+          "• [graph] you are old (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.316624999162741,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "height_1",
+        "bullets": [
+          "• [graph] you are tall (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.4448750007431954,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "weight_1",
+        "bullets": [
+          "• [graph] you weigh kg (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3123329990776256,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "time_pref_1",
+        "bullets": [
+          "• [graph] you wake am (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.6539160005777376,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "device_pref_1",
+        "bullets": [
+          "• [graph] you use iphone (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3533750006899936,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "device_pref_2",
+        "bullets": [
+          "• [graph] you have laptop (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.4842079999652924,
+        "k": 2,
+        "hurt": true
+      },
+      {
+        "case_id": "movie_pref_1",
+        "bullets": [
+          "• [convo] My favorite movie is Inception (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.389125000059721,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "book_pref_1",
+        "bullets": [
+          "• [graph] you have favorite book (0s ago)"
+        ],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.4598329998989357,
+        "k": 1,
+        "hurt": true
+      },
+      {
+        "case_id": "sport_team_1",
+        "bullets": [
+          "• [graph] you support fc barcelona (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3815830006933538,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "sport_team_2",
+        "bullets": [
+          "• [graph] you root for warriors (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.4034579999133712,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "city_move_1",
+        "bullets": [
+          "• [graph] you live in portland (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3312909995875088,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "city_move_2",
+        "bullets": [
+          "• [graph] you live in boston (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.4126660007605096,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "job_change_1",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.2582079998537665,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "job_change_2",
+        "bullets": [
+          "• [graph] you are engineer (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.3995839999552118,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "music_pref_1",
+        "bullets": [
+          "• [graph] you like classical music (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3938749998487765,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "music_pref_2",
+        "bullets": [
+          "• [graph] you enjoy indie rock (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3881659997423412,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "family_kids_1",
+        "bullets": [
+          "• [convo] I have two kids (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.4146670000627637,
+        "k": 2,
+        "hurt": false
+      },
+      {
+        "case_id": "lang_learn_1",
+        "bullets": [
+          "• [graph] you learn japanese (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3562500007537892,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "travel_pref_1",
+        "bullets": [
+          "• [graph] you prefer window seat on planes (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.4552920001733582,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "diet_pref_1",
+        "bullets": [
+          "• [graph] you are vegetarian (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.3117920007061912,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "allergy_1",
+        "bullets": [
+          "• [graph] you are allergic to peanuts (0s ago)"
+        ],
+        "precision_at_k": 1.0,
+        "has_gold": true,
+        "latency_ms": 1.372750000882661,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "timezone_1",
+        "bullets": [],
+        "precision_at_k": 0.0,
+        "has_gold": false,
+        "latency_ms": 1.2608749984792667,
+        "k": 1,
+        "hurt": false
+      },
+      {
+        "case_id": "car_1",
+        "bullets": [
+          "• [graph] you drive tesla model (0s ago)"
+        ],
+        "precision_at_k": 0.5,
+        "has_gold": true,
+        "latency_ms": 1.403041000230587,
+        "k": 2,
+        "hurt": false
+      }
+    ],
+    "avg_precision_at_k": 0.5649717514124294,
+    "avg_latency_ms": 1.5736496780707474,
+    "has_gold_rate": 0.7288135593220338,
+    "hurt_rate": 0.1864406779661017
+  }
+}

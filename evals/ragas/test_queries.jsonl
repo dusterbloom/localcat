@@ -1,0 +1,59 @@
+{"id":"name_alias_1","question":"what's my name?","ground_truth":"My name is Elizabeth"}
+{"id":"name_alias_2","question":"who am I?","ground_truth":"My name is Robert"}
+{"id":"live_update_1","question":"where do I live now?","ground_truth":"I live in Lyon"}
+{"id":"live_update_2","question":"where am I based?","ground_truth":"I'm based in Munich"}
+{"id":"work_update_1","question":"where do I work?","ground_truth":"I work at DeepMind"}
+{"id":"work_update_2","question":"who do I work for?","ground_truth":"I'm employed at SpaceX"}
+{"id":"pref_color_1","question":"what color do I like?","ground_truth":"Blue is my favorite color"}
+{"id":"pref_color_2","question":"what's my favorite color?","ground_truth":"I love the color green"}
+{"id":"pref_food_1","question":"what food do I like?","ground_truth":"My favorite food is sushi"}
+{"id":"pref_food_2","question":"do I like pizza?","ground_truth":"I adore pizza"}
+{"id":"negation_food_1","question":"do I like tea?","ground_truth":"I don't like tea"}
+{"id":"negation_drink_1","question":"do I like coffee?","ground_truth":"I like coffee now"}
+{"id":"paraphrase_live_1","question":"where do I live?","ground_truth":"I reside in San Jose"}
+{"id":"paraphrase_live_2","question":"where am I living?","ground_truth":"I'm based in Austin"}
+{"id":"paraphrase_company_1","question":"where do I work?","ground_truth":"I'm employed at OpenAI"}
+{"id":"paraphrase_company_2","question":"who do I work for?","ground_truth":"I joined Anthropic"}
+{"id":"number_update_1","question":"how far did I run today?","ground_truth":"I ran 8 km today"}
+{"id":"number_update_2","question":"how many books did I read this year?","ground_truth":"I read 12 books this year"}
+{"id":"date_birthday_1","question":"when is my birthday?","ground_truth":"My birthday is on May 12"}
+{"id":"date_anniv_1","question":"when is my anniversary?","ground_truth":"My anniversary is on 2021-09-30"}
+{"id":"hobby_1","question":"what do I do on weekends?","ground_truth":"On weekends I cycle"}
+{"id":"hobby_2","question":"what outdoor activity do I like?","ground_truth":"I like hiking in the mountains"}
+{"id":"pet_like_1","question":"do I like dogs?","ground_truth":"I love dogs"}
+{"id":"pet_like_2","question":"do I like dogs?","ground_truth":"I adore canines"}
+{"id":"spouse_pref_1","question":"who likes sushi?","ground_truth":"My wife Ana likes sushi"}
+{"id":"spouse_pref_2","question":"who hates broccoli?","ground_truth":"My husband Tom hates broccoli"}
+{"id":"multi_fact_1","question":"what languages do I use at work?","ground_truth":"At work I use Python and Go"}
+{"id":"multi_fact_2","question":"what languages do I speak?","ground_truth":"I speak English and Spanish"}
+{"id":"travel_last_1","question":"where did I travel most recently?","ground_truth":"I traveled to Kyoto in July"}
+{"id":"travel_last_2","question":"which city did I visit last?","ground_truth":"I visited Milan in 2024"}
+{"id":"school_grad_1","question":"where did I graduate from?","ground_truth":"I graduated from MIT"}
+{"id":"school_grad_2","question":"where did I study?","ground_truth":"I studied at Stanford"}
+{"id":"tool_use_1","question":"what editor do I use?","ground_truth":"I use VS Code for coding"}
+{"id":"tool_use_2","question":"which IDE do I use at work?","ground_truth":"I use JetBrains PyCharm at work"}
+{"id":"negation_music_1","question":"do I like jazz?","ground_truth":"Now I enjoy jazz"}
+{"id":"negation_music_2","question":"do I like metal?","ground_truth":"I like metal now"}
+{"id":"age_1","question":"how old am I?","ground_truth":"I'm 29 years old"}
+{"id":"height_1","question":"how tall am I?","ground_truth":"I'm 180 cm tall"}
+{"id":"weight_1","question":"what's my weight?","ground_truth":"I weigh 75 kg"}
+{"id":"time_pref_1","question":"when do I wake up?","ground_truth":"I usually wake up at 6 am"}
+{"id":"device_pref_1","question":"what phone do I use?","ground_truth":"I use an iPhone"}
+{"id":"device_pref_2","question":"what laptop do I have?","ground_truth":"My laptop is a MacBook Pro"}
+{"id":"movie_pref_1","question":"what's my favorite movie?","ground_truth":"My favorite movie is Inception"}
+{"id":"book_pref_1","question":"what book do I like?","ground_truth":"My favorite book is Dune"}
+{"id":"sport_team_1","question":"which team do I support?","ground_truth":"I support FC Barcelona"}
+{"id":"sport_team_2","question":"which team do I root for?","ground_truth":"I root for the Warriors"}
+{"id":"city_move_1","question":"where do I live now?","ground_truth":"I live in Portland now"}
+{"id":"city_move_2","question":"where do I live currently?","ground_truth":"I live in Boston now"}
+{"id":"job_change_1","question":"where do I work now?","ground_truth":"I'm at Stripe now"}
+{"id":"job_change_2","question":"what's my role now?","ground_truth":"I'm an engineer now"}
+{"id":"music_pref_1","question":"what music do I like?","ground_truth":"I like classical music"}
+{"id":"music_pref_2","question":"what genre do I enjoy?","ground_truth":"I enjoy indie rock"}
+{"id":"family_kids_1","question":"how many kids do I have?","ground_truth":"I have two kids"}
+{"id":"lang_learn_1","question":"which language am I learning?","ground_truth":"I'm learning Japanese"}
+{"id":"travel_pref_1","question":"what seats do I prefer on planes?","ground_truth":"I prefer window seats on planes"}
+{"id":"diet_pref_1","question":"what's my diet?","ground_truth":"I'm vegetarian"}
+{"id":"allergy_1","question":"what am I allergic to?","ground_truth":"I'm allergic to peanuts"}
+{"id":"timezone_1","question":"what timezone am I in?","ground_truth":"I'm in Pacific Time"}
+{"id":"car_1","question":"what car do I drive?","ground_truth":"I drive a Tesla Model 3"}

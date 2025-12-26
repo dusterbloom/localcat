@@ -1,0 +1,12 @@
+{"id":"name_alias_1","setup":["People call me Liz","My name is Elizabeth"],"query":"what's my name?","gold":["elizabeth","liz","name"]}
+{"id":"name_alias_2","setup":["They call me Bob","My name is Robert"],"query":"who am I?","gold":["robert","bob"]}
+{"id":"live_update_1","setup":["I live in Paris","I live in Lyon"],"query":"where do I live now?","gold":["lyon"]}
+{"id":"live_update_2","setup":["I'm based in Berlin","I'm based in Munich"],"query":"where am I based?","gold":["munich"]}
+{"id":"work_update_1","setup":["I work at Google","I work at DeepMind"],"query":"where do I work?","gold":["deepmind"]}
+{"id":"work_update_2","setup":["I'm employed at Tesla","I'm employed at SpaceX"],"query":"who do I work for?","gold":["spacex"]}
+{"id":"pref_color_1","setup":["Blue is my favorite color"],"query":"what color do I like?","gold":["blue"]}
+{"id":"pref_color_2","setup":["I love the color green"],"query":"what's my favorite color?","gold":["green"]}
+{"id":"pref_food_1","setup":["My favorite food is sushi"],"query":"what food do I like?","gold":["sushi"]}
+{"id":"pref_food_2","setup":["I adore pizza"],"query":"do I like pizza?","gold":["pizza"]}
+{"id":"negation_food_1","setup":["I like tea","I don't like tea"],"query":"do I like tea?","gold":["tea"]}
+{"id":"negation_drink_1","setup":["I don't like coffee","I like coffee now"],"query":"do I like coffee?","gold":["coffee","now"]}

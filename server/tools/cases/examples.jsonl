@@ -1,0 +1,3 @@
+{"id": "case-1", "setup": ["My name is Alice."], "query": "What's my name?", "gold": ["alice", "name"]}
+{"id": "case-2", "setup": ["I live in San Francisco."], "query": "Where do I live?", "gold": ["san francisco", "live"]}
+{"id": "case-3", "setup": ["My favorite food is sushi."], "query": "What's my favorite food?", "gold": ["sushi", "favorite"]}

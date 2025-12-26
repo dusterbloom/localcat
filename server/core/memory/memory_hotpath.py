@@ -30,6 +30,7 @@ from .confidence_strategy import (
 from .processors.coreference import CoreferenceProcessor
 from .config import MemoryConfig
 from .entity_resolver import EntityResolver
+from .extraction_enhancer import enhance_extraction
 
 # Try to import language detection
 try:
@@ -219,6 +220,17 @@ class HotMemory:
             _load_nlp(lang)
         except Exception as e:
             logger.debug(f"HotMemory prewarm failed: {e}")
+        # Optional: pre-initialize enhancement models (BERT-NER / MiniLM)
+        try:
+            use_bert = os.getenv('USE_BERT_NER', 'false').lower() in ('1', 'true', 'yes')
+            use_minilm = os.getenv('USE_MINILM', 'false').lower() in ('1', 'true', 'yes')
+            if use_bert or use_minilm:
+                from .extraction_enhancer import get_extraction_enhancer
+                enh = get_extraction_enhancer()
+                stats = getattr(enh, 'get_enhancement_stats', lambda: {})()
+                logger.info(f"[HotMem] Enhancement prewarm complete: {stats}")
+        except Exception as e:
+            logger.debug(f"[HotMem] Enhancement prewarm skipped: {e}")
 
     def _get_entity_resolver(self, lang: str = "en") -> EntityResolver:
         """Lazy-load EntityResolver with NLP model."""
@@ -281,6 +293,28 @@ class HotMemory:
 
             # LRU-cached extraction to avoid duplicate work
             entities, triples, neg_count, doc, entity_aliases = self._cached_extract(text, lang)
+
+            # Stage 1.25: Optional enhancement (BERT-NER + MiniLM)
+            # Integrate model-based enhancer between base extraction and refinement.
+            # Controlled by env flags inside the enhancer (USE_BERT_NER / USE_MINILM).
+            try:
+                enh_start = time.perf_counter()
+                before_cnt = len(triples) if triples else 0
+                enhanced_triples, enh_meta = enhance_extraction(text, triples, entities, doc)
+                triples = enhanced_triples or triples
+                enh_ms = (time.perf_counter() - enh_start) * 1000
+                self.metrics['enhancer_ms'].append(enh_ms)
+                try:
+                    added = max(0, (len(triples) if triples else 0) - before_cnt)
+                    self.metrics['enhancer_added'].append(added)
+                except Exception:
+                    pass
+                logger.debug(
+                    f"[HotMem] Enhancer applied: {before_cnt}→{len(triples) if triples else 0} triples "
+                    f"({enh_ms:.1f}ms)"
+                )
+            except Exception as e:
+                logger.debug(f"[HotMem] Enhancer skipped/failed: {e}")
 
         self.metrics['extraction_ms'].append((time.perf_counter() - extract_start) * 1000)
         # Store aliases for dual registration in hot index
