@@ -118,3 +118,34 @@ class SiriStreamingStrategy(TTSCreationStrategy):
 
     def create(self, use_boundaries: bool = True) -> Any:
         return self._siri_creator(self.tts_config, use_boundaries)
+
+
+
+class SupertonicStrategy(TTSCreationStrategy):
+    """
+    Strategy for Supertonic TTS - lightning-fast on-device synthesis.
+
+    Supertonic is a 66M parameter model achieving 30-45x real-time on Apple Silicon.
+    It handles complex text (numbers, dates, currency) automatically.
+    """
+
+    def create(self, use_boundaries: bool = True) -> Any:
+        from core.tts.supertonic_service import SupertonicTTSService
+
+        # Get Supertonic-specific config with fallbacks
+        voice = self.tts_config.get("supertonic_voice", "F1")
+        model_dir = self.tts_config.get("supertonic_model_dir") or os.getenv("SUPERTONIC_MODEL_PATH")
+        total_steps = int(self.tts_config.get("supertonic_total_steps", 2))
+        speed = float(self.tts_config.get("speed", 1.0))
+        sample_rate = int(self.tts_config.get("sample_rate", 24000))
+
+        logger.info(f"🎵 Creating Supertonic TTS: voice={voice}, steps={total_steps}, speed={speed}")
+
+        return SupertonicTTSService(
+            voice=voice,
+            model_dir=model_dir,
+            total_steps=total_steps,
+            speed=speed,
+            target_sample_rate=sample_rate,
+            aggregate_sentences=use_boundaries,
+        )

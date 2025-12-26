@@ -285,14 +285,19 @@ class STTConfiguration(BaseConfiguration):
 class TTSConfiguration(BaseConfiguration):
     """Text-to-speech service configuration."""
 
-    engine: str = "kokoro_mlx"
-    voice: str = "af_heart"
+    engine: str = "supertonic"  # Default to Supertonic (fastest, most reliable)
+    voice: str = "af_heart"  # Kokoro voice (for backward compat)
     speed: float = 1.0
     sample_rate: int = 24000
     fade_duration_ms: float = 50.0
     target_peak_db: float = -3.0
     enable_quality_logging: bool = True
     chunk_size_chars: int = 25
+
+    # Supertonic-specific settings
+    supertonic_voice: str = "F1"  # M1-M5 (male), F1-F5 (female)
+    supertonic_total_steps: int = 2  # 2=fast, 5=higher quality
+    supertonic_model_dir: Optional[str] = None  # Custom model path for bundling
 
     @classmethod
     def from_env(cls) -> 'TTSConfiguration':
@@ -308,13 +313,17 @@ class TTSConfiguration(BaseConfiguration):
             target_peak_db=_parse_float(cls._get_env("TTS_TARGET_PEAK_DB"), cls.target_peak_db),
             enable_quality_logging=_parse_bool(os.getenv("TTS_ENABLE_QUALITY_LOGGING")) if os.getenv("TTS_ENABLE_QUALITY_LOGGING") else cls.enable_quality_logging,
             chunk_size_chars=_parse_int(os.getenv("TTS_CHUNK_SIZE_CHARS"), cls.chunk_size_chars),
+            # Supertonic-specific
+            supertonic_voice=os.getenv("SUPERTONIC_VOICE") or cls.supertonic_voice,
+            supertonic_total_steps=_parse_int(os.getenv("SUPERTONIC_TOTAL_STEPS"), cls.supertonic_total_steps),
+            supertonic_model_dir=os.getenv("SUPERTONIC_MODEL_PATH") or cls.supertonic_model_dir,
         )
 
     def validate(self) -> List[str]:
         """Validate TTS configuration."""
         warnings = []
 
-        valid_engines = ["kokoro_professional", "kokoro_mlx", "kokoro_pytorch", "siri_streaming"]
+        valid_engines = ["supertonic", "kokoro_professional", "kokoro_mlx", "kokoro_pytorch", "siri_streaming"]
         if self.engine not in valid_engines:
             warnings.append(f"engine='{self.engine}' not in {valid_engines}")
 
@@ -323,6 +332,14 @@ class TTSConfiguration(BaseConfiguration):
 
         if self.chunk_size_chars < 20 or self.chunk_size_chars > 50:
             warnings.append(f"chunk_size_chars={self.chunk_size_chars} outside optimal range [20-50]")
+
+        # Supertonic-specific validation
+        if self.engine == "supertonic":
+            valid_voices = {"M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5"}
+            if self.supertonic_voice not in valid_voices:
+                warnings.append(f"supertonic_voice='{self.supertonic_voice}' not in {valid_voices}")
+            if self.supertonic_total_steps < 1 or self.supertonic_total_steps > 10:
+                warnings.append(f"supertonic_total_steps={self.supertonic_total_steps} outside range [1-10]")
 
         return warnings
 

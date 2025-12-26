@@ -8,6 +8,7 @@ from core.factories.strategies.tts_strategies import (
     KokoroProfessionalStrategy,
     KokoroPyTorchStrategy,
     SiriStreamingStrategy,
+    SupertonicStrategy,
 )
 
 
@@ -23,6 +24,8 @@ class TTSServiceBuilder:
         engine = self.config.tts_engine
 
         def _strategy_for(engine_name: str) -> TTSCreationStrategy:
+            if engine_name == "supertonic":
+                return SupertonicStrategy(self.config, tts_config)
             if engine_name == "kokoro_professional":
                 return KokoroProfessionalStrategy(self.config, tts_config)
             if engine_name == "kokoro_mlx":
@@ -31,9 +34,9 @@ class TTSServiceBuilder:
                 return KokoroPyTorchStrategy(self.config, tts_config)
             if engine_name == "siri_streaming":
                 return SiriStreamingStrategy(self.config, tts_config, self._siri_creator)
-            # Unknown → use MLX as default primary
-            logger.warning(f"Unknown TTS engine '{engine_name}', defaulting to MLX Kokoro primary")
-            return KokoroMLXStrategy(self.config, tts_config)
+            # Unknown → use Supertonic as default (fastest, most reliable)
+            logger.warning(f"Unknown TTS engine '{engine_name}', defaulting to Supertonic")
+            return SupertonicStrategy(self.config, tts_config)
 
         primary = _strategy_for(engine)
 
@@ -59,4 +62,3 @@ class TTSServiceBuilder:
             return KokoroProfessionalStrategy(self.config, tts_config).create(use_boundaries=use_boundaries)
         # For professional and pytorch, fall back to MLX
         return KokoroMLXStrategy(self.config, tts_config).create(use_boundaries=use_boundaries)
-
