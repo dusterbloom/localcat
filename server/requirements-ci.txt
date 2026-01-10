@@ -1,0 +1,38 @@
+# Core dependencies for CI testing (Linux-compatible)
+# Excludes: mlx-*, pyobjc-*, torch/torchaudio (heavy, macOS-only)
+
+# Core frameworks
+python-dotenv==1.0.1
+fastapi[all]==0.115.7
+uvicorn==0.35.0
+httpx==0.28.1
+openai>=1.74.0,<=1.99.1
+
+# OpenCV headless (no GUI dependencies)
+opencv-python-headless==4.10.0.84
+
+# NLP (lightweight)
+nltk==3.9.1
+tiktoken>=0.7.0
+
+# HotMem dependencies
+lmdb==1.5.1
+msgpack==1.0.8
+rapidfuzz==3.9.6
+
+# Async utilities
+aiofiles>=24.1.0
+
+# Test dependencies
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+pytest-timeout>=2.3.0
+loguru>=0.7.0
+
+# Excluded from CI (macOS/heavy):
+# - mlx, mlx-lm, mlx-audio, mlx-metal
+# - pyobjc-core, pyobjc-framework-*
+# - torch, torchaudio, speechbrain
+# - spacy (large download)
+# - pipecat-ai (pulls in many heavy deps)
