@@ -113,7 +113,7 @@ class EnrollmentCoordinator(FrameProcessor):
             )
         )
         self._sign_in_requested: bool = False
-        self._sign_in_timeout_task: Optional[asyncio.Task] = 5.0
+        self._sign_in_timeout_task: Optional[asyncio.Task] = None
         # Suppress one immediate transcription after returning-user recognition
         self._suppress_next_transcription: bool = False
         self._suppress_deadline_ts: float = 0.0
