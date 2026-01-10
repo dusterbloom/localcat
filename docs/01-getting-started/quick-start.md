@@ -114,11 +114,11 @@ mlx-audio.generate --model "mlx-community/Kokoro-82M-bf16" --text "Hello!" --out
 
 ## Next Steps
 
-- 📖 Read the [System Overview](../02-architecture/system-overview.md)
+- 📖 Read the [Server Architecture](../02-architecture/server-architecture.md)
 - ⚙️ Check [Configuration Guide](./configuration.md) for customization
-- 🧠 Learn about the [Memory System](../02-architecture/memory-system.md)
-- 🔧 See [Development Setup](../03-development/setup.md) for contributing
+- 🧠 Learn about the [Memory System](../02-architecture/memory-system-map.md)
+- 🔧 See [Development Guide](../03-development/using-localcat-team.md) for contributing
 
 ---
 
-**Need help?** Open an issue on GitHub or check the [Troubleshooting Guide](../10-reference/troubleshooting.md).
+**Need help?** Open an issue on GitHub or check the main [README](../../README.md) for troubleshooting.

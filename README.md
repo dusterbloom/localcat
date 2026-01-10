@@ -306,15 +306,17 @@ LocalCat features a sophisticated memory system built with SOLID principles:
 ### Key Components
 
 ```
-core/memory/
-├── nlp_manager.py              # Consolidated model management (DRY)
-├── config.py                   # Type-safe configuration
-├── processors/
-│   ├── base.py                # TextProcessor strategy interface
-│   └── coreference.py         # Coreference resolution with timeout
-├── extractors/
-│   └── ud.py                  # Enhanced dependency parsing
-└── coreference_integration.py # Factory functions & monitoring
+server/core/memory/
+├── hotmem_service.py           # Ultra-fast memory service (Pipecat compatible)
+├── memory_orchestrator.py      # Main memory coordination
+├── nlp_manager.py              # Consolidated NLP model management
+├── coreference_integration.py  # Coreference resolution factory & monitoring
+├── context_injector.py         # Memory injection into LLM prompts
+├── memory_retriever.py         # Semantic and BM25-based retrieval
+├── background_summarizer.py    # Conversation summarization with prosody
+├── memory_store.py             # LMDB storage backend
+└── extractors/
+    └── ud.py                   # Universal Dependencies fact extraction
 ```
 
 ### Coreference Resolution
@@ -394,14 +396,14 @@ python -m pytest tests/unit/test_hotmem_comprehensive.py -v
 ### Performance Benchmarking
 
 ```bash
-# Benchmark memory system
-python scripts/benchmark_memory.py
+# TTS performance monitoring
+python scripts/tts_performance_monitor.py
 
-# Test end-to-end latency
-python scripts/test_latency.py
+# STT engine comparison
+python scripts/compare_stt_engines.py
 
-# Monitor real-time performance
-python scripts/monitor_performance.py
+# Test TTS performance
+python scripts/test_tts_performance.py
 ```
 
 ## 📊 Performance Metrics
@@ -448,10 +450,11 @@ Every major component follows SOLID principles:
 
 ## 📚 Documentation
 
-- **[Integration Guide](docs/coreference_integration_guide.md)**: Complete coreference setup
-- **[Development Backlog](backlog.md)**: Detailed progress tracking
-- **[Technical Debt](techdebt.md)**: Architecture improvements made
-- **[Changelog](changelog.md)**: Version history and updates
+- **[Getting Started](docs/01-getting-started/quick-start.md)**: Quick start guide
+- **[Configuration](docs/01-getting-started/configuration.md)**: Environment configuration
+- **[Server Architecture](docs/02-architecture/server-architecture.md)**: Architecture details
+- **[Memory System](docs/02-architecture/memory-system-map.md)**: Memory architecture map
+- **[Development Backlog](docs/08-roadmap/backlog.md)**: Feature backlog and roadmap
 
 ## 🔍 Troubleshooting
 
@@ -471,19 +474,18 @@ ollama pull gemma3n:4b
 # Check configuration
 grep -E "TIMEOUT|LATENCY" .env
 
-# Monitor performance
-python scripts/monitor_performance.py
+# Check TTS performance
+python scripts/tts_performance_monitor.py
 ```
 
 **Memory processing disabled:**
 ```bash
-# Check memory configuration
-python -c "
-from core.memory.config import get_memory_config
-config = get_memory_config()
-print(f'Memory enabled: {config.enabled}')
-print(f'Coreference enabled: {config.coreference.enabled}')
-"
+# Check memory configuration via environment
+echo "MEMORY_ENABLED=$MEMORY_ENABLED"
+echo "MEMORY_COREFERENCE_ENABLED=$MEMORY_COREFERENCE_ENABLED"
+
+# Or check your .env file
+grep -E "^MEMORY_" .env
 ```
 
 **Audio artifacts:**
@@ -528,17 +530,18 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 🎉 What's New
 
-### Latest Features (September 2025)
+### Latest Features
 
-- ✅ **SOLID/DRY Coreference Architecture**: Complete rewrite following software engineering best practices
-- ✅ **Professional Audio**: Artifact-free STT/TTS with ultra-low latency
-- ✅ **Type-Safe Configuration**: Comprehensive environment-driven configuration
-- ✅ **Comprehensive Testing**: Full test suite covering SOLID principles
+- ✅ **HotMem Service**: Pipecat-compatible ultra-fast memory with semantic retrieval
+- ✅ **Audio Intelligence**: Speaker recognition, prosody analysis, emotion detection
+- ✅ **Unified Configuration**: Composition-based config system with type-safe settings
+- ✅ **Parakeet STT**: Kyutai's streaming speech recognition optimized for Apple Silicon
+- ✅ **SOLID Architecture**: Comprehensive refactoring with factory pattern and DI
 
-### Coming Next
+### In Progress
 
-- 🔄 **Retrieval Quality Improvements**: BM25 and vector re-ranking
-- 📊 **Advanced Observability**: Comprehensive metrics and monitoring
+- 🔄 **Retrieval Quality Improvements**: Composite re-ranking with prosody signals
+- 📊 **Advanced Observability**: Metrics and performance monitoring
 - 🎯 **Configuration Presets**: One-click setup for different use cases
 
 ---
