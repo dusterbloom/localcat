@@ -1,0 +1,40 @@
+{
+  "benchmark": "LoCoMo-10",
+  "method": "FTS-only",
+  "overall_f1": 3.6825112873265677,
+  "latency_ms": {
+    "mean": 3.5876987401827756,
+    "p50": 3.7416449999909673,
+    "p95": 5.204101000003902,
+    "p99": 6.812182000089706
+  },
+  "by_category": {
+    "Temporal": {
+      "f1": 1.0937509966638608,
+      "count": 321
+    },
+    "Inference": {
+      "f1": 2.6803364668503304,
+      "count": 96
+    },
+    "Factual": {
+      "f1": 2.7121175194729323,
+      "count": 282
+    },
+    "Multi-hop": {
+      "f1": 4.883281265451346,
+      "count": 841
+    },
+    "Adversarial": {
+      "f1": 4.110772110197065,
+      "count": 446
+    }
+  },
+  "total_questions": 1986,
+  "total_turns": 5882,
+  "comparison": {
+    "SimpleMem": 43.24,
+    "Mem0": 34.15,
+    "LocalCat_FTS": 3.6825112873265677
+  }
+}
