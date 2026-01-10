@@ -5,17 +5,34 @@ LoCoMo Benchmark for LocalCat Memory System
 
 Computes F1 score comparable to SimpleMem (43.24%) and Mem0 (34.15%).
 
-This benchmark tests the RETRIEVAL layer using SQLite FTS, independent of
-the extraction layer (spacy). This is useful because:
-1. Extraction is being replaced with LLM-based approach
-2. Retrieval latency is the production bottleneck
-3. FTS baseline shows where we need semantic retrieval
+BASELINE RESULTS (FTS-only, no semantic features):
+    Overall F1: 3.68%
+    Latency: 3.5ms mean
+
+TARGET (with semantic features enabled):
+    Expected F1: 25-35%
+    SimpleMem: 43.24%
+
+This benchmark tests:
+    - FTS-only mode: SQLite FTS5 retrieval (default, Linux compatible)
+    - Full mode: HotMemory with all semantic features (requires macOS + deps)
 
 Usage:
-    python tools/run_locomo_benchmark.py [--full]
+    # FTS-only baseline (Linux/macOS)
+    python tools/run_locomo_benchmark.py
 
-    --full: Requires spacy, runs full HotMemory pipeline
-    (default): Runs FTS-only benchmark, no heavy dependencies
+    # Full HotMemory (macOS only, requires spacy + models)
+    source .env.memory-enhanced  # Enable semantic features
+    python tools/run_locomo_benchmark.py --full
+
+Required for --full mode:
+    - macOS with Apple Silicon (for MLX)
+    - spacy + en_core_web_sm model
+    - sentence-transformers (MiniLM)
+    - transformers (BERT-NER)
+    - faiss-cpu (semantic sidecar)
+
+See .env.memory-enhanced for configuration.
 """
 
 import json
