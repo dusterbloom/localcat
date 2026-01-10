@@ -29,7 +29,7 @@ from pipecat.pipeline.pipeline import FrameDirection
 # Check SpeechBrain availability
 try:
     from speechbrain.inference.speaker import SpeakerRecognition
-    from speechbrain.inference.classifiers import EncoderClassifier
+    # Note: EncoderClassifier removed - using foreign_class for emotion model instead
     SPEECHBRAIN_AVAILABLE = True
 except ImportError:
     SPEECHBRAIN_AVAILABLE = False
@@ -296,11 +296,17 @@ class AudioIntelligenceProcessor(FrameProcessor):
             raise
         
         # Session 2: Initialize emotion recognition model
+        # Uses foreign_class to load custom inference class (fixes ModuleDict attribute error)
+        # See: https://github.com/speechbrain/speechbrain/issues/2457
         if self._enable_emotion:
             logger.info(f"[AudioIntel] Loading emotion recognition model ({device})...")
             try:
-                self._emotion_model = EncoderClassifier.from_hparams(
+                from speechbrain.inference.interfaces import foreign_class
+
+                self._emotion_model = foreign_class(
                     source="speechbrain/emotion-recognition-wav2vec2-IEMOCAP",
+                    pymodule_file="custom_interface.py",
+                    classname="CustomEncoderWav2vec2Classifier",
                     savedir=str(self._profile_dir / "models" / "emotion"),
                     run_opts={"device": device}
                 )
@@ -427,11 +433,11 @@ class AudioIntelligenceProcessor(FrameProcessor):
             if self._enable_emotion and self._emotion_model:
                 try:
                     with torch.no_grad():
-                        # SpeechBrain EncoderClassifier expects (batch, time)
+                        # SpeechBrain foreign_class emotion model expects (batch, time)
                         # Ensure audio is on CPU for emotion model (some ops not supported on MPS)
                         audio_cpu = audio_tensor.cpu() if audio_tensor.device.type != "cpu" else audio_tensor
-                        
-                        # Use encode_batch for embeddings, then classify
+
+                        # Use classify_batch to get emotion predictions
                         out_prob, score, index, text_lab = self._emotion_model.classify_batch(audio_cpu)
                         
                         # Extract results
