@@ -6,6 +6,7 @@ to enable explicit tool-based memory access when automatic retrieval fails.
 """
 
 import asyncio
+import time
 from typing import Any, Dict, Optional, List
 from loguru import logger
 
@@ -218,6 +219,12 @@ class HotMemToolIntegration:
         """
         Handle hotmem_forget function calls.
 
+        Properly deletes memories by:
+        1. Finding matching triples in HotMemory's entity_index
+        2. Removing them from in-memory structures
+        3. Negating in database via store.negate_edge()
+        4. Clearing caches
+
         Args:
             params: Function call parameters containing tool call info
         """
@@ -229,16 +236,101 @@ class HotMemToolIntegration:
 
             logger.info(f"🗑️ HotMem forgetting: {query}")
 
-            # Note: HotMem doesn't currently have a direct forget API
-            # This is a placeholder implementation that acknowledges the request
-            # In a full implementation, this would remove matching memories from storage
+            # Get HotMemory instance
+            hot = self.hotmem_service.hot
+            store = self.hotmem_service.store
 
-            result = f"Forget request processed for: {query}"
-            logger.warning("HotMem forget not fully implemented - acknowledging request")
+            # Search for matching memories first
+            bullets = hot.retrieve_bullets(query, read_only=True)
+
+            if not bullets:
+                result = f"No memory found matching: {query}"
+                logger.info(f"No memories found to forget for query: {query}")
+                await params.result_callback(result)
+                return
+
+            deleted_count = 0
+            query_lower = query.lower()
+            all_triples_to_delete = set()
+
+            # Step 1: Remove matching triples from entity_index
+            entities_to_clean = list(hot.entity_index.keys())
+
+            for entity in entities_to_clean:
+                triples = hot.entity_index[entity]
+                triples_to_remove = set()
+
+                for triple in triples:
+                    s, r, o = triple
+                    # Check if query appears in any part of the triple
+                    if (query_lower in s.lower() or
+                        query_lower in r.lower() or
+                        query_lower in o.lower()):
+                        triples_to_remove.add(triple)
+                        all_triples_to_delete.add(triple)
+                        deleted_count += 1
+
+                # Remove matching triples
+                if triples_to_remove:
+                    hot.entity_index[entity] -= triples_to_remove
+                    logger.debug(f"Removed {len(triples_to_remove)} triples from entity '{entity}'")
+
+                # Clean up empty entity entries
+                if not hot.entity_index[entity]:
+                    del hot.entity_index[entity]
+
+            # Step 2: Remove from recency_buffer
+            if hasattr(hot, 'recency_buffer'):
+                original_len = len(hot.recency_buffer)
+                filtered_recency = [
+                    item for item in hot.recency_buffer
+                    if not (hasattr(item, 's') and hasattr(item, 'r') and hasattr(item, 'd') and
+                           any(query_lower in str(x).lower() for x in [item.s, item.r, item.d]))
+                ]
+                hot.recency_buffer.clear()
+                hot.recency_buffer.extend(filtered_recency)
+                logger.debug(f"Cleaned recency buffer: {original_len} -> {len(hot.recency_buffer)}")
+
+            # Step 3: Negate edges in database
+            if all_triples_to_delete:
+                current_time = int(time.time() * 1000)
+                negated_count = 0
+
+                for triple in all_triples_to_delete:
+                    s, r, o = triple
+                    try:
+                        store.negate_edge(s, r, o, conf=1.0, now_ts=current_time)
+                        negated_count += 1
+                        logger.debug(f"Negated edge in DB: ({s}, {r}, {o})")
+                    except Exception as e:
+                        logger.warning(f"Failed to negate edge ({s}, {r}, {o}): {e}")
+
+                logger.info(f"Negated {negated_count} edges in database")
+
+                # Clear store cache
+                if hasattr(store, 'clear_cache'):
+                    store.clear_cache()
+
+            # Step 4: Clear entity cache
+            if hasattr(hot, 'entity_cache'):
+                entities_to_remove = [
+                    k for k in hot.entity_cache.keys()
+                    if query_lower in k.lower()
+                ]
+                for entity_key in entities_to_remove:
+                    del hot.entity_cache[entity_key]
+                logger.debug(f"Removed {len(entities_to_remove)} entries from entity cache")
+
+            if deleted_count > 0:
+                result = f"Done. I've forgotten {deleted_count} thing(s) about '{query}'."
+                logger.info(f"✅ Successfully forgot {deleted_count} memories for: {query}")
+            else:
+                result = f"Processed forget for: {query} (no exact matches in graph)"
+
             await params.result_callback(result)
 
         except Exception as e:
-            logger.error(f"Error in hotmem_forget handler: {e}")
+            logger.error(f"Error in hotmem_forget handler: {e}", exc_info=True)
             await params.result_callback(f"Error forgetting information: {str(e)}")
 
     async def _handle_hotmem_search(self, params: FunctionCallParams) -> None:
