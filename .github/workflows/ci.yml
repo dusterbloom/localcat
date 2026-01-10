@@ -1,0 +1,171 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+
+jobs:
+  # ============================================================
+  # Job 1: Lint Python (Black + Flake8) - ~30 seconds
+  # ============================================================
+  lint-python:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install linters
+        run: pip install black==24.8.0 flake8==7.1.1
+
+      - name: Check Black formatting
+        run: black --check --diff server/ scripts/
+
+      - name: Run Flake8
+        run: flake8 server/ scripts/ --max-line-length=100 --extend-ignore=E203,E266
+
+  # ============================================================
+  # Job 2: Lint Client (ESLint + TypeScript) - ~1 minute
+  # ============================================================
+  lint-client:
+    name: Lint Client
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Check TypeScript
+        run: npx tsc --noEmit
+
+  # ============================================================
+  # Job 3: Server Tests (Linux-safe CI tests) - ~2 minutes
+  # ============================================================
+  test-server:
+    name: Server Tests
+    runs-on: ubuntu-latest
+    env:
+      CI: "1"
+      HF_HUB_OFFLINE: "1"
+      ENABLE_MEMORY: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-ci-${{ hashFiles('server/requirements-ci.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-ci-
+
+      - name: Install CI dependencies
+        working-directory: server
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-ci.txt
+
+      - name: Run CI tests
+        working-directory: server
+        run: |
+          python -m pytest tests/ -m "ci" -v --tb=short \
+            --ignore=tests/diagnostics \
+            --ignore=tests/performance \
+            -x --timeout=60
+
+  # ============================================================
+  # Job 4: Client Build Verification - ~1 minute
+  # ============================================================
+  build-client:
+    name: Build Client
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+  # ============================================================
+  # Job 5: macOS Full Tests (Manual Trigger Only)
+  # ============================================================
+  test-macos:
+    name: macOS Full Tests
+    runs-on: macos-14
+    if: github.event_name == 'workflow_dispatch'
+    env:
+      CI: "1"
+      HF_HUB_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('server/requirements.txt') }}
+
+      - name: Install dependencies
+        working-directory: server
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov loguru
+
+      - name: Run full test suite
+        working-directory: server
+        run: |
+          python -m pytest tests/ -m "not slow and not requires_llm" -v --tb=short \
+            --ignore=tests/diagnostics \
+            -x --timeout=120
