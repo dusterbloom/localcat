@@ -31,6 +31,7 @@ from .processors.coreference import CoreferenceProcessor
 from .config import MemoryConfig
 from .entity_resolver import EntityResolver
 from .extraction_enhancer import enhance_extraction
+from .temporal_extractor import extract_temporal_expressions
 
 # Try to import language detection
 try:
@@ -1620,6 +1621,21 @@ class HotMemory:
         except Exception:
             pass
 
+        # Enhanced temporal extraction: relative times ("tomorrow", "yesterday", "last night")
+        # This is SimpleMem's key innovation - extract temporal expressions at write time
+        relative_times: List[str] = []
+        try:
+            temporal_exprs = extract_temporal_expressions(doc, _canon_entity_text)
+            for expr in temporal_exprs:
+                if expr.type == 'relative_time':
+                    # Store relative times separately (to use "time" relation)
+                    if expr.canonical not in relative_times:
+                        relative_times.append(expr.canonical)
+                elif expr.type == 'duration' and expr.canonical not in durations:
+                    durations.append(expr.canonical)
+        except Exception:
+            pass  # Graceful degradation if extraction fails
+
         # Derive symmetric friend_of from patterns
         friends_pairs: List[Tuple[str, str]] = []
         names = set()
@@ -1649,6 +1665,9 @@ class HotMemory:
             s_anchor, r_anchor, _ = anchor
             for y in years:
                 refined.append((s_anchor, "time", y))
+            # Attach relative temporal expressions ("tomorrow", "yesterday", "last night")
+            for rt in relative_times:
+                refined.append((s_anchor, "time", rt))
             for dur in durations:
                 refined.append((s_anchor, "duration", dur))
 
