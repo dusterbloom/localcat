@@ -323,7 +323,7 @@ class TTSConfiguration(BaseConfiguration):
         """Validate TTS configuration."""
         warnings = []
 
-        valid_engines = ["supertonic", "kokoro_professional", "kokoro_mlx", "kokoro_pytorch", "siri_streaming"]
+        valid_engines = ["qwen3", "supertonic", "kokoro_professional", "kokoro_mlx", "kokoro_pytorch", "siri_streaming"]
         if self.engine not in valid_engines:
             warnings.append(f"engine='{self.engine}' not in {valid_engines}")
 

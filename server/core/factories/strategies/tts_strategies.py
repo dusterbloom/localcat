@@ -149,3 +149,40 @@ class SupertonicStrategy(TTSCreationStrategy):
             target_sample_rate=sample_rate,
             aggregate_sentences=use_boundaries,
         )
+
+
+class Qwen3TTSStrategy(TTSCreationStrategy):
+    """
+    Strategy for Qwen3 TTS - emotional control and voice cloning.
+
+    Qwen3 TTS (0.6B-1.7B params) supports natural language emotional instructions,
+    voice cloning from 3-second reference audio, and 10 languages with 9 built-in speakers.
+    Uses subprocess isolation for the large model.
+    """
+
+    def create(self, use_boundaries: bool = True) -> Any:
+        from core.tts.qwen3_tts import Qwen3TTSService
+
+        model = os.getenv("QWEN3_MODEL", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
+        model_type = os.getenv("QWEN3_MODEL_TYPE", "custom_voice")
+        language = os.getenv("QWEN3_LANGUAGE", "English")
+        instruct = os.getenv("QWEN3_INSTRUCT")  # Optional default emotion
+        ref_audio = os.getenv("QWEN3_REF_AUDIO")
+        ref_text = os.getenv("QWEN3_REF_TEXT")
+
+        voice = self.tts_config.get("voice", "Ryan")
+        sample_rate = int(self.tts_config.get("sample_rate", 24000))
+
+        logger.info(f"🎙️ Creating Qwen3 TTS: voice={voice}, model_type={model_type}, "
+                    f"language={language}, instruct={instruct}")
+
+        return Qwen3TTSService(
+            model=model,
+            voice=voice,
+            model_type=model_type,
+            language=language,
+            sample_rate=sample_rate,
+            instruct=instruct,
+            ref_audio=ref_audio,
+            ref_text=ref_text,
+        )

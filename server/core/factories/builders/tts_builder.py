@@ -9,6 +9,7 @@ from core.factories.strategies.tts_strategies import (
     KokoroPyTorchStrategy,
     SiriStreamingStrategy,
     SupertonicStrategy,
+    Qwen3TTSStrategy,
 )
 
 
@@ -24,6 +25,8 @@ class TTSServiceBuilder:
         engine = self.config.tts_engine
 
         def _strategy_for(engine_name: str) -> TTSCreationStrategy:
+            if engine_name == "qwen3":
+                return Qwen3TTSStrategy(self.config, tts_config)
             if engine_name == "supertonic":
                 return SupertonicStrategy(self.config, tts_config)
             if engine_name == "kokoro_professional":
