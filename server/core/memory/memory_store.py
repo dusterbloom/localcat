@@ -458,12 +458,7 @@ class MemoryStore:
                         )
                     # Also index in Enhanced FTS content table (if present)
                     try:
-                        # Slot tagging (lightweight): detect slot for this conversation text
-                        try:
-                            from .slot_router import SlotRouter
-                            slot_id, _ = SlotRouter.detect_slot(text or "")
-                        except Exception:
-                            slot_id = None
+                        slot_id = None
 
                         terms = (text or "").lower().split()
                         term_freq = (len([t for t in terms if t]) / max(len(terms), 1)) if terms else 0.0

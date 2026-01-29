@@ -97,34 +97,34 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
         config: MemoryConfiguration,
         context_injector,
         session_manager,
-        background_summarizer=None,
         hot_memory=None,
         intent_service=None,
         on_turn_processed=None,
+        context_compactor=None,
         **kwargs
     ):
         """
         Initialize frame processor.
-        
+
         Args:
             config: Memory configuration
             context_injector: Context injector instance
             session_manager: Session manager instance
-            background_summarizer: Optional background summarizer
             hot_memory: Hot memory instance
             intent_service: Optional intent service for smart processing
             on_turn_processed: Optional callback invoked after processing a final transcription
+            context_compactor: Optional context compactor for infinite context
         """
         if PIPECAT_AVAILABLE:
             super().__init__(**kwargs)
-        
+
         self.config = config
         self.context_injector = context_injector
         self.session_manager = session_manager
-        self.background_summarizer = background_summarizer
         self.hot_memory = hot_memory
         self.intent_service = intent_service
         self._on_turn_processed = on_turn_processed
+        self.context_compactor = context_compactor
         self.quality_filter = QualityFilter()
         
         # Frame processing state
@@ -236,18 +236,6 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
     async def _handle_start_frame(self, frame: StartFrame) -> None:
         """Handle StartFrame initialization."""
         try:
-            # Start background summarizer if configured for delta mode
-            if (not self._ephemeral and 
-                self.background_summarizer and 
-                self.config.summarization_enabled and 
-                self.config.summary_window_mode == "delta"):
-                
-                success = await self.background_summarizer.start_background_task(self.session_manager.session_id)
-                if success:
-                    logger.debug("[FrameProcessor] Background summarizer started")
-                else:
-                    logger.warning("[FrameProcessor] Failed to start background summarizer")
-            
             # Provide role-aware IDs to HotMemory
             if self.hot_memory:
                 try:
@@ -503,18 +491,6 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
                 except Exception as exc:
                     logger.debug(f"[FrameProcessor] on_turn_processed callback failed: {exc}")
 
-            # Trigger turn-based summary if configured
-            if (self.background_summarizer and 
-                self.config.summarization_enabled and 
-                self.config.summary_window_mode == "turn_pairs"):
-                
-                if self.background_summarizer.should_summarize_turns(self._turn_id):
-                    logger.info(f"[FrameProcessor] Triggering turn-based summary at turn {self._turn_id}")
-                    asyncio.create_task(self.background_summarizer.summarize_turns(
-                        self._turn_id, 
-                        self.session_manager.session_id
-                    ))
-
             # Reset pre-injection state for next turn
             self.context_injector.reset_turn_state()
 
@@ -551,25 +527,6 @@ class MemoryFrameProcessor(FrameProcessor if PIPECAT_AVAILABLE else object):
     async def cleanup(self) -> None:
         """Cleanup when processor is destroyed."""
         try:
-            # Generate final summary if needed
-            if (self.background_summarizer and 
-                self.config.summarization_enabled and 
-                self._turn_id > 1 and 
-                self._turn_id > self.background_summarizer._last_summarized_turn):
-                
-                logger.info(f"[FrameProcessor] Generating final summary for session (turns {self.background_summarizer._last_summarized_turn+1} to {self._turn_id})")
-                try:
-                    await self.background_summarizer.generate_final_summary(
-                        self.session_manager.session_id, 
-                        self._turn_id
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning("[FrameProcessor] Final summary generation timed out")
-
-            # Stop background summarizer
-            if self.background_summarizer:
-                await self.background_summarizer.stop_background_task()
-
             # End session tracking
             if self.session_manager:
                 self.session_manager.end_session()

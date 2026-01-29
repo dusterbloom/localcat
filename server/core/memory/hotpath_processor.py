@@ -7,7 +7,7 @@ God-object breakup:
   - SessionManager for session bookkeeping and headers
   - ContextInjector for fast context insertion
   - MemoryFrameProcessor for Pipecat frame routing
-  - BackgroundSummarizer for deferred summarization
+  - ContextCompactor for infinite context via gradient-bang pattern
 
 HotPathMemoryProcessor now focuses on dependency wiring, lifecycle
 management, and Pipecat integration.
@@ -54,7 +54,7 @@ from .config_manager import MemoryConfiguration
 from .context_injector import ContextInjector
 from .frame_processor import MemoryFrameProcessor
 from .session_manager import SessionManager
-from .background_summarizer import BackgroundSummarizer
+from .context_compactor import ContextCompactor
 
 # Import intent service when available (optional dependency)
 try:
@@ -150,12 +150,6 @@ class HotPathMemoryProcessor(BaseProcessor):
             self.hot.config = self.config  # type: ignore[attr-defined]
         except Exception:
             pass
-        # Provide store/user context to SlotRouter for catalog-backed detection
-        try:
-            from .slot_router import SlotRouter
-            SlotRouter.set_context(self.store, self.config.user_id)
-        except Exception:
-            pass
 
         self.session_manager = SessionManager(
             session_id=self.session_id,
@@ -178,10 +172,8 @@ class HotPathMemoryProcessor(BaseProcessor):
             context_aggregator=context_aggregator,
         )
 
-        self.background_summarizer = (
-            BackgroundSummarizer(self.hot, self.config, store=self.store)
-            if self.config.summarization_enabled
-            else None
+        self.context_compactor = ContextCompactor(
+            max_context_tokens=int(os.getenv("VOICE_AGENT_LLM_MAX_TOKENS", "4096"))
         )
 
         self.intent_service = self._init_intent_service()
@@ -190,10 +182,10 @@ class HotPathMemoryProcessor(BaseProcessor):
             config=self.config,
             context_injector=self.context_injector,
             session_manager=self.session_manager,
-            background_summarizer=self.background_summarizer,
             hot_memory=self.hot,
             intent_service=self.intent_service,
             on_turn_processed=self._on_turn_processed,
+            context_compactor=self.context_compactor,
         )
 
         self._last_metrics_log = time.time()

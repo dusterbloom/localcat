@@ -64,6 +64,8 @@ class PreloadedModels:
     mlx_llm_tokenizer: Any = None
     speechbrain_model: Any = None
     emotion_model: Any = None
+    compactor_model: Any = None
+    compactor_tokenizer: Any = None
     preload_time: float = 0.0
 
     @staticmethod
@@ -186,6 +188,21 @@ class PreloadedModels:
                 logger.info(f"  ✅ Audio Intelligence ready ({audio_time:.2f}s)")
         except Exception as e:
             logger.error(f"❌ Audio Intelligence preload failed: {e}")
+
+        # ========== COMPACTOR SLM (~500ms) ==========
+        try:
+            compactor_model_id = os.getenv("COMPACTOR_MODEL", "mlx-community/Qwen3-0.6B-4bit")
+            if os.getenv("ENABLE_CONTEXT_COMPACTOR", "true").lower() in ("true", "1", "yes"):
+                logger.info(f"  🗜️ Loading Compactor SLM: {compactor_model_id}")
+                compactor_start = time.time()
+
+                import mlx_lm as _mlx_lm_compactor
+                models.compactor_model, models.compactor_tokenizer = _mlx_lm_compactor.load(compactor_model_id)
+
+                compactor_time = time.time() - compactor_start
+                logger.info(f"  ✅ Compactor SLM ready ({compactor_time:.2f}s)")
+        except Exception as e:
+            logger.error(f"❌ Compactor SLM preload failed: {e}")
 
         models.preload_time = time.time() - start_time
         logger.info("=" * 70)

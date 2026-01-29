@@ -5,13 +5,15 @@ These constants capture commonly tuned thresholds to avoid magic numbers
 scattered across the codebase.
 """
 
+import os
+
 # Graph edge weight thresholds
 WEIGHT_MIN_ACTIVE: float = 0.15   # Minimum weight considered active (lowered from 0.25 to improve recall)
 WEIGHT_MIN_WEAK: float = 0.10     # Minimum weight considered weak (not negative)
 MAX_CONF_CAP: float = 0.75        # Cap for initial confidence on new edges
 
 # Recency decay
-RECENCY_HALF_LIFE_MS: int = 7 * 24 * 60 * 60 * 1000  # 7 days
+RECENCY_HALF_LIFE_MS: int = int(os.getenv("RECENCY_HALF_LIFE_HOURS", "24")) * 3600 * 1000  # default 24h, configurable
 
 
 # === Performance Targets ===

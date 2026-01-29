@@ -256,226 +256,71 @@ class HotMemory:
 
     def process_turn(self, text: str, session_id: str, turn_id: int, focus: str = 'standard', intent: Optional[Dict] = None, prosody_features: Optional[Any] = None) -> Tuple[List[str], List[Tuple[str, str, str]]]:
         """
-        Process a conversation turn
-        Args:
-            text: User input text
-            session_id: Current session ID
-            turn_id: Current turn ID
-            focus: Processing focus strategy
-            intent: Optional intent classification for smart retrieval routing
-            prosody_features: Optional ProsodyFeatures for question detection
-        Returns: (memory_bullets, extracted_triples)
+        Process a conversation turn.
+
+        Stores the raw text via FTS and retrieves relevant memory bullets.
+        Entity extraction is no longer run per-utterance (see extract_and_store
+        for on-demand extraction via tools).
+
+        Returns: (memory_bullets, [])
         """
         start = time.perf_counter()
 
-        # Log the focus strategy being used (for debugging)
-        if focus != 'standard':
-            logger.debug(f"[HotMem] Using focus strategy: {focus}")
-        
-        # Language detection
-        lang = self._detect_language(text) if PYCLD3_AVAILABLE else "en"
-
-        # Check if this is a question (skip extraction for questions)
-        is_question = self._is_question_from_prosody(prosody_features, text)
-
-        extract_start = time.perf_counter()  # Track timing regardless
-
-        if is_question:
-            logger.info(f"[HotMem] Question detected - extracting entities for retrieval: '{text[:50]}...'")
-            # Extract entities for retrieval (enables graph traversal for questions)
-            # But don't store triples (questions don't contain facts to learn)
-            entities, _, _, doc, entity_aliases = self._cached_extract(text, lang)
-            entities = self.extractor.refine_entities(text, entities)
-            triples, neg_count = [], 0
-        else:
-            # Stage 1: Extract entities and relations (via extractor seam)
-            # NOTE: Coreference resolution exists but needs proper spacy-coref integration
-            # TODO: Implement proper coref that resolves pronouns in doc before extraction
-
-            # LRU-cached extraction to avoid duplicate work
-            entities, triples, neg_count, doc, entity_aliases = self._cached_extract(text, lang)
-
-            # Stage 1.25: Optional enhancement (BERT-NER + MiniLM)
-            # Integrate model-based enhancer between base extraction and refinement.
-            # Controlled by env flags inside the enhancer (USE_BERT_NER / USE_MINILM).
-            try:
-                enh_start = time.perf_counter()
-                before_cnt = len(triples) if triples else 0
-                enhanced_triples, enh_meta = enhance_extraction(text, triples, entities, doc)
-                triples = enhanced_triples or triples
-                enh_ms = (time.perf_counter() - enh_start) * 1000
-                self.metrics['enhancer_ms'].append(enh_ms)
-                try:
-                    added = max(0, (len(triples) if triples else 0) - before_cnt)
-                    self.metrics['enhancer_added'].append(added)
-                except Exception:
-                    pass
-                logger.debug(
-                    f"[HotMem] Enhancer applied: {before_cnt}→{len(triples) if triples else 0} triples "
-                    f"({enh_ms:.1f}ms)"
-                )
-            except Exception as e:
-                logger.debug(f"[HotMem] Enhancer skipped/failed: {e}")
-
-        self.metrics['extraction_ms'].append((time.perf_counter() - extract_start) * 1000)
-        # Store aliases for dual registration in hot index
-        self._entity_aliases = entity_aliases
-        logger.info(f"[HotMem] Processing text: '{text[:50]}...'")
-        logger.debug(f"[HotMem] Extracted {len(triples)} raw triples from '{text[:50]}...'")
-        if triples:
-            logger.debug(f"[HotMem] Raw triples (first 3): {triples[:3]}")
-
-        # Stage 1.5: DSPy-enhanced extraction for complex sentences
-        if self.enable_dspy_extraction and doc:
-            dspy_start = time.perf_counter()
-            additional_triples = self._extract_with_dspy(text, triples, doc)
-            if additional_triples:
-                triples.extend(additional_triples)
-                logger.debug(f"[HotMem] DSPy added {len(additional_triples)} edges")
-            self.metrics['dspy_extraction_ms'].append((time.perf_counter() - dspy_start) * 1000)
-
-        # Stage 2: Refine triples and update memory with new facts (skip writes for questions)
-        refine_start = time.perf_counter()
-        triples = self.extractor.refine(text, triples, doc)
-        logger.debug(f"[HotMem] After refinement: {len(triples)} triples")
-        # Rebuild entities from refined triples + text context
-        # IMPORTANT: For questions, triples=[] but we already have entities from line 274-275
-        # Only rebuild entities if we have triples (not a question)
-        if triples:
-            ent_from_triples: Set[str] = set()
-            for s, r, d in triples:
-                ent_from_triples.add(s)
-                ent_from_triples.add(d)
-            entities = self.extractor.refine_entities(text, list(ent_from_triples))
-
-        # Ensure base aliases (e.g., "swimming") are present alongside enriched forms
-        # (e.g., "swimming in the sea") so retrieval can fan out on both keys.
-        if self._entity_aliases:
-            base_entities: Set[str] = set(self._entity_aliases.values())
-            seen_entities: Set[str] = set(entities)
-            for base_entity in base_entities:
-                if base_entity not in seen_entities:
-                    entities.append(base_entity)
-                    seen_entities.add(base_entity)
-
-        # Filter noisy triples before storing/retrieving
-        triples_before_filter = len(triples)
-        triples = [t for t in triples if self._is_meaningful_fact(*t)]
-        logger.debug(f"[HotMem] After filtering: {len(triples)} triples (removed {triples_before_filter - len(triples)})")
-        if triples:
-            logger.debug(f"[HotMem] Filtered triples (first 3): {triples[:3]}")
-
-        update_start = time.perf_counter()
         now_ts = int(time.time() * 1000)
 
-        # Store the conversation turn FIRST (before edge extraction) for provenance
-        turn_id_hash = self.store.enqueue_turn(text, session_id, turn_id, now_ts)
-        logger.info(f"[HotMem] Storing conversation turn {turn_id} in session {session_id}")
-
-        # Ensure immediate FTS indexing for real-time conversation retrieval
-        # CRITICAL: Use flush() not flush_if_needed() to guarantee edges are on disk before retrieval
+        # Store the conversation turn for FTS retrieval
+        self.store.enqueue_turn(text, session_id, turn_id, now_ts)
         self.store.flush()
+        logger.info(f"[HotMem] Stored turn {turn_id} in session {session_id}")
 
-        is_question = self._is_question(text)
-        if is_question:
-            logger.info(f"[HotMem] Question detected - not storing as memory: '{text[:50]}...'")
-        logger.debug(f"[HotMem] Text classified as question: {is_question}")
-
-        if not is_question:
-            for s, r, d in triples:
-                # Demote conflicting facts before observing new evidence
-                conflicting = [fact for fact in list(self.entity_index.get(s, set())) if fact[1] == r and fact[2] != d]
-                for _s, _r, old_d in conflicting:
-                    try:
-                        self.store.negate_edge(s, r, old_d, conf=0.6, now_ts=now_ts)
-                    except Exception as e:
-                        logger.warning(f"HotMem demotion failed for ({s}, {r}, {old_d}): {e}")
-                    self.entity_index[s].discard((_s, _r, old_d))
-                    if old_d in self.entity_index:
-                        self.entity_index[old_d].discard((_s, _r, old_d))
-                    self._prune_recency_item(s, r, old_d)
-
-                # Log fact storage
-                if len(triples) <= 3:
-                    logger.debug(f"[HotMem] Storing fact: ({s}, {r}, {d})")
-                else:
-                    logger.debug(f"[HotMem] Storing {len(triples)} facts in memory")
-
-                # Compute confidence using injected strategy
-                edge_id = self.store.edge_id(s, r, d)
-
-                # Get edge data for confidence calculation
-                # (pos/neg come from existing edge if it exists)
-                cur = self.store.sql.cursor()
-                edge_data = cur.execute(
-                    "SELECT pos, neg, updated_at FROM edge WHERE id = ?",
-                    (edge_id,)
-                ).fetchone()
-
-                if edge_data:
-                    pos, neg, updated_at = edge_data
-                else:
-                    pos, neg, updated_at = 0, 0, now_ts
-
-                # Create Edge object for strategy
-                edge_obj = Edge(
-                    src=s, rel=r, dst=d,
-                    pos=pos, neg=neg,
-                    updated_at=updated_at,
-                    id=edge_id
-                )
-                context_obj = Context(
-                    store=self.store,
-                    text=text,
-                    session_id=session_id,
-                    turn_id=turn_id
-                )
-
-                # Score confidence
-                conf = self.confidence.score(edge_obj, context_obj)
-
-                # CRITICAL FIX: Removed global negation logic
-                # Negation now handled per-triple during extraction
-                # This prevents accidentally negating ALL facts when only some are negated
-                self.store.observe_edge(s, r, d, conf, now_ts)
-
-                # Link edge to conversation turn (provenance)
-                edge_id = self.store.edge_id(s, r, d)
-                self.store.enqueue_edge_source(edge_id, turn_id_hash, now_ts)
-
-                # Update hot indices
-                self.entity_index[s].add((s, r, d))
-                self.entity_index[d].add((s, r, d))
-
-                # Dual registration: If dst was enriched, also index under base form
-                # This enables queries like "swimming" to find "swimming in the sea"
-                base_d = self._entity_aliases.get(d, d)
-                if base_d != d:
-                    self.entity_index[base_d].add((s, r, d))
-        self.metrics['update_ms'].append((time.perf_counter() - update_start) * 1000)
-        
-        # Stage 3: Retrieve relevant memories with intent-aware routing
+        # Retrieve relevant memories (FTS + graph)
         retrieve_start = time.perf_counter()
-        bullets = self._retrieve_context(text, entities, turn_id, intent=intent)
+        bullets = self._retrieve_context(text, [], turn_id, intent=intent)
         self.metrics['retrieval_ms'].append((time.perf_counter() - retrieve_start) * 1000)
-        
-        # Update recency with extracted triples
-        for s, r, d in triples:
-            self.recency_buffer.append(RecencyItem(s, r, d, text, now_ts, turn_id))
-        
-        # Track overall performance
+
         elapsed_ms = (time.perf_counter() - start) * 1000
         self.metrics['total_ms'].append(elapsed_ms)
         self._cleanup_metrics()
 
-        # Log summary of memory operations
-        stored_facts = len(triples) if not is_question else 0
-        logger.info(f"[HotMem] Memory turn complete: {len(bullets)} bullets generated, {stored_facts} facts stored, {elapsed_ms:.1f}ms elapsed")
-
+        logger.info(f"[HotMem] Turn complete: {len(bullets)} bullets, {elapsed_ms:.1f}ms")
         if elapsed_ms > 200:
             logger.warning(f"Hot path took {elapsed_ms:.1f}ms (budget: 200ms)")
 
-        return bullets, triples
+        return bullets, []
+
+    def extract_and_store(self, text: str, session_id: str, turn_id: int) -> List[Tuple[str, str, str]]:
+        """
+        On-demand entity extraction and graph storage.
+        Called from memory tools, not from every utterance.
+        """
+        lang = self._detect_language(text) if PYCLD3_AVAILABLE else "en"
+        entities, triples, neg_count, doc, entity_aliases = self._cached_extract(text, lang)
+        self._entity_aliases = entity_aliases
+
+        triples = self.extractor.refine(text, triples, doc)
+        triples = [t for t in triples if self._is_meaningful_fact(*t)]
+
+        now_ts = int(time.time() * 1000)
+        for s, r, d in triples:
+            edge_id = self.store.edge_id(s, r, d)
+            cur = self.store.sql.cursor()
+            edge_data = cur.execute(
+                "SELECT pos, neg, updated_at FROM edge WHERE id = ?", (edge_id,)
+            ).fetchone()
+            pos, neg, updated_at = edge_data if edge_data else (0, 0, now_ts)
+
+            edge_obj = Edge(src=s, rel=r, dst=d, pos=pos, neg=neg, updated_at=updated_at, id=edge_id)
+            context_obj = Context(store=self.store, text=text, session_id=session_id, turn_id=turn_id)
+            conf = self.confidence.score(edge_obj, context_obj)
+            self.store.observe_edge(s, r, d, conf, now_ts)
+
+            self.entity_index[s].add((s, r, d))
+            self.entity_index[d].add((s, r, d))
+
+            self.recency_buffer.append(RecencyItem(s, r, d, text, now_ts, turn_id))
+
+        logger.info(f"[HotMem] On-demand extraction: {len(triples)} triples stored")
+        return triples
     
     def _extract(self, text: str, lang: str) -> Tuple[List[str], List[Tuple[str, str, str]], int, Any, Dict[str, str]]:
         """
