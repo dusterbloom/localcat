@@ -1,9 +1,0 @@
-{
-  "baseline": {
-    "flags": {},
-    "n": 300,
-    "has_gold_rate": 0.03,
-    "avg_latency_ms": 5.402673486654142,
-    "elapsed_ms": 1621.9600000040373
-  }
-}

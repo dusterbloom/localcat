@@ -101,3 +101,9 @@ memory.db
 *INVESTIGATION*.txt
 *CLEANUP*.md
 *PIPELINE_FLOW*.txt
+
+# Eval/debug outputs — never commit
+server/tmp/
+evals/outputs/
+evals/runs/
+results/
